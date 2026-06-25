@@ -33,6 +33,14 @@ KILL_PHRASES = [
     "here's the kicker",
     "at the end of the day",
     "needless to say",
+    "looking forward to hearing",
+    "thank you for reaching out",
+    "i hope you are doing well",
+    "i hope you're doing well",
+    "i hope all is well",
+    "hope all is well",
+    "hope this message finds you well",
+    "please let me know if you have any questions",
 ]
 # banned sentence shapes (regex over lowercased body)
 BANNED_SHAPES = [
@@ -41,6 +49,10 @@ BANNED_SHAPES = [
     (r"(?:^|\n)[ \t]*(?:additionally|notably|importantly|ultimately|consequently|"
      r"subsequently|therefore|nevertheless|nonetheless|conversely|accordingly)\s*,",
      "transition-adverb opener (AI filler)"),
+    (r"\b(please\s+)?do(?:n'?t| not)\s+hesitate\b", "do-not-hesitate hedge"),
+    (r"\bfeel free to (reach out|contact|ask|email|call)\b", "feel-free-to boilerplate"),
+    (r"\bshould you have any (questions|concerns|issues)\b", "should-you-have-any boilerplate"),
+    (r"\b(i\s+)?look forward to (your (response|reply)|hearing)\b", "look-forward-to closing boilerplate"),
 ]
 
 MARKDOWN = re.compile(r"(^|[^\w])([#*`>_]|\[[^\]]*\]\()")
