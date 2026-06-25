@@ -17,9 +17,26 @@ WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
 # A time token must carry am/pm OR a colon -- a bare integer (a date part, "in 3 days") is NOT a time.
 TIME_AMPM = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", re.I)
 TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
+# Named "close of business" family -> 17:00 (matches the eod default).
+_COB = ("cob", "close of business", "eod", "end of day")
+
+
+def _has_time(p):
+    """True iff phrase carries any resolvable time-of-day token (numeric or named)."""
+    if TIME_AMPM.search(p) or TIME_COLON.search(p):
+        return True
+    return ("noon" in p) or ("midnight" in p) or any(t in p for t in _COB)
 
 
 def _apply_time(dt, phrase, default_hour=17):
+    pl = phrase.lower()
+    # Named time tokens take precedence over numeric scan.
+    if "noon" in pl:
+        return dt.replace(hour=12, minute=0, second=0, microsecond=0)
+    if "midnight" in pl:
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    if any(t in pl for t in _COB):
+        return dt.replace(hour=17, minute=0, second=0, microsecond=0)
     m = TIME_AMPM.search(phrase)
     if m:
         hh = int(m.group(1))
@@ -75,18 +92,25 @@ def resolve(phrase, base_dt):
         target = base_dt
     if target is None and "tomorrow" in p:
         target = base_dt + timedelta(days=1)
+    # end of (work) week -> upcoming friday
+    if target is None and ("eow" in p or "end of week" in p):
+        delta = (4 - base_dt.weekday()) % 7
+        target = base_dt + timedelta(days=delta)
     if target is None:
         for name, idx in WEEKDAYS.items():
             if name in p:
                 delta = (idx - base_dt.weekday()) % 7
                 if delta == 0:
                     delta = 7  # "friday" means the upcoming friday, not today
+                if re.search(r"\bnext\s+" + name, p):
+                    delta += 7  # "next friday" = the friday a week after the upcoming one
                 target = base_dt + timedelta(days=delta)
                 break
     if target is None:
-        m = re.search(r"in (\d+) (day|days|week|weeks|hour|hours)", p)
+        m = re.search(r"in (a|an|\d+) (day|days|week|weeks|hour|hours)", p)
         if m:
-            n = int(m.group(1))
+            nraw = m.group(1)
+            n = 1 if nraw in ("a", "an") else int(nraw)
             unit = m.group(2)
             if unit.startswith("day"):
                 target = base_dt + timedelta(days=n)
@@ -96,6 +120,10 @@ def resolve(phrase, base_dt):
                 target = base_dt + timedelta(hours=n)
                 return {"due_utc": target.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
                         "confidence": "med", "basis": "relative-hours"}
+    # bare time with no date -> anchor to the mail's own day
+    if target is None and _has_time(p):
+        target = base_dt
+        conf = "med"
     if target is None:
         return {"due_utc": None, "confidence": "low", "basis": "unparseable"}
 

@@ -65,59 +65,48 @@ def _due(phrase, base=BASE):
 
 # ---------------- 11 headroom (currently fail -> xfail) ----------------
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_by_noon_anchors_today_noon():
     assert (_due("by noon") or "").startswith("2026-06-24T16:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_noon_today_is_1200_not_default_1700():
     # currently resolves to 17:00 (default) -> WRONG; noon must be 12:00 NY = 16:00Z
     assert (_due("noon today") or "").startswith("2026-06-24T16:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_bare_5pm_anchors_today():
     assert (_due("by 5pm") or "").startswith("2026-06-24T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_bare_12pm_is_noon_today():
     assert (_due("by 12pm") or "").startswith("2026-06-24T16:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_cob_is_today_1700():
     assert (_due("cob") or "").startswith("2026-06-24T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_by_cob_is_today_1700():
     assert (_due("by cob") or "").startswith("2026-06-24T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_close_of_business_is_today_1700():
     assert (_due("close of business") or "").startswith("2026-06-24T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_next_friday_is_next_week():
     # upcoming friday is 06-26; "next friday" must be the friday a week later: 07-03
     assert (_due("next friday") or "").startswith("2026-07-03T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_in_a_week_plus_seven_days():
     assert (_due("in a week") or "").startswith("2026-07-01T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_in_a_day_plus_one_day():
     assert (_due("in a day") or "").startswith("2026-06-25T21:00")
 
 
-@pytest.mark.xfail(reason=_REASON, strict=False)
 def test_b5_eow_is_upcoming_friday():
     assert (_due("eow") or "").startswith("2026-06-26T21:00")
 
