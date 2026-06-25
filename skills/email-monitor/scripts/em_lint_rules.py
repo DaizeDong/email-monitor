@@ -38,6 +38,9 @@ KILL_PHRASES = [
 BANNED_SHAPES = [
     (r"\bit'?s not\b[^.?!]{1,60}\bit'?s\b", "negation-parallel (it's not X, it's Y)"),
     (r"\bnot (just|only)\b[^.?!]{1,60}\bbut (also)?\b", "not-just-but-also parallelism"),
+    (r"(?:^|\n)[ \t]*(?:additionally|notably|importantly|ultimately|consequently|"
+     r"subsequently|therefore|nevertheless|nonetheless|conversely|accordingly)\s*,",
+     "transition-adverb opener (AI filler)"),
 ]
 
 MARKDOWN = re.compile(r"(^|[^\w])([#*`>_]|\[[^\]]*\]\()")
