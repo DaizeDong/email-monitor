@@ -71,67 +71,56 @@ def _draft(body):
 
 # ── headroom (currently FAIL; the boilerplate-hedge fix flips all of them) ──
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr01_do_not_hesitate_flagged():
     assert _flagged(_draft("Please do not hesitate to reach out.")), \
         "'please do not hesitate' is an AI hedge tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr02_dont_hesitate_contraction_flagged():
     assert _flagged(_draft("Please don't hesitate to contact me.")), \
         "contraction variant 'don't hesitate' must also be caught"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr03_feel_free_to_reach_out_flagged():
     assert _flagged(_draft("Please feel free to reach out with any questions.")), \
         "'feel free to reach out' is an AI boilerplate tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr04_looking_forward_to_hearing_flagged():
     assert _flagged(_draft("Looking forward to hearing from you.")), \
         "'looking forward to hearing from you' is an AI closing tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr05_should_you_have_any_questions_flagged():
     assert _flagged(_draft("Should you have any questions, let me know.")), \
         "'should you have any questions' is an AI boilerplate tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr06_i_hope_you_are_doing_well_flagged():
     assert _flagged(_draft("I hope you are doing well.")), \
         "'i hope you are doing well' is an AI opening tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr07_i_hope_all_is_well_flagged():
     assert _flagged(_draft("I hope all is well.")), \
         "'i hope all is well' is an AI opening tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr08_hope_this_message_finds_you_well_flagged():
     assert _flagged(_draft("Hope this message finds you well.")), \
         "'hope this message finds you well' variant must be caught"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr09_thank_you_for_reaching_out_flagged():
     assert _flagged(_draft("Thank you for reaching out.")), \
         "'thank you for reaching out' is an AI boilerplate tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr10_look_forward_to_your_response_flagged():
     assert _flagged(_draft("I look forward to your response.")), \
         "'i look forward to your response' is an AI closing tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr11_please_let_me_know_if_questions_flagged():
     assert _flagged(_draft("Please let me know if you have any questions.")), \
         "'please let me know if you have any questions' is an AI hedge tell"
