@@ -19,19 +19,37 @@ TIME_AMPM = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", re.I)
 TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 # Named "close of business" family -> 17:00 (matches the eod default).
 _COB = ("cob", "close of business", "eod", "end of day")
+# Named day-parts -> conventional hours. "noon" is handled separately via a WORD BOUNDARY so the
+# substring inside "afternoon" does not collide.
+DAYPARTS = (("morning", 9), ("afternoon", 14), ("evening", 18), ("night", 20))
+_NOON = re.compile(r"\bnoon\b")
+
+
+def _last_day_of_month(dt):
+    if dt.month == 12:
+        first_next = dt.replace(year=dt.year + 1, month=1, day=1)
+    else:
+        first_next = dt.replace(month=dt.month + 1, day=1)
+    return first_next - timedelta(days=1)
 
 
 def _has_time(p):
     """True iff phrase carries any resolvable time-of-day token (numeric or named)."""
     if TIME_AMPM.search(p) or TIME_COLON.search(p):
         return True
-    return ("noon" in p) or ("midnight" in p) or any(t in p for t in _COB)
+    if _NOON.search(p) or ("midnight" in p) or any(t in p for t in _COB):
+        return True
+    return any(re.search(r"\b" + name + r"\b", p) for name, _ in DAYPARTS)
 
 
 def _apply_time(dt, phrase, default_hour=17):
     pl = phrase.lower()
-    # Named time tokens take precedence over numeric scan.
-    if "noon" in pl:
+    # Named day-parts take precedence (and must be checked before the bare "noon" token so that
+    # "afternoon" maps to 14:00 rather than colliding with noon).
+    for name, hour in DAYPARTS:
+        if re.search(r"\b" + name + r"\b", pl):
+            return dt.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if _NOON.search(pl):
         return dt.replace(hour=12, minute=0, second=0, microsecond=0)
     if "midnight" in pl:
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -55,6 +73,10 @@ def _apply_time(dt, phrase, default_hour=17):
     return dt.replace(hour=hh, minute=mm, second=0, microsecond=0)
 
 
+def _utc(dt):
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def resolve(phrase, base_dt):
     """Resolve a deadline phrase against an aware base datetime (NY tz).
 
@@ -67,8 +89,24 @@ def resolve(phrase, base_dt):
         while d.weekday() >= 5:
             d += timedelta(days=1)
         d = d.replace(hour=17, minute=0, second=0, microsecond=0)
-        return {"due_utc": d.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                "confidence": "inferred", "basis": "soft-due-next-business"}
+        return {"due_utc": _utc(d), "confidence": "inferred", "basis": "soft-due-next-business"}
+
+    # asap / immediately / right away -> the mail's own moment, high urgency (do NOT snap to 17:00)
+    if re.search(r"\b(asap|immediately|right away)\b", p):
+        return {"due_utc": _utc(base_dt), "confidence": "high", "basis": "asap"}
+
+    # within <N> hours -> relative offset from now (do NOT snap to a day boundary)
+    mw = re.search(r"\bwithin\s+(the|a|an|\d+)\s+(hour|hours|day|days|week|weeks)\b", p)
+    if mw:
+        nraw = mw.group(1)
+        n = 1 if nraw in ("the", "a", "an") else int(nraw)
+        unit = mw.group(2)
+        if unit.startswith("hour"):
+            return {"due_utc": _utc(base_dt + timedelta(hours=n)),
+                    "confidence": "med", "basis": "within-hours"}
+        # within N days/weeks -> snap to 17:00 on that day below
+        wt = base_dt + (timedelta(weeks=n) if unit.startswith("week") else timedelta(days=n))
+        return {"due_utc": _utc(_apply_time(wt, p)), "confidence": "med", "basis": "within"}
 
     conf = "med"
     target = None
@@ -92,9 +130,24 @@ def resolve(phrase, base_dt):
         target = base_dt
     if target is None and "tomorrow" in p:
         target = base_dt + timedelta(days=1)
+    # end of month / eom -> last calendar day of the current month
+    if target is None and ("end of month" in p or "end of the month" in p or re.search(r"\beom\b", p)):
+        target = _last_day_of_month(base_dt)
     # end of (work) week -> upcoming friday
     if target is None and ("eow" in p or "end of week" in p):
         delta = (4 - base_dt.weekday()) % 7
+        target = base_dt + timedelta(days=delta)
+    # this weekend -> upcoming Saturday
+    if target is None and "weekend" in p:
+        delta = (5 - base_dt.weekday()) % 7
+        if delta == 0:
+            delta = 7
+        target = base_dt + timedelta(days=delta)
+    # next week (no specific weekday) -> Monday of next week
+    if target is None and re.search(r"\bnext week\b", p):
+        delta = (0 - base_dt.weekday()) % 7
+        if delta == 0:
+            delta = 7
         target = base_dt + timedelta(days=delta)
     if target is None:
         for name, idx in WEEKDAYS.items():
@@ -106,6 +159,19 @@ def resolve(phrase, base_dt):
                     delta += 7  # "next friday" = the friday a week after the upcoming one
                 target = base_dt + timedelta(days=delta)
                 break
+    # N business days (skip weekends), with or without an "in" prefix
+    if target is None:
+        mb = re.search(r"\b(a|an|\d+)\s+business\s+days?\b", p)
+        if mb:
+            nraw = mb.group(1)
+            n = 1 if nraw in ("a", "an") else int(nraw)
+            d = base_dt
+            added = 0
+            while added < n:
+                d += timedelta(days=1)
+                if d.weekday() < 5:
+                    added += 1
+            target = d
     if target is None:
         m = re.search(r"in (a|an|\d+) (day|days|week|weeks|hour|hours)", p)
         if m:
@@ -118,8 +184,20 @@ def resolve(phrase, base_dt):
                 target = base_dt + timedelta(weeks=n)
             else:
                 target = base_dt + timedelta(hours=n)
-                return {"due_utc": target.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-                        "confidence": "med", "basis": "relative-hours"}
+                return {"due_utc": _utc(target), "confidence": "med", "basis": "relative-hours"}
+    # ordinal day-of-month "the 15th" -> that day this month, or next month if already passed
+    if target is None:
+        mo = re.search(r"\bthe (\d{1,2})(?:st|nd|rd|th)\b", p)
+        if mo:
+            day = int(mo.group(1))
+            if 1 <= day <= 28 or day <= _last_day_of_month(base_dt).day:
+                if day >= base_dt.day:
+                    target = base_dt.replace(day=day)
+                elif base_dt.month == 12:
+                    target = base_dt.replace(year=base_dt.year + 1, month=1, day=day)
+                else:
+                    nxt = base_dt.replace(month=base_dt.month + 1, day=1)
+                    target = nxt.replace(day=min(day, _last_day_of_month(nxt).day))
     # bare time with no date -> anchor to the mail's own day
     if target is None and _has_time(p):
         target = base_dt
@@ -131,5 +209,4 @@ def resolve(phrase, base_dt):
         target = _apply_time(target, "5pm")
     else:
         target = _apply_time(target, p)
-    return {"due_utc": target.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "confidence": conf, "basis": "phrase"}
+    return {"due_utc": _utc(target), "confidence": conf, "basis": "phrase"}

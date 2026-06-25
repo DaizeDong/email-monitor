@@ -73,68 +73,57 @@ def _conf(phrase, base=BASE):
 
 # ---------------- 11 headroom (currently fail -> xfail) ----------------
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_end_of_month_is_last_day_1700():
     # June has 30 days; last day 17:00 NY = 06-30 21:00Z
     assert (_due("end of month") or "").startswith("2026-06-30T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_eom_is_last_day_1700():
     assert (_due("eom") or "").startswith("2026-06-30T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_in_3_business_days_skips_weekend():
     # Wed 24 + 3 business days = Thu25, Fri26, Mon29 -> 06-29 17:00 = 21:00Z
     assert (_due("in 3 business days") or "").startswith("2026-06-29T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_2_business_days_no_in_prefix():
     # Wed 24 + 2 business days = Thu25, Fri26 -> 06-26 17:00 = 21:00Z
     assert (_due("2 business days") or "").startswith("2026-06-26T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_this_weekend_is_upcoming_saturday():
     # upcoming Saturday after Wed 24 is 06-27, 17:00 = 21:00Z
     assert (_due("this weekend") or "").startswith("2026-06-27T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_asap_is_now_high_conf():
     # asap = the mail's own moment (09:00 NY = 13:00Z), high confidence
     assert (_due("asap") or "").startswith("2026-06-24T13:00")
     assert _conf("asap") == "high"
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_within_the_hour_plus_one():
     # 09:00 + 1h = 10:00 NY = 14:00Z
     assert (_due("within the hour") or "").startswith("2026-06-24T14:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_next_week_is_next_monday():
     # Wed 24 -> Monday of next week = 06-29, 17:00 = 21:00Z
     assert (_due("next week") or "").startswith("2026-06-29T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_ordinal_15th_rolls_to_next_month_when_passed():
     # day 15 < today's day 24 -> next month: 07-15 17:00 = 21:00Z
     assert (_due("by the 15th") or "").startswith("2026-07-15T21:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_tomorrow_afternoon_is_1400_not_noon_substring():
     # BUG today: "afternoon" substring-matches the "noon" token -> 12:00. Must be 14:00.
     # Thu 25 14:00 NY = 18:00Z
     assert (_due("tomorrow afternoon") or "").startswith("2026-06-25T18:00")
 
 
-@pytest.mark.xfail(strict=False, reason=_REASON)
 def test_b6_tomorrow_morning_is_0900():
     # Thu 25 09:00 NY = 13:00Z (today falls to the 17:00 default)
     assert (_due("tomorrow morning") or "").startswith("2026-06-25T13:00")
