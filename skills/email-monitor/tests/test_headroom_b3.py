@@ -66,57 +66,46 @@ def _draft(opener):
 
 # ── headroom (currently FAIL; one line-start transition regex flips all of them) ──
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr01_additionally_opener_flagged():
     assert _flagged(_draft("Additionally,")), "'Additionally,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr02_notably_opener_flagged():
     assert _flagged(_draft("Notably,")), "'Notably,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr03_importantly_opener_flagged():
     assert _flagged(_draft("Importantly,")), "'Importantly,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr04_ultimately_opener_flagged():
     assert _flagged(_draft("Ultimately,")), "'Ultimately,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr05_consequently_opener_flagged():
     assert _flagged(_draft("Consequently,")), "'Consequently,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr06_subsequently_opener_flagged():
     assert _flagged(_draft("Subsequently,")), "'Subsequently,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr07_therefore_opener_flagged():
     assert _flagged(_draft("Therefore,")), "'Therefore,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr08_nevertheless_opener_flagged():
     assert _flagged(_draft("Nevertheless,")), "'Nevertheless,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr09_nonetheless_opener_flagged():
     assert _flagged(_draft("Nonetheless,")), "'Nonetheless,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr10_conversely_opener_flagged():
     assert _flagged(_draft("Conversely,")), "'Conversely,' opener is an AI transition tell"
 
 
-@pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr11_accordingly_opener_flagged():
     assert _flagged(_draft("Accordingly,")), "'Accordingly,' opener is an AI transition tell"
 
