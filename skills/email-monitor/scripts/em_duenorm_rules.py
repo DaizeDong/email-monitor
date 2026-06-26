@@ -24,6 +24,43 @@ _COB = ("cob", "close of business", "eod", "end of day")
 DAYPARTS = (("morning", 9), ("afternoon", 14), ("evening", 18), ("night", 20))
 _NOON = re.compile(r"\bnoon\b")
 
+# Spelled-out month names (full + 3/4-letter abbrev). "may" doubles as a modal verb, so the rule
+# only fires when a day-of-month number is adjacent (see _month_name_target), never on a lone word.
+MONTHS = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+          "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+          "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+          "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12}
+_MONTH_ALT = "|".join(sorted(MONTHS, key=len, reverse=True))  # longest-first so "sept" beats "sep"
+_MONTH_DAY = re.compile(r"\b(" + _MONTH_ALT + r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:[,\s]+(\d{4}))?")
+_DAY_MONTH = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + _MONTH_ALT + r")\b(?:[,\s]+(\d{4}))?")
+
+
+def _month_name_target(p, base_dt):
+    """Resolve a spelled-out month+day ("July 4" / "4 July") to a target datetime + confidence.
+
+    Optional explicit year -> high confidence; otherwise the next occurrence (roll to next year
+    if the month/day already passed this year) -> med. Returns (datetime, conf) or None.
+    """
+    m = _MONTH_DAY.search(p)
+    if m:
+        mon, day, yr = MONTHS[m.group(1)], int(m.group(2)), m.group(3)
+    else:
+        m = _DAY_MONTH.search(p)
+        if not m:
+            return None
+        day, mon, yr = int(m.group(1)), MONTHS[m.group(2)], m.group(3)
+    if day < 1:
+        return None
+    if yr:
+        year, conf = int(yr), "high"
+    else:
+        year, conf = base_dt.year, "med"
+        if (mon, day) < (base_dt.month, base_dt.day):
+            year += 1
+    probe = base_dt.replace(year=year, month=mon, day=1)
+    day = min(day, _last_day_of_month(probe).day)  # clamp (e.g. feb 30 -> month end)
+    return base_dt.replace(year=year, month=mon, day=day), conf
+
 
 def _last_day_of_month(dt):
     if dt.month == 12:
@@ -130,6 +167,11 @@ def resolve(phrase, base_dt):
         target = base_dt
     if target is None and "tomorrow" in p:
         target = base_dt + timedelta(days=1)
+    # spelled-out month + day ("July 4" / "4 July"), optional year, next-occurrence rollover
+    if target is None:
+        mt = _month_name_target(p, base_dt)
+        if mt is not None:
+            target, conf = mt
     # end of month / eom -> last calendar day of the current month
     if target is None and ("end of month" in p or "end of the month" in p or re.search(r"\beom\b", p)):
         target = _last_day_of_month(base_dt)

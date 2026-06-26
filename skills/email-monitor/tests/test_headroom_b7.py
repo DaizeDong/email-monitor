@@ -53,7 +53,6 @@ _REASON = ("named-month deadline resolution (signal #2); satisfiable by a pure-r
            "month-name+day rule (either order, optional year, next-occurrence rollover) in "
            "em_duenorm_rules; headroom for self-evolve A-tier 0->1.")
 
-HEADROOM_XFAIL = pytest.mark.xfail(reason=_REASON, strict=False)
 
 
 def _due(phrase, base=BASE):
@@ -66,63 +65,52 @@ def _conf(phrase, base=BASE):
 
 # ---------------- 11 headroom (currently fail -> xfail) ----------------
 
-@HEADROOM_XFAIL
 def test_b7_month_name_future_this_year():
     # "july 4": July is after June -> this year, 17:00 -> 21:00Z
     assert (_due("by july 4") or "").startswith("2026-07-04T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_rolls_to_next_year_when_passed():
     # "january 5": Jan < June -> already passed this year -> 2027
     assert (_due("january 5") or "").startswith("2027-01-05T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_with_by_prefix_august():
     assert (_due("by august 15") or "").startswith("2026-08-15T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_explicit_year_is_high_conf():
     assert (_due("jan 5 2027") or "").startswith("2027-01-05T21:00")
     assert _conf("jan 5 2027") == "high"
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_december():
     assert (_due("december 1") or "").startswith("2026-12-01T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_abbrev_feb_rolls_next_year():
     # "feb 28": Feb < June -> 2027; Feb 2027 has 28 days
     assert (_due("by feb 28") or "").startswith("2027-02-28T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_with_explicit_time():
     # "march 3 at 2pm": March < June -> 2027; 14:00 -> 18:00Z
     assert (_due("march 3 at 2pm") or "").startswith("2027-03-03T18:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_abbrev_sept_four_letter():
     assert (_due("by sept 30") or "").startswith("2026-09-30T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_october_default_time():
     assert (_due("october 10") or "").startswith("2026-10-10T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_day_then_named_time():
     # "nov 11 5pm": Nov after June -> this year; 17:00 -> 21:00Z (fixed-offset engine)
     assert (_due("by nov 11 5pm") or "").startswith("2026-11-11T21:00")
 
 
-@HEADROOM_XFAIL
 def test_b7_month_name_same_month_future_day():
     # "june 30": same month, day 30 > today 24 -> this year
     assert (_due("june 30") or "").startswith("2026-06-30T21:00")
