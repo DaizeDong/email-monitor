@@ -68,15 +68,25 @@ def resolve_app_pw(resolve_cred, cred_path):
 
 
 def archive(user, gm_msgid, label, dry):
-    """Archive via the existing bulk tool: add label + de-inbox, selected by X-GM-MSGID."""
+    """Archive via the existing bulk tool: add label + de-inbox, selected by X-GM-MSGID.
+
+    Returns True only if the subprocess actually succeeded (returncode 0). A silent
+    archive failure must be visible to the caller so the NOISE counter does not lie
+    (reliability audit fix, round 2). In --dry the planned action is treated as a
+    no-op success.
+    """
     if not gm_msgid:
-        return
+        return False
     query = "rfc822msgid:%s" % gm_msgid  # gmail search by msgid; precise single-message select
     args = [sys.executable, LABEL_TOOL, "--user", user, "--query", query,
             "--add", label, "--archive"]
     if dry:
         args.append("--dry")
-    subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
+    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
+    if p.returncode != 0:
+        log("ACCOUNT %s: archive FAILED (rc=%d) msgid=%s" % (user, p.returncode, gm_msgid))
+        return False
+    return True
 
 
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry):
@@ -140,11 +150,11 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry):
             except Exception as e:
                 log("ACCOUNT %s: pool upsert failed: %s" % (slug, e))
         if pr == "NOISE":
-            archive(user, gid, full_label, dry)
-            n_archive += 1
+            if archive(user, gid, full_label, dry):
+                n_archive += 1
 
     state["cursors"][key] = new_cursor
-    state["seen_gm_msgids"] = sorted(seen)[-50000:]
+    state["seen_gm_msgids"] = em_watch.bound_seen(seen, 50000)  # newest by msgid value
     em_watch.save_state(state_path, state)
     log("ACCOUNT %s: new=%d alert=%d archived=%d cursor_uid=%d"
         % (slug, n_new, n_alert, n_archive, new_cursor["last_uid"]))

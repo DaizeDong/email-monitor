@@ -10,3 +10,23 @@ desktop.ini
 
 # self-evolve run artifacts (events/worktrees/state)
 .sie/
+
+# --- secrets / private config (defensive: never let local test config or
+#     credentials slip into this public repo; HIGH audit fix, round 2) ---
+.env
+*.env
+.credentials.json
+config.json
+secrets.json
+secrets*
+*.secret
+*.secrets
+*.cred
+*.creds
+registry.json
+rules/merged.json
+resolve-cred.ps1
+.pw-auth/
+*.token
+*.pem
+*.key
