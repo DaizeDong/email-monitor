@@ -32,7 +32,7 @@ import em_alert as alert     # noqa: E402
 import em_pool as pool       # noqa: E402
 
 RULES = {
-    "vip": ["recruiter@AcmeCorp.com", "leasing@ExampleResidence.com"],
+    "vip": ["recruiter@example-employer.com", "leasing@example-property.com"],
     "permanent_noise": ["promo@*.shop"],
     "sender_priority_overrides": {},
     "l1_threshold_default": 0.6,

@@ -1,7 +1,7 @@
 {
   "name": "email-monitor",
   "version": "0.1.0",
-  "description": "Auto-monitor Gmail: classify new mail by importance, Discord-alert important ones, archive, draft concise replies, track tasks, daily summary.",
+  "description": "Use when you want unattended Gmail triage on this machine: a heartbeat tick incrementally watches one or more inboxes over read-only IMAP (UID + UIDVALIDITY watermark, BODY.PEEK, X-GM-MSGID dedupe), classifies each new message by acted-on importance via a three-tier gate (L0 rules / L1 cheap scoring / L2 LLM hook), pushes a redacted ASCII-only Discord alert for URGENT/ACTION mail, archives NOISE through the existing label tool, tracks the resulting affairs in the shared schedule-reminder task pool with deadline normalization (NY to UTC, DST-correct), drafts concise compliance-checked replies as review-only Gmail drafts (never auto-sent), and emits a daily digest. Reuses the on-machine IMAP toolchain, reminder base, and Discord relay rather than rebuilding any store, scheduler, or notifier; app passwords stay in DPAPI and mail bodies never leave the local session. Route bulk relabeling to the raw gmail-imap-label tool, generic non-mail reminders to schedule-reminder, and actual sending to the user by hand.",
   "author": {
     "name": "DaizeDong"
   },

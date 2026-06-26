@@ -115,6 +115,23 @@ def compute_thread_key(message_id, references, in_reply_to, gm_thrid=None):
     return "ref:%s" % (message_id or "unknown")
 
 
+# ---------- seen-set bounding (pure, unit-testable) ----------
+
+def bound_seen(seen, cap=50000):
+    """Keep the NEWEST `cap` X-GM-MSGIDs, dropping the oldest.
+
+    X-GM-MSGID is a monotonically-increasing 64-bit integer per account, so the
+    numerically-largest ids are the newest. The previous `sorted(seen)[-cap:]` sorted
+    LEXICOGRAPHICALLY, which for unequal-length integers drops the wrong elements
+    (e.g. "1000" < "2" as strings) and could discard a recent id -> re-report a mail
+    already processed. Sort by integer value; non-numeric ids sort oldest (least).
+    """
+    def keyf(m):
+        s = str(m)
+        return (1, int(s)) if s.isdigit() else (0, 0)
+    return sorted(seen, key=keyf)[-cap:] if cap and cap > 0 else sorted(seen, key=keyf)
+
+
 # ---------- state persistence ----------
 
 def load_state(path):
@@ -211,7 +228,7 @@ def main():
         fresh.append(r)
 
     state["cursors"][key] = new_cursor
-    state["seen_gm_msgids"] = sorted(seen)[-50000:]  # bound the set
+    state["seen_gm_msgids"] = bound_seen(seen, 50000)  # keep newest by msgid value
     save_state(a.state, state)
 
     for r in fresh:
