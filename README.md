@@ -57,6 +57,29 @@ python skills/email-monitor/scripts/em_tick.py --config <path>/registry.json --d
 pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 ```
 
+## Config
+
+`email-monitor` is **config-bearing** — it reads per-user/per-machine state (account topology,
+classification rules, draft templates, DPAPI credential pointers) from a **separate, private**
+companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
+
+- **Mount (discovery order):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
+  `~/.email-monitor-config/` → `~/.config/email-monitor-config/`, then `<dir>/registry.json`. An
+  explicit `--config <registry.json>` overrides discovery; if nothing resolves the skill says so and
+  exits cleanly (no crash).
+- **First time:**
+  ```bash
+  python scripts/init_config.py    # stamp a conformant skeleton (deterministic)
+  export EMAIL_MONITOR_CONFIG=~/.email-monitor-config    # or pass --out <dir> to init
+  # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
+  python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
+  ```
+- **Switch configs (hot-swap):** point the env var at another config dir — configs are
+  self-contained (`cred_path` uses `~`), no other change:
+  `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`.
+- **Secrets:** Mode B — `secrets/*` is gitignored and never enters git; real app passwords stay in
+  DPAPI (`~/.local/secrets/gmail-<slug>.cred`), the repo keeps only pointers. Back up out-of-band.
+
 ## How to invoke
 
 "monitor my email", "triage my inbox", "draft a reply to this", "what important mail came in",

@@ -15,16 +15,23 @@ desktop.ini
 #     credentials slip into this public repo; HIGH audit fix, round 2) ---
 .env
 *.env
+!*.env.template
 .credentials.json
 config.json
 secrets.json
-secrets*
+# Secrets gate (config-spec E6 / Mode B) — never commit a local/test companion config's secrets,
+# but keep the committed scaffolding (README / .gitkeep / env template).
+secrets/*
+!secrets/README.md
+!secrets/.gitkeep
+!secrets/_accounts.env.template
 *.secret
 *.secrets
 *.cred
 *.creds
 registry.json
 rules/merged.json
+rules/_personal_layer.json
 resolve-cred.ps1
 .pw-auth/
 *.token
