@@ -9,13 +9,13 @@ Never read the `.db`, build SQL, or import internals.
 | base field | source |
 |---|---|
 | `kind` | needs my action (reply/do/promise) -> `task`; fait-accompli to attend/know (appointment/charge/invite) -> `event` |
-| `title` | derived ASCII imperative one-liner (e.g. `Reply to mail re AcmeCorp start date`), never the raw subject, never the body |
+| `title` | derived ASCII imperative one-liner (e.g. `Reply to mail re Acme start date`), never the raw subject, never the body |
 | `description` | 0-3 lines context (who/what/constraint), minimal PII, never the full body |
 | `due_at` | normalized deadline (UTC RFC3339) from `em_duenorm.py` |
 | `state` | `pending`->`doing`(drafted)->`done`(replied/closed)->`blocked`(awaiting other)->`cancelled` |
 | `priority` | iCal 0-9 (1 highest) = urgency x importance (URGENT=2, ACTION=4, FYI=7) |
 | `tags` | `acct:<slug>` + semantic label + affair type |
-| `project` | controlled dotted vocab (`Life.ExampleResidence`, `Work.AMD`, ...) from the config repo |
+| `project` | controlled dotted vocab (`Life.Home`, `Work.Acme`, ...) from the config repo |
 | `source` | always `email-monitor` |
 
 ## ext namespace `x_email_monitor_*` (deep-merged, additive-only)

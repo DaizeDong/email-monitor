@@ -36,7 +36,7 @@ alert") guards against silent stalls.
 
     {
       "schema_version": 1, "machine": "<hostname>",
-      "accounts": [{"slug": "user1", "user": "user1@gmail.com", "role": "primary",
+      "accounts": [{"slug": "user1", "user": "user1@example.com", "role": "primary",
                     "imap_host": "imap.gmail.com", "cred_path": "~/.local/secrets/gmail-user1.cred",
                     "monitored_folders": ["INBOX"], "label_scheme": "EM/{priority}/{semantic}"}],
       "daily_summary": {"enabled": true, "local_time": "08:00", "tz": "America/New_York"}
