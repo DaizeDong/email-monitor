@@ -62,7 +62,7 @@ def test_clean_dealer_draft_passes():
     (CLEAN_DEALER.replace("price only.", "price only — thanks."), "em-dash"),
     (CLEAN_DEALER.replace("one number", "“one number”"), "curly"),
     (CLEAN_DEALER.replace("Hi Sam,", "# Hi Sam,"), "markdown"),
-    (CLEAN_DEALER.replace("Daize Dong", "Daize Dong, Rutgers"), "signature"),
+    (CLEAN_DEALER.replace("Daize Dong", "Daize Dong, Inc"), "signature"),
     (CLEAN_DEALER.replace("financing", "financing (café)"), "non-ascii"),
     (CLEAN_DEALER + "\nSent via smtplib.sendmail()", "send"),
 ])

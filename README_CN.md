@@ -59,7 +59,7 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 ## 示例输出
 
 脱敏 Discord 提醒 `[URGENT] user1: payment failed account`、池事务
-`Reply to mail re AcmeCorp start date`、以及结尾恰为 `Daize Dong` 的纯净 Gmail 草稿。
+`Reply to mail re Acme start date`、以及结尾恰为 `Daize Dong` 的纯净 Gmail 草稿。
 
 ## 局限
 

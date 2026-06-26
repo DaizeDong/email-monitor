@@ -65,7 +65,7 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 ## Example output
 
 A redacted Discord ping `[URGENT] user1: payment failed account`, a pool task
-`Reply to mail re AcmeCorp start date`, and a clean Gmail draft ending exactly `Daize Dong`.
+`Reply to mail re Acme start date`, and a clean Gmail draft ending exactly `Daize Dong`.
 
 ## Limitations
 
