@@ -34,6 +34,25 @@ import em_watch     # noqa: E402
 LOG = os.path.expanduser(os.path.join("~", ".claude", "logs", "email-monitor.log"))
 LABEL_TOOL = os.path.expanduser(os.path.join("~", ".claude", "scripts", "gmail-imap-label.py"))
 
+ENV_VAR = "EMAIL_MONITOR_CONFIG"
+
+
+def resolve_config(explicit):
+    """Locate registry.json (config-spec E2). Explicit --config wins; else discovery dir order:
+    $EMAIL_MONITOR_CONFIG -> $EMAIL_MONITOR_CONFIG_DIR -> ~/.email-monitor-config/ ->
+    ~/.config/email-monitor-config/, then <dir>/registry.json. Returns a path or None (no crash)."""
+    if explicit:
+        return os.path.abspath(os.path.expanduser(explicit))
+    for v in (ENV_VAR, ENV_VAR + "_DIR"):
+        val = os.environ.get(v)
+        if val:
+            return os.path.join(os.path.abspath(os.path.expanduser(val)), "registry.json")
+    for d in (os.path.expanduser("~/.email-monitor-config"),
+              os.path.expanduser("~/.config/email-monitor-config")):
+        if os.path.isdir(d):
+            return os.path.join(d, "registry.json")
+    return None
+
 
 def log(msg):
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
@@ -171,7 +190,9 @@ def derive_title(priority, label, subject):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="path to registry.json (companion config)")
+    ap.add_argument("--config", default=None, help="path to registry.json (companion config). "
+                    "If omitted, resolved via $EMAIL_MONITOR_CONFIG -> _DIR -> "
+                    "~/.email-monitor-config/ -> ~/.config/email-monitor-config/ (config-spec E2).")
     ap.add_argument("--rules", help="merged rules JSON (global + personal). default: alongside config")
     ap.add_argument("--db", default=None)
     ap.add_argument("--reminder", default=em_pool.default_reminder_path())
@@ -181,6 +202,14 @@ def main():
     ap.add_argument("--summary", default=os.path.join(HERE, "em_summary.py"))
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
+
+    a.config = resolve_config(a.config)
+    if not a.config or not os.path.isfile(a.config):
+        msg = ("[email-monitor] no config found. Set %s=<dir> (with registry.json), pass "
+               "--config <registry.json>, or run scripts/init_config.py." % ENV_VAR)
+        log(msg)
+        print(msg)
+        return 2
 
     with open(a.config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
