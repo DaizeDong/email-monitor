@@ -40,10 +40,25 @@ def build_title(priority, account, subject):
     return "[%s] %s: %s" % (pr, acct or "mail", redact_subject(subject))
 
 
+def _egress_cmd():
+    """Pluggable Agent Center egress: prefer schedule-reminder's unified relay (#mail stream) when
+    the base is installed; fall back to the Big Brother relay (send.py) so this skill works
+    standalone. The message text is appended by the caller as the final arg (works for both
+    `relay.py send --stream mail --text <msg>` and `send.py <msg>`)."""
+    rp = os.environ.get("SCHEDULE_RELAY_PY") or os.path.expanduser(
+        "the base reminder relay")
+    if os.path.isfile(rp):
+        return [sys.executable, rp, "send", "--stream", "mail", "--text"]
+    if os.path.isfile(RELAY):
+        return [sys.executable, RELAY]
+    return None
+
+
 def send(message):
-    if not os.path.isfile(RELAY):
-        raise RuntimeError("relay not found: %s" % RELAY)
-    p = subprocess.run([sys.executable, RELAY, message],
+    cmd = _egress_cmd()
+    if not cmd:
+        raise RuntimeError("no relay available (neither schedule-reminder relay.py nor %s)" % RELAY)
+    p = subprocess.run(cmd + [message],
                        capture_output=True, text=True, encoding="utf-8")
     if p.returncode != 0:
         raise RuntimeError("relay failed: %s" % (p.stderr or p.stdout))
