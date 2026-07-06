@@ -31,9 +31,12 @@ $args = "`"$tick`" --config `"$Config`""
 if ($ResolveCred) { $args += " --resolve-cred `"$ResolveCred`"" }
 
 $action  = New-ScheduledTaskAction -Execute $Pythonw -Argument $args -WorkingDirectory $here
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-             -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
-             -RepetitionDuration (New-TimeSpan -Days 1)
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date)
+# INDEFINITE repetition: a fixed RepetitionDuration (e.g. -Days 1) silently STOPS the heartbeat after
+# that window — fatal for a monitor. Borrow a duration-less Repetition (interval only) so it repeats
+# forever until the task is removed.
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) `
+             -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)).Repetition
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
              -MultipleInstances IgnoreNew `
              -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `

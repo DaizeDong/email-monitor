@@ -1,8 +1,8 @@
 # Roadmap
 
-Current: **v0.1.2**
+Current: **v0.1.3**
 
-## v0.1.2 (current)
+## v0.1.3 (current)
 - Incremental IMAP watch (UID + UIDVALIDITY watermark, read-only BODY.PEEK, X-GM-MSGID dedupe).
 - Three-tier classifier (L0 rules / L1 cheap scoring deterministic; L2 LLM hook).
 - Redacted Discord alerts + archive via existing label tool.

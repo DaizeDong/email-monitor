@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.3] - 2026-07-06
+### Fixed
+- **register-task.ps1 heartbeat no longer dies after 24h.** The trigger used a fixed
+  `RepetitionDuration (New-TimeSpan -Days 1)`, which silently stops the EmailMonitorTick heartbeat
+  after one day — fatal for a monitor. Now uses a duration-less (indefinite) repetition so it runs
+  every `IntervalMinutes` forever until removed. (Found while deploying the skill live.)
+
 ## [0.1.2] - 2026-07-06
 ### Security (privacy red line)
 - **Redactor hardening.** The outbound alert/summary title redactor leaked non-numeric PII — an
