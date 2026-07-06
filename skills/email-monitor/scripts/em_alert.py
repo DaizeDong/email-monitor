@@ -6,7 +6,11 @@ Privacy red line: only a REDACTED title is pushed. NEVER the body, the raw subje
 due/overdue reminders go through the base `tick` instead (no double-notify).
 
 The redacted title is an ASCII imperative line: "[URGENT] <account> <short-subject-token>".
-Subject is reduced to a coarse token (first <=6 ASCII words, stripped of digits/order-ids).
+Subject is reduced to a coarse keyword hint (first <=6 ASCII words) with these stripped:
+digits/number runs, order/case/ticket/invoice IDs, **email addresses**, **URLs/domains**, and
+**any alphanumeric token containing a digit** (secrets/tokens/tracking/confirmation codes) plus
+over-long blobs. This is a best-effort hint — the body and raw subject are NEVER egressed; residual
+generic words / proper nouns may remain (they reach only the user's own private Discord).
 
 Usage:
   python em_alert.py --priority URGENT --account user1 --subject "Payment failed on order 12345"
@@ -22,15 +26,32 @@ import sys
 RELAY = os.path.expanduser(os.path.join("~", ".claude", "discord_relay", "send.py"))
 ORDER_RE = re.compile(r"\b(?:order|case|ticket|inv|invoice|#)\s*[:#]?\s*\w*\d\w*", re.I)
 NUM_RE = re.compile(r"\b\d[\d,.\-]*\b")
+EMAIL_RE = re.compile(r"\S+@\S+")
+URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b\S+\.(?:com|net|org|io|ai|co|edu|gov|us|uk|dev|app)\b", re.I)
+_MAX_TOKEN = 18  # tokens longer than this are treated as opaque ids/blobs and dropped
 
 
 def redact_subject(subject, max_words=6):
+    """Coarse, best-effort keyword hint — never the body/raw subject. Strips emails, URLs/domains,
+    order/number IDs, and any alphanumeric token containing a digit (secrets/tokens/tracking/
+    confirmation codes) or over-long blob. Residual pure-alpha words (incl. proper nouns) may remain;
+    they reach only the user's own private Discord."""
     s = subject or ""
-    s = ORDER_RE.sub("", s)
-    s = NUM_RE.sub("", s)
+    s = EMAIL_RE.sub(" ", s)                             # email addresses (before punct strip)
+    s = URL_RE.sub(" ", s)                               # urls / bare domains
+    s = ORDER_RE.sub(" ", s)                             # order/case/ticket/inv ids
+    s = NUM_RE.sub(" ", s)                               # digit-leading number runs
     s = "".join(ch for ch in s if ord(ch) < 128)        # ASCII only
     s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)               # drop punctuation
-    words = [w for w in s.split() if w]
+    words = []
+    for w in s.split():
+        if not w:
+            continue
+        if any(c.isdigit() for c in w):                 # any token with a digit = secret/id/code
+            continue
+        if len(w) > _MAX_TOKEN:                          # opaque blob / base64
+            continue
+        words.append(w)
     return " ".join(words[:max_words]) if words else "new mail"
 
 
