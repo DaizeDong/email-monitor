@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.2] - 2026-07-06
+### Security (privacy red line)
+- **Redactor hardening.** The outbound alert/summary title redactor leaked non-numeric PII — an
+  adversarial review pushed emails, alphanumeric secrets (`hunter2`), and order/tracking/confirmation
+  codes (`ABC123XYZ`, `1Z999AA10123456784`, `ABX7Q9`) through to Discord. `redact_subject` now also
+  strips email addresses, URLs/bare domains, and **any alphanumeric token containing a digit** plus
+  over-long blobs (shared by the immediate alert and the daily summary, so both egress points are
+  fixed). Residual pure-alpha words / proper nouns may remain (they reach only the user's own private
+  Discord); docstring/README claim corrected to be accurate. +9 regression tests
+  (`tests/test_redaction_hardening.py`). Body and raw subject are still never egressed.
+
 ## [0.1.1] - 2026-06-27
 ### Changed
 - **Discord egress unified through Agent Center relay**: pushes now prefer schedule-reminder's
