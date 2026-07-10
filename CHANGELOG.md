@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.5] - 2026-07-09
+### Changed
+- **Classification is now agent-first: every new mail is judged by `claude -p` (headless).** The old
+  path could only ever escalate on a literal urgent keyword in the *subject* — VIP promotion, thread-
+  reply detection and the L1 behavioral signals were never wired in the live deployment, so real mail
+  effectively never alerted. New `em_agent_classify.py` feeds sender + subject + full body to a Claude
+  model (default `claude-opus-4-8`) and returns the response-obligation tier. Configured via a
+  `classifier` block in `registry.json` (`mode`, `model`, `timeout_sec`, `owner`).
+- **`em_watch` now fetches the full message body** (`BODY.PEEK[]`, still no `\Seen`) and extracts
+  best-effort plain text (prefers `text/plain`, strips `text/html`, skips attachments, caps at 50k
+  chars) so the classifier has real content to read. Header-only fetches still yield `body=""`.
+### Reliability
+- Agent classification is **fail-safe, never fail-silent**: if the `claude` CLI is missing, times out,
+  or returns unparseable output, the tick logs it and falls back to the deterministic `em_classify`
+  heuristic instead of going dark. All child processes keep `CREATE_NO_WINDOW` (no popup windows).
+
 ## [0.1.4] - 2026-07-09
 ### Fixed
 - **No more console-window flashing every tick (Windows).** Under the Task Scheduler the tick runs
