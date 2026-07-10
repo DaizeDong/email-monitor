@@ -24,6 +24,10 @@ import os
 import subprocess
 import sys
 
+# On Windows, child console apps (powershell, python) flash a console window even
+# when the parent runs under pythonw. CREATE_NO_WINDOW keeps every tick invisible.
+_NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_classify  # noqa: E402
@@ -80,7 +84,7 @@ def resolve_app_pw(resolve_cred, cred_path):
         return os.environ.get("GMAIL_APP_PW")  # test path
     p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                         "-File", resolve_cred, "-CredPath", os.path.expanduser(cred_path)],
-                       capture_output=True, text=True, encoding="utf-8")
+                       capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
     if p.returncode != 0:
         raise RuntimeError("resolve-cred failed (rc=%d)" % p.returncode)
     return (p.stdout or "").strip()
@@ -101,7 +105,7 @@ def archive(user, gm_msgid, label, dry):
             "--add", label, "--archive"]
     if dry:
         args.append("--dry")
-    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
+    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
     if p.returncode != 0:
         log("ACCOUNT %s: archive FAILED (rc=%d) msgid=%s" % (user, p.returncode, gm_msgid))
         return False
@@ -249,7 +253,7 @@ def main():
                 if not a.dry:
                     subprocess.run([sys.executable, a.summary, "--config", a.config,
                                     "--reminder", a.reminder] + (["--db", a.db] if a.db else []),
-                                   capture_output=True, text=True, encoding="utf-8")
+                                   capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
     except Exception as e:
         log("daily-summary check failed: %s" % e)
 
