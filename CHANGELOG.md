@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.4] - 2026-07-09
+### Fixed
+- **No more console-window flashing every tick (Windows).** Under the Task Scheduler the tick runs
+  via `pythonw` (windowless), but each child process — `powershell` (resolve-cred, once per account),
+  the label/archive tool, and the daily-summary worker — still popped a visible console window. All
+  child `subprocess.run` calls now pass `CREATE_NO_WINDOW` on Windows, so a 3-account tick no longer
+  flashes 3 PowerShell windows every 5 minutes. Same fix applied to `em_alert.py`'s relay call.
+
 ## [0.1.3] - 2026-07-06
 ### Fixed
 - **register-task.ps1 heartbeat no longer dies after 24h.** The trigger used a fixed

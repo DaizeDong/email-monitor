@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 
+_NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 RELAY = os.path.expanduser(os.path.join("~", ".claude", "discord_relay", "send.py"))
 ORDER_RE = re.compile(r"\b(?:order|case|ticket|inv|invoice|#)\s*[:#]?\s*\w*\d\w*", re.I)
 NUM_RE = re.compile(r"\b\d[\d,.\-]*\b")
@@ -80,7 +81,7 @@ def send(message):
     if not cmd:
         raise RuntimeError("no relay available (neither schedule-reminder relay.py nor %s)" % RELAY)
     p = subprocess.run(cmd + [message],
-                       capture_output=True, text=True, encoding="utf-8")
+                       capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
     if p.returncode != 0:
         raise RuntimeError("relay failed: %s" % (p.stderr or p.stdout))
     return True
