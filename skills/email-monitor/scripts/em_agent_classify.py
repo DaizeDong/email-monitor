@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""email-monitor agent classifier — hand each new mail to `claude -p` (headless) for a judgment.
+"""email-monitor agent classifier — judge each new mail with a background LLM, cheapest first.
 
-This replaces the keyword/heuristic pipeline (em_classify) as the primary path: instead of scoring
-offline signals, we feed sender + subject + full body to a Claude model and let it decide the
-response-obligation tier. The model reads the mail the way a person would.
+Instead of scoring offline signals, we feed sender + subject + full body to a model and let it decide
+the response-obligation tier the way a person would. Providers are tried in a cost-ordered CHAIN and
+the first one that returns a parseable verdict wins:
 
-  priority : URGENT | ACTION | FYI | NOISE   (same axis as em_classify; only URGENT/ACTION alert)
-  label    : short semantic tag (bill, calendar, security, personal, newsletter, ...)
+  1. codex   -- OpenAI Codex CLI (`codex exec`), our least-used quota -> effectively spare capacity
+  2. cc      -- Claude Code headless via the hosted gateway (hosted inference)
+  3. claude  -- plain Claude Code headless (direct Anthropic, full price) -> last resort
 
-Design notes:
-  - Prompt fed on STDIN (bodies are large; keeps argv clean and avoids Windows cmdline limits).
-  - `--output-format json` returns an envelope {type:"result", result:"<model text>", ...}; the
-    model text is itself our JSON verdict. We parse both layers defensively.
-  - Never raises: any failure (missing binary, timeout, unparseable output) returns None so the
-    caller can fall back to the deterministic em_classify heuristic. Fail-safe, never fail-silent.
-  - No secrets on argv; body is only sent to the model via the local `claude` CLI (cc gateway).
+  priority : URGENT | ACTION | FYI | NOISE   (only URGENT/ACTION alert)
+  label    : short semantic tag
+
+Design:
+  - Prompt fed on STDIN (bodies are large; keeps argv clean, dodges Windows cmdline limits).
+  - Absolute binary paths (a scheduled task runs with a minimal PATH); `.cmd` launched via `cmd /c`.
+  - codex writes its final message with `-o <file>` (clean, no reasoning preamble); cc/claude use
+    `--output-format json` and we unwrap the `result` field.
+  - Never raises: any provider failure (missing binary, timeout, unparseable output) is skipped and
+    the next provider is tried; if all fail, returns None so the caller falls back to em_classify.
 Stdlib only.
 """
 import json
@@ -23,25 +27,112 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 VALID = ("URGENT", "ACTION", "FYI", "NOISE")
-BODY_CHARS = 12000  # trim body handed to the model (subject/sender are always full)
+BODY_CHARS = 12000            # trim body handed to the model (subject/sender stay full)
+DEFAULT_CHAIN = ["codex", "cc", "claude"]
+
+_CODEX_PATHS = [os.path.expanduser(r"~/AppData/Roaming/npm/codex.cmd"),
+                os.path.expanduser(r"~/AppData/Roaming/npm/codex")]
+_CC_PATHS = [os.path.expanduser(r"~/.local/bin/cc.cmd"), os.path.expanduser(r"~/.local/bin/cc")]
+_CLAUDE_PATHS = [os.path.expanduser(r"~/.local/bin/claude.exe"),
+                 os.path.expanduser(r"~/.local/bin/claude")]
 
 
-def find_claude(explicit=None):
-    """Locate the claude CLI. Explicit path wins; then PATH; then the known per-user install."""
+def _find(name, explicit, candidates):
     if explicit and os.path.isfile(explicit):
         return explicit
-    found = shutil.which("claude")
+    found = shutil.which(name)
     if found:
         return found
-    for c in (os.path.expanduser(r"~/.local/bin/claude.exe"),
-              os.path.expanduser(r"~/.local/bin/claude")):
+    for c in candidates:
         if os.path.isfile(c):
             return c
     return None
 
+
+def _argv(binp, *args):
+    """Prefix a `.cmd`/`.bat` launcher with `cmd /c` on Windows; run other binaries directly."""
+    if sys.platform == "win32" and binp.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", binp, *args]
+    return [binp, *args]
+
+
+def _run(cmd, prompt, timeout):
+    try:
+        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                           encoding="utf-8", timeout=timeout, **_NOWINDOW)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if p.returncode != 0:
+        return None
+    return p.stdout or ""
+
+
+def _unwrap_envelope(stdout):
+    """Claude Code `--output-format json` wraps the model text in {result: "..."}; unwrap it."""
+    if not stdout:
+        return ""
+    try:
+        env = json.loads(stdout)
+        if isinstance(env, dict) and "result" in env:
+            return env.get("result") or ""
+    except Exception:
+        pass
+    return stdout
+
+
+# ---------- providers: each returns the model's raw verdict text, or None ----------
+
+def _call_codex(prompt, pcfg, timeout):
+    binp = _find("codex", pcfg.get("bin"), _CODEX_PATHS)
+    if not binp:
+        return None
+    model = pcfg.get("model", "gpt-5.5")
+    effort = pcfg.get("reasoning", "medium")
+    fd, outpath = tempfile.mkstemp(prefix="em_codex_", suffix=".txt")
+    os.close(fd)
+    try:
+        cmd = _argv(binp, "exec", "-m", model, "-c", "model_reasoning_effort=%s" % effort,
+                    "-s", "read-only", "--skip-git-repo-check", "--ephemeral",
+                    "--color", "never", "-o", outpath, "-")
+        if _run(cmd, prompt, timeout) is None:
+            return None
+        with open(outpath, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+    finally:
+        try:
+            os.remove(outpath)
+        except OSError:
+            pass
+
+
+def _call_cc(prompt, pcfg, timeout):
+    binp = _find("cc", pcfg.get("bin"), _CC_PATHS)
+    if not binp:
+        return None
+    model = pcfg.get("model", "claude-opus-4-8")
+    out = _run(_argv(binp, "-p", "--model", model, "--output-format", "json"), prompt, timeout)
+    return _unwrap_envelope(out) if out else None
+
+
+def _call_claude(prompt, pcfg, timeout):
+    binp = _find("claude", pcfg.get("bin"), _CLAUDE_PATHS)
+    if not binp:
+        return None
+    model = pcfg.get("model", "claude-opus-4-8")
+    out = _run(_argv(binp, "-p", "--model", model, "--output-format", "json"), prompt, timeout)
+    return _unwrap_envelope(out) if out else None
+
+
+_CALLERS = {"codex": _call_codex, "cc": _call_cc, "claude": _call_claude}
+
+
+# ---------- prompt + parsing (pure, unit-tested) ----------
 
 def build_prompt(msg, owner=""):
     frm = (msg.get("from") or "").strip()
@@ -76,8 +167,7 @@ def _extract_json(text):
     """Pull the first balanced {...} JSON object out of arbitrary model text."""
     if not text:
         return None
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip()).strip()
     try:
         return json.loads(text)
     except Exception:
@@ -99,7 +189,7 @@ def _extract_json(text):
     return None
 
 
-def _normalize(verdict, msg):
+def _normalize(verdict, msg, tier="agent"):
     if not isinstance(verdict, dict):
         return None
     pr = str(verdict.get("priority", "")).strip().upper()
@@ -111,45 +201,50 @@ def _normalize(verdict, msg):
         conf = round(float(verdict.get("confidence", 0)), 3)
     except (TypeError, ValueError):
         conf = None
-    return {"priority": pr, "label": label, "tier": "agent",
+    return {"priority": pr, "label": label, "tier": tier,
             "reason": reason or "agent", "score": conf, "needs_l2": False}
 
 
-def classify(msg, model="claude-opus-4-8", timeout=120, claude_bin=None, owner=""):
-    """Return a verdict dict {priority,label,tier,reason,score} or None on any failure."""
-    binp = find_claude(claude_bin)
-    if not binp:
-        return None
+def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
+    """Try providers in `chain` order; return the first parseable verdict, else None.
+
+    chain     : list of provider names, e.g. ["codex","cc","claude"] (cost-ordered).
+    providers : {name: {model, reasoning, bin}} per-provider settings.
+    log       : optional callable(str) for diagnostics (which provider answered / failed)."""
+    chain = chain or DEFAULT_CHAIN
+    providers = providers or {}
     prompt = build_prompt(msg, owner)
-    cmd = [binp, "-p", "--model", model, "--output-format", "json"]
-    try:
-        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                           encoding="utf-8", timeout=timeout, **_NOWINDOW)
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if p.returncode != 0 or not (p.stdout or "").strip():
-        return None
-    # First layer: the --output-format json envelope.
-    inner = p.stdout
-    try:
-        env = json.loads(p.stdout)
-        if isinstance(env, dict) and "result" in env:
-            inner = env.get("result") or ""
-    except Exception:
-        inner = p.stdout  # not an envelope; treat stdout as the verdict text
-    return _normalize(_extract_json(inner), msg)
+    for name in chain:
+        fn = _CALLERS.get(name)
+        if not fn:
+            continue
+        raw = fn(prompt, providers.get(name, {}), timeout)
+        verdict = _normalize(_extract_json(raw), msg, tier=name)
+        if verdict:
+            if log:
+                log("classify: %s -> %s (%s)" % (name, verdict["priority"], verdict["label"]))
+            return verdict
+        if log:
+            log("classify: %s unavailable/unparseable, trying next" % name)
+    return None
 
 
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="claude-opus-4-8")
-    ap.add_argument("--timeout", type=int, default=120)
-    ap.add_argument("--claude-bin", default=None)
+    ap.add_argument("--chain", default=",".join(DEFAULT_CHAIN),
+                    help="comma-separated provider order (default: codex,cc,claude)")
+    ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--owner", default="")
+    ap.add_argument("--codex-model", default="gpt-5.5")
+    ap.add_argument("--codex-reasoning", default="medium")
+    ap.add_argument("--claude-model", default="claude-opus-4-8")
     a = ap.parse_args()
+    providers = {"codex": {"model": a.codex_model, "reasoning": a.codex_reasoning},
+                 "cc": {"model": a.claude_model}, "claude": {"model": a.claude_model}}
     msg = json.loads(sys.stdin.read())
-    out = classify(msg, a.model, a.timeout, a.claude_bin, a.owner)
+    out = classify(msg, [c.strip() for c in a.chain.split(",") if c.strip()],
+                   providers, a.timeout, a.owner, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(out, ensure_ascii=False))
     return 0 if out else 1
 
