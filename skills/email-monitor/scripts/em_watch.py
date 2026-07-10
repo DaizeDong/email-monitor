@@ -33,6 +33,7 @@ from email.header import decode_header, make_header
 
 imaplib._MAXLINE = 1000000
 HEADER_FIELDS = "(FROM SUBJECT DATE MESSAGE-ID REFERENCES IN-REPLY-TO LIST-UNSUBSCRIBE)"
+BODY_MAX = 50000  # cap extracted body text (chars); guards a runaway newsletter from blowing tokens
 
 
 def dec(s):
@@ -40,6 +41,56 @@ def dec(s):
         return str(make_header(decode_header(s)))
     except Exception:
         return s or ""
+
+
+def _strip_html(html):
+    """Very small HTML->text: drop script/style, tags, collapse whitespace. No deps."""
+    html = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html)
+    html = re.sub(r"(?s)<[^>]+>", " ", html)
+    html = re.sub(r"&nbsp;", " ", html)
+    html = re.sub(r"&amp;", "&", html)
+    html = re.sub(r"&lt;", "<", html).replace("&gt;", ">").replace("&#39;", "'").replace("&quot;", '"')
+    return re.sub(r"[ \t]*\n[ \t]*", "\n", re.sub(r"[ \t]+", " ", html)).strip()
+
+
+def extract_body(msg):
+    """Best-effort plain-text body from a parsed email.message. Prefer text/plain; fall back to
+    stripped text/html. Skip attachments and non-text parts. Returns "" on failure. Capped."""
+    def payload_text(part):
+        try:
+            raw = part.get_payload(decode=True)
+            if raw is None:
+                return ""
+            charset = part.get_content_charset() or "utf-8"
+            return raw.decode(charset, errors="replace")
+        except Exception:
+            return ""
+    try:
+        plains, htmls = [], []
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.is_multipart():
+                    continue
+                disp = (part.get("Content-Disposition") or "").lower()
+                if "attachment" in disp:
+                    continue
+                ctype = (part.get_content_type() or "").lower()
+                if ctype == "text/plain":
+                    plains.append(payload_text(part))
+                elif ctype == "text/html":
+                    htmls.append(payload_text(part))
+        else:
+            ctype = (msg.get_content_type() or "").lower()
+            if ctype == "text/html":
+                htmls.append(payload_text(msg))
+            else:
+                plains.append(payload_text(msg))
+        text = "\n".join(t for t in plains if t).strip()
+        if not text:
+            text = "\n".join(_strip_html(h) for h in htmls if h).strip()
+        return text[:BODY_MAX]
+    except Exception:
+        return ""
 
 
 # ---------- pure, unit-testable core ----------
@@ -79,7 +130,8 @@ def advance_cursor(uidvalidity, uidnext, fetched_uids, prev_last_uid, rebaseline
 
 
 def parse_header_fetch(raw_headers, uid, gm_msgid=None, gm_thrid=None):
-    """Parse a fetched RFC822 header blob into the emitted record (no body, redaction-friendly)."""
+    """Parse a fetched RFC822 blob into the emitted record. If the blob carries a body (full-message
+    fetch), `body` holds best-effort plain text; header-only fetches yield body=""."""
     msg = email.message_from_bytes(raw_headers) if isinstance(raw_headers, bytes) \
         else email.message_from_string(raw_headers)
     frm = dec(msg.get("From", ""))
@@ -99,6 +151,7 @@ def parse_header_fetch(raw_headers, uid, gm_msgid=None, gm_thrid=None):
         "subject": subj,
         "date": date,
         "list_unsubscribe": lu,
+        "body": extract_body(msg),
     }
 
 
@@ -176,8 +229,9 @@ def run_once(user, folder, cursor, max_batch=400):
         lo, hi, rebaselined = compute_fetch_range(cursor, uidvalidity, uidnext, max_batch)
         records, fetched = [], []
         if lo is not None:
+            # Full message (PEEK -> no \\Seen) so the classifier agent gets the real body.
             typ, fd = M.uid("FETCH", "%d:%d" % (lo, hi),
-                            "(X-GM-MSGID X-GM-THRID BODY.PEEK[HEADER.FIELDS %s])" % HEADER_FIELDS)
+                            "(X-GM-MSGID X-GM-THRID BODY.PEEK[])")
             if typ == "OK":
                 for item in fd:
                     if not isinstance(item, tuple):

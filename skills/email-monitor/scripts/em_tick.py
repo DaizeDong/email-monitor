@@ -30,10 +30,11 @@ _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import em_classify  # noqa: E402
-import em_pool      # noqa: E402
-import em_alert     # noqa: E402
-import em_watch     # noqa: E402
+import em_classify        # noqa: E402
+import em_agent_classify  # noqa: E402
+import em_pool            # noqa: E402
+import em_alert           # noqa: E402
+import em_watch           # noqa: E402
 
 LOG = os.path.expanduser(os.path.join("~", ".claude", "logs", "email-monitor.log"))
 LABEL_TOOL = os.path.expanduser(os.path.join("~", ".claude", "scripts", "gmail-imap-label.py"))
@@ -112,7 +113,25 @@ def archive(user, gm_msgid, label, dry):
     return True
 
 
-def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry):
+def classify_record(msg, rules, agent_cfg):
+    """Primary path: agent judgment (claude -p). Fall back to the deterministic heuristic when the
+    agent is disabled or fails, so a tick never goes silent. Returns a classify-shaped dict."""
+    if agent_cfg.get("mode", "agent") == "agent":
+        cls = em_agent_classify.classify(
+            msg,
+            model=agent_cfg.get("model", "claude-opus-4-8"),
+            timeout=int(agent_cfg.get("timeout_sec", 120)),
+            claude_bin=agent_cfg.get("claude_bin"),
+            owner=agent_cfg.get("owner", ""))
+        if cls is not None:
+            return cls
+        log("ACCOUNT %s: agent classify unavailable/failed -> heuristic fallback"
+            % msg.get("account", "?"))
+    return em_classify.classify(msg, rules)
+
+
+def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None):
+    agent_cfg = agent_cfg or {}
     user = acct["user"]
     slug = acct.get("slug", user.split("@")[0])
     state_path = os.path.join(state_dir, "%s.state.json" % slug)
@@ -147,8 +166,9 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry):
             seen.add(gid)
         n_new += 1
         msg = {"from": r["from"], "subject": r["subject"], "account": slug,
-               "list_unsubscribe": r.get("list_unsubscribe", False)}
-        cls = em_classify.classify(msg, rules)
+               "list_unsubscribe": r.get("list_unsubscribe", False),
+               "body": r.get("body", "")}
+        cls = classify_record(msg, rules, agent_cfg)
         pr, label = cls["priority"], cls["label"]
         full_label = label_scheme.replace("{priority}", pr).replace("{semantic}", label)
 
@@ -233,12 +253,16 @@ def main():
             pass
         return 2
 
+    agent_cfg = cfg.get("classifier", {}) or {}
+    log("classifier mode=%s model=%s" % (agent_cfg.get("mode", "agent"),
+                                         agent_cfg.get("model", "claude-opus-4-8")))
+
     os.makedirs(a.state_dir, exist_ok=True)
     results = []
     for acct in cfg.get("accounts", []):
         try:
             results.append(process_account(acct, rules, a.reminder, a.db,
-                                           a.resolve_cred, a.state_dir, a.dry))
+                                           a.resolve_cred, a.state_dir, a.dry, agent_cfg))
         except Exception as e:
             log("ACCOUNT %s: UNCAUGHT %s" % (acct.get("slug", "?"), e))
             results.append({"account": acct.get("slug", "?"), "error": str(e)})
