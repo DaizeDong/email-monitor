@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.6] - 2026-07-09
+### Changed
+- **Classification now uses a cost-ordered provider chain, not a single model.** Each new mail is
+  judged by the first provider that returns a parseable verdict, tried cheapest-first:
+  `codex` (OpenAI Codex CLI `codex exec`, our least-used quota) -> `cc` (Claude Code headless via the
+  hosted gateway, hosted inference) -> `claude` (plain Claude Code, direct
+  Anthropic, full price). Configured via `classifier.chain` + `classifier.providers` in
+  `registry.json`; the answering provider is recorded in the verdict's `tier`.
+- Absolute binary paths + `.cmd`-via-`cmd /c` so it works under the minimal-PATH scheduled task.
+  codex uses `-o <file>` for a clean final message (read-only sandbox, `--ephemeral`,
+  `--skip-git-repo-check`); cc/claude use `--output-format json` (envelope unwrapped).
+### Reliability
+- Still fail-safe: a provider that is missing, times out, or returns garbage is skipped and the next
+  is tried; if every provider fails, the tick falls back to the deterministic `em_classify` heuristic
+  rather than going dark. All child processes keep `CREATE_NO_WINDOW`.
+
 ## [0.1.5] - 2026-07-09
 ### Changed
 - **Classification is now agent-first: every new mail is judged by `claude -p` (headless).** The old

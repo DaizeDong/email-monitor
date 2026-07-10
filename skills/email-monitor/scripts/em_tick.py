@@ -114,18 +114,20 @@ def archive(user, gm_msgid, label, dry):
 
 
 def classify_record(msg, rules, agent_cfg):
-    """Primary path: agent judgment (claude -p). Fall back to the deterministic heuristic when the
-    agent is disabled or fails, so a tick never goes silent. Returns a classify-shaped dict."""
+    """Primary path: agent judgment via a cost-ordered provider chain (codex -> cc -> claude). Fall
+    back to the deterministic heuristic when disabled or every provider fails, so a tick never goes
+    silent. Returns a classify-shaped dict."""
     if agent_cfg.get("mode", "agent") == "agent":
         cls = em_agent_classify.classify(
             msg,
-            model=agent_cfg.get("model", "claude-opus-4-8"),
-            timeout=int(agent_cfg.get("timeout_sec", 120)),
-            claude_bin=agent_cfg.get("claude_bin"),
-            owner=agent_cfg.get("owner", ""))
+            chain=agent_cfg.get("chain"),
+            providers=agent_cfg.get("providers"),
+            timeout=int(agent_cfg.get("timeout_sec", 180)),
+            owner=agent_cfg.get("owner", ""),
+            log=log)
         if cls is not None:
             return cls
-        log("ACCOUNT %s: agent classify unavailable/failed -> heuristic fallback"
+        log("ACCOUNT %s: all agent providers failed -> heuristic fallback"
             % msg.get("account", "?"))
     return em_classify.classify(msg, rules)
 
@@ -254,8 +256,8 @@ def main():
         return 2
 
     agent_cfg = cfg.get("classifier", {}) or {}
-    log("classifier mode=%s model=%s" % (agent_cfg.get("mode", "agent"),
-                                         agent_cfg.get("model", "claude-opus-4-8")))
+    log("classifier mode=%s chain=%s" % (agent_cfg.get("mode", "agent"),
+                                         ",".join(agent_cfg.get("chain") or em_agent_classify.DEFAULT_CHAIN)))
 
     os.makedirs(a.state_dir, exist_ok=True)
     results = []
