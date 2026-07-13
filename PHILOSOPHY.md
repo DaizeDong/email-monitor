@@ -29,7 +29,8 @@
 - **Root cause:** mail bodies are PII with a large blast radius. The public skill repo and any external
   API are the wrong custodians.
 - **Decision it produced:** bodies are processed only by the local session model; Discord gets a
-  redacted title; the public repo stores no body and no PII; app passwords live in DPAPI, never in git,
+  one-line gist of the mail (owner-approved 2026-07-13) with every credential -- code, token,
+  tracking number, URL, email address -- stripped, never the raw body; the public repo stores no PII; app passwords live in DPAPI, never in git,
   argv, or logs; the companion config repo is Mode B (secrets gitignored).
 
 ## P4 — Programs judge, models do not self-grade

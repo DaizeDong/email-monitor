@@ -7,7 +7,7 @@ digest and ships it via the Discord relay (ARCHITECTURE §2.6, anti-patterns #10
 marks today's event done and re-arms tomorrow's event by local-calendar recompute (NOT naive +24h,
 which drifts an hour across DST).
 
-Digest sections (plain ASCII): Important open / Awaiting reply / Drafted-pending-send /
+Digest sections (Chinese): 待处理 / 等对方回复 / 草稿已备等你点发送 / 今日新增
 New tasks today / Archived today (count). No bodies, no PII beyond local titles already in the pool.
 
 Usage:
@@ -54,7 +54,9 @@ def assemble(reminder, db):
         ext = it.get("ext") or {}
         st = it.get("state")
         pr = it.get("priority") or 9
-        title = "".join(ch for ch in (it.get("title") or "") if ord(ch) < 128)
+        # pool titles are Chinese now (em_tick.derive_title); the old ASCII-only filter here would
+        # strip every one of them back down to an empty row.
+        title = (it.get("title") or "").strip()
         if st == "blocked":
             awaiting.append(title)
         elif ext.get("x_email_monitor_draft_id"):
@@ -64,18 +66,18 @@ def assemble(reminder, db):
         if (it.get("created_at") or "").startswith(today):
             newtoday.append(title)
 
-    lines = ["Daily email summary (%s)" % today, ""]
+    lines = ["📬 每日邮件汇总 (%s)" % today, ""]
     def section(name, rows):
         lines.append("%s (%d):" % (name, len(rows)))
         for r in rows[:15]:
             lines.append("  - " + r)
         if not rows:
-            lines.append("  (none)")
+            lines.append("  (无)")
         lines.append("")
-    section("Important open", important)
-    section("Awaiting reply", awaiting)
-    section("Drafted, pending your Send", drafted)
-    section("New tasks today", newtoday)
+    section("待处理", important)
+    section("等对方回复", awaiting)
+    section("草稿已备,等你点发送", drafted)
+    section("今日新增", newtoday)
     return "\n".join(lines).rstrip()
 
 
@@ -113,7 +115,7 @@ def main():
     nxt = next_summary_utc(local_time)
     day = nxt[:10]
     em_pool._run(a.reminder, a.db, "add", [
-        "--kind", "event", "--title", "Daily email summary",
+        "--kind", "event", "--title", "每日邮件汇总",
         "--due-at", nxt, "--source", "email-monitor",
         "--idempotency-key", "email-monitor:daily-summary:%s" % day,
         "--ext", json.dumps({"x_email_monitor_kind": "daily-summary"}, ensure_ascii=False)])

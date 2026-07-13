@@ -31,35 +31,79 @@ EMAIL_RE = re.compile(r"\S+@\S+")
 URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b\S+\.(?:com|net|org|io|ai|co|edu|gov|us|uk|dev|app)\b", re.I)
 _MAX_TOKEN = 18  # tokens longer than this are treated as opaque ids/blobs and dropped
 
+# CJK + kana. The old redactor kept only ASCII, which deleted a Chinese subject *entirely* — every
+# Chinese mail therefore pushed the literal words "new mail". Chinese must survive redaction.
+CJK_RE = re.compile(r"[㐀-䶿一-鿿぀-ヿ]")
+PUNCT_RE = re.compile(r"[^A-Za-z0-9 㐀-䶿一-鿿぀-ヿ]+")
+# a run of >=6 alphanumerics containing BOTH a letter and a digit = code / token / tracking number.
+# Pure digits (2026, 400) and pure letters (COBRA) are kept — they carry the meaning.
+CODE_RE = re.compile(r"\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}\b")
+BLOB_RE = re.compile(r"[A-Za-z0-9]{19,}")
+
+PRIORITY_ZH = {"URGENT": "紧急", "ACTION": "待办", "FYI": "知悉", "NOISE": "噪音"}
+# NOTE: no account map lives here on purpose. The human-friendly label for a mailbox is PII, so it
+# comes from the private companion config (`accounts[].display_zh` in registry.json) and is passed
+# in as `account_label`. This repo is public and must never carry a real account name.
+
 
 def redact_subject(subject, max_words=6):
     """Coarse, best-effort keyword hint — never the body/raw subject. Strips emails, URLs/domains,
     order/number IDs, and any alphanumeric token containing a digit (secrets/tokens/tracking/
-    confirmation codes) or over-long blob. Residual pure-alpha words (incl. proper nouns) may remain;
-    they reach only the user's own private Discord."""
+    confirmation codes) or over-long blob. CJK is preserved (see CJK_RE). Residual pure-alpha words
+    (incl. proper nouns) may remain; they reach only the user's own private Discord.
+
+    This is now the FALLBACK path: when the classifier returns a `summary_zh`, `build_title` pushes
+    that instead (far more useful). This still runs whenever the agent produced no summary.
+    """
     s = subject or ""
     s = EMAIL_RE.sub(" ", s)                             # email addresses (before punct strip)
     s = URL_RE.sub(" ", s)                               # urls / bare domains
     s = ORDER_RE.sub(" ", s)                             # order/case/ticket/inv ids
     s = NUM_RE.sub(" ", s)                               # digit-leading number runs
-    s = "".join(ch for ch in s if ord(ch) < 128)        # ASCII only
-    s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)               # drop punctuation
+    s = "".join(ch for ch in s if ord(ch) < 128 or CJK_RE.match(ch))
+    s = PUNCT_RE.sub(" ", s)                             # drop punctuation, keep CJK + alnum
     words = []
     for w in s.split():
         if not w:
             continue
         if any(c.isdigit() for c in w):                 # any token with a digit = secret/id/code
             continue
+        if CJK_RE.search(w):                             # a CJK run has no spaces: keep it, bounded
+            words.append(w[:24])
+            continue
         if len(w) > _MAX_TOKEN:                          # opaque blob / base64
             continue
         words.append(w)
-    return " ".join(words[:max_words]) if words else "new mail"
+    return " ".join(words[:max_words]) if words else "新邮件"
 
 
-def build_title(priority, account, subject):
+def redact_push(text, limit=60):
+    """Strip secrets from the classifier's Chinese gist before it leaves the machine.
+
+    The owner explicitly opted in (2026-07-13) to having the *gist* pushed, because a redacted
+    keyword fragment was unreadable and real tasks were being missed. So names, dates and amounts
+    deliberately survive — they are the point. What must never ride along is a credential: an email
+    address, a URL, or a code/token/tracking number (a >=6 char run mixing letters and digits).
+    """
+    s = text or ""
+    s = EMAIL_RE.sub(" ", s)
+    s = URL_RE.sub(" ", s)
+    s = BLOB_RE.sub("(见邮箱)", s)      # long opaque blob / base64
+    s = CODE_RE.sub("(见邮箱)", s)      # verification code / token / tracking number
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    return s[:limit]
+
+
+def build_title(priority, account, subject, summary="", account_label=None):
+    """The one line the owner reads on their phone. Chinese frame + the agent's Chinese gist.
+
+    `account_label` is the owner's own name for the mailbox (registry.json `display_zh`); without
+    it we fall back to the raw slug, never to a hardcoded map (see the note above).
+    """
     pr = priority if priority in ("URGENT", "ACTION", "FYI", "NOISE") else "ACTION"
-    acct = "".join(ch for ch in (account or "") if ord(ch) < 128)
-    return "[%s] %s: %s" % (pr, acct or "mail", redact_subject(subject))
+    acct = (account_label or "".join(ch for ch in (account or "") if ord(ch) < 128) or "邮件")
+    gist = redact_push(summary) if (summary or "").strip() else redact_subject(subject)
+    return "【%s】%s:%s" % (PRIORITY_ZH[pr], acct, gist)
 
 
 def _egress_cmd():

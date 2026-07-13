@@ -18,7 +18,7 @@ or a new notifier. It reuses three substrates already on the machine -- the Gmai
 schedule-reminder task pool, and the Discord relay -- and adds only the missing seam: an incremental
 watch, a classify/draft orchestrator, and archive/summary hooks. Two lines are absolute: **a reply is
 never auto-sent** (drafts only; the user clicks Send), and **mail bodies never leave the local model**
-(Discord gets a redacted title; the public repo stores no PII).
+(Discord gets a one-line gist with credentials stripped, never the raw body; the public repo stores no PII).
 
 📜 **[Read the full design philosophy -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
@@ -87,8 +87,9 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 
 ## Example output
 
-A redacted Discord ping `[URGENT] user1: payment failed account`, a pool task
-`Reply to mail re Acme start date`, and a clean Gmail draft ending exactly `Daize Dong`.
+A Discord ping `【待办】personal:example-svc payment method incomplete, fix before next session`
+(the classifier's own one-line gist, with any code/token/URL replaced by `(见邮箱)`), a matching pool
+task, and a clean Gmail draft ending exactly `Daize Dong`.
 
 ## Limitations
 

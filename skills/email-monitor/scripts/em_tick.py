@@ -195,7 +195,10 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
 
         if pr in push_levels and not dry:
             try:
-                em_alert.send(em_alert.build_title(pr, slug, r["subject"]))
+                em_alert.send(em_alert.build_title(
+                    pr, slug, r["subject"],
+                    summary=cls.get("summary_zh", ""),
+                    account_label=acct.get("display_zh")))
                 n_alert += 1
             except Exception as e:
                 log("ACCOUNT %s: alert failed: %s" % (slug, e))
@@ -203,7 +206,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         # pool upsert for actionable; FYI logged but still tracked; NOISE archived silently
         if pr in ("URGENT", "ACTION", "FYI"):
             try:
-                title = derive_title(pr, label, r["subject"])
+                title = derive_title(pr, label, r["subject"], cls.get("summary_zh", ""))
                 em_pool.upsert(reminder, db, r["message_id"], r["thread_key"], title,
                                kind="task" if pr in ("URGENT", "ACTION") else "event",
                                priority=2 if pr == "URGENT" else (4 if pr == "ACTION" else 7),
@@ -229,12 +232,17 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             "kept": n_kept}
 
 
-def derive_title(priority, label, subject):
-    """ASCII imperative one-liner (no PII-heavy raw subject)."""
-    base = em_alert.redact_subject(subject, max_words=8)
-    verb = "Reply to" if priority in ("URGENT", "ACTION") else "Review"
-    title = "%s mail re %s" % (verb, base or "item")
-    return "".join(ch for ch in title if ord(ch) < 128)[:120]
+def derive_title(priority, label, subject, summary=""):
+    """The pool item's one-liner, in Chinese — this is what the daily summary lists.
+
+    Prefers the classifier's Chinese gist (`summary_zh`); falls back to the redacted subject when
+    no agent verdict was available. The old version forced ASCII, which erased Chinese subjects
+    entirely and produced useless rows like "Review mail re new mail".
+    """
+    gist = em_alert.redact_push(summary) if (summary or "").strip() else \
+        em_alert.redact_subject(subject, max_words=8)
+    verb = "需回复" if priority in ("URGENT", "ACTION") else "待查看"
+    return ("%s:%s" % (verb, gist or "邮件"))[:120]
 
 
 def main():
