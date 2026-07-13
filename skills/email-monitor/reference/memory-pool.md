@@ -9,7 +9,7 @@ Never read the `.db`, build SQL, or import internals.
 | base field | source |
 |---|---|
 | `kind` | needs my action (reply/do/promise) -> `task`; fait-accompli to attend/know (appointment/charge/invite) -> `event` |
-| `title` | derived Chinese one-liner from the classifier's `summary_zh` (e.g. `需回复:AcmeCorp 要你确认假期工时`), never the raw body; credentials stripped |
+| `title` | derived Chinese one-liner from the classifier's `summary_zh` (e.g. `需回复:雇主要你确认上月工时`), never the raw body; credentials stripped |
 | `description` | 0-3 lines context (who/what/constraint), minimal PII, never the full body |
 | `due_at` | normalized deadline (UTC RFC3339) from `em_duenorm.py` |
 | `state` | `pending`->`doing`(drafted)->`done`(replied/closed)->`blocked`(awaiting other)->`cancelled` |

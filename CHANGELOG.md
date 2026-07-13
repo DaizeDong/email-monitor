@@ -5,11 +5,11 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [0.1.9] - 2026-07-13
 ### Changed
 - **The push is now the classifier's Chinese gist, not a redacted keyword fragment.** The old line
-  read `[ACTION] user1: Getting ready to see Jane Doe` — indistinguishable from a routine
-  appointment reminder, while the *body* said the payment method was incomplete before the next
-  session. Tasks went unnoticed for days. The classifier already reads the full body, so it now also
+  read `[ACTION] user1: Getting ready for your upcoming session` — indistinguishable from a routine
+  reminder, while the *body* said the payment method was incomplete and would block the next
+  charge. Tasks went unnoticed for days. The classifier already reads the full body, so it now also
   returns `summary_zh` and the push becomes
-  `【待办】个人:example-svc支付方式未填,就诊前补`. Priority (`【紧急】/【待办】/【知悉】/【噪音】`), the mailbox
+  `【待办】个人:订阅支付方式未填,下次扣款前要补`. Priority (`【紧急】/【待办】/【知悉】/【噪音】`), the mailbox
   label, the pool titles (`需回复:` / `待查看:`) and the daily digest (`📬 每日邮件汇总` / `待处理` / …)
   are all Chinese.
 - **This deliberately relaxes the "never egress content" rule** (owner-approved 2026-07-13), so the

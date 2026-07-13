@@ -158,7 +158,7 @@ def build_prompt(msg, owner=""):
         "From: %s\nSubject: %s\nHas List-Unsubscribe header: %s\n\nBody:\n%s\n"
         "\nAlso write `summary_zh`: ONE short sentence in **Simplified Chinese** (<= 30 chars) that "
         "the owner reads on their phone instead of the subject line. Say WHAT it is and WHAT they "
-        "must do -- concrete and specific ('example-svc 治疗账户支付方式未填完,下次 session 前要补'), never "
+        "must do -- concrete and specific ('订阅账户支付方式未填完,下次扣款前要补'), never "
         "vague ('有一封重要邮件'). Keep a real deadline or amount if there is one. For NOISE, one word "
         "is enough ('推广'). NEVER put a verification code, password, token, API key or full URL in "
         "it -- say '(见邮箱)' instead.\n"
