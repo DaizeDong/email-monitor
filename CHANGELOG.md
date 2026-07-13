@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.8] - 2026-07-12
+### Fixed
+- **Archiving reported success while archiving nothing (phantom).** `archive()` built the Gmail
+  query as `rfc822msgid:<gm_msgid>` — but `gm_msgid` is Gmail's **internal X-GM-MSGID**, while the
+  `rfc822msgid:` operator only matches the **RFC822 `Message-ID` header**. The search therefore
+  matched zero messages; the label tool printed `nothing to do` and exited **0**; `archive()` read
+  rc=0 as success and the tick logged `archived=1`. Combined with 0.1.7's credential bug, the net
+  effect is that **this skill had never actually archived a single message** — confirmed against the
+  live mailbox, which contained 0 messages carrying any `EM/` label.
+  - `archive()` now takes the RFC822 `Message-ID` (strips `<>`), and **treats `matched 0` as a
+    failure**, so the `archived` counter can no longer lie about work it did not do.
+### Added
+- **`archive.enabled` switch in `registry.json` (default `true`, preserving documented behavior).**
+  With `false`, NOISE is still classified and tracked but is **never moved out of the INBOX** — for
+  owners who want to review every message themselves. The tick logs `archive=enabled|DISABLED`
+  every run and reports a `kept_in_inbox` counter, so "nothing is being archived" is never a
+  silent surprise.
+- +6 regression tests (`tests/test_archive_gating.py`): the query uses the RFC822 id, angle
+  brackets are stripped, `matched 0` is a failure, `matched 1` is a success, the disabled switch
+  never reaches `archive()`, and the absent key still defaults to enabled. Suite 149 -> 155.
+
 ## [0.1.7] - 2026-07-12
 ### Fixed
 - **NOISE archiving had been failing on every tick, silently, since the agent-first release.** The

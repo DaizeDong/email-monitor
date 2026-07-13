@@ -21,6 +21,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -91,21 +92,25 @@ def resolve_app_pw(resolve_cred, cred_path):
     return (p.stdout or "").strip()
 
 
-def archive(user, gm_msgid, label, dry, app_pw=None):
-    """Archive via the existing bulk tool: add label + de-inbox, selected by X-GM-MSGID.
+def archive(user, rfc_msgid, label, dry, app_pw=None):
+    """Archive via the existing bulk tool: add label + de-inbox, selected by RFC822 Message-ID.
+
+    `rfc_msgid` MUST be the RFC822 `Message-ID` header (`r["message_id"]`), not Gmail's internal
+    X-GM-MSGID (`r["gm_msgid"]`). Gmail's `rfc822msgid:` operator only matches the former; feeding
+    it an X-GM-MSGID matches zero messages, and the label tool then prints "nothing to do" and
+    exits 0 -- which used to be counted as a successful archive (a phantom).
 
     The label tool authenticates from GMAIL_APP_PW. That secret is injected into *this child's*
     environment only -- never left in os.environ, because the surrounding tick also spawns the
     classifier CLIs (codex/cc/claude) and the Gmail password must not leak into them.
 
-    Returns True only if the subprocess actually succeeded (returncode 0). A silent
-    archive failure must be visible to the caller so the NOISE counter does not lie
-    (reliability audit fix, round 2). In --dry the planned action is treated as a
-    no-op success.
+    Returns True only if the child exited 0 AND actually matched a message. Anything else is a
+    failure, so the NOISE counter can never lie. In --dry the planned action is a no-op success.
     """
-    if not gm_msgid:
+    if not rfc_msgid:
         return False
-    query = "rfc822msgid:%s" % gm_msgid  # gmail search by msgid; precise single-message select
+    mid = str(rfc_msgid).strip().strip("<>")
+    query = "rfc822msgid:%s" % mid  # gmail search by Message-ID; precise single-message select
     args = [sys.executable, LABEL_TOOL, "--user", user, "--query", query,
             "--add", label, "--archive"]
     if dry:
@@ -117,7 +122,11 @@ def archive(user, gm_msgid, label, dry, app_pw=None):
                        **_NOWINDOW)
     if p.returncode != 0:
         log("ACCOUNT %s: archive FAILED (rc=%d) msgid=%s err=%s"
-            % (user, p.returncode, gm_msgid, (p.stderr or p.stdout or "").strip()[:120]))
+            % (user, p.returncode, mid, (p.stderr or p.stdout or "").strip()[:120]))
+        return False
+    m = re.search(r"matched (\d+) messages", p.stdout or "")
+    if m and int(m.group(1)) == 0:
+        log("ACCOUNT %s: archive MATCHED 0 msgid=%s (not archived)" % (user, mid))
         return False
     return True
 
@@ -141,7 +150,8 @@ def classify_record(msg, rules, agent_cfg):
     return em_classify.classify(msg, rules)
 
 
-def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None):
+def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
+                    archive_enabled=True):
     agent_cfg = agent_cfg or {}
     user = acct["user"]
     slug = acct.get("slug", user.split("@")[0])
@@ -168,7 +178,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
     finally:
         os.environ.pop("GMAIL_APP_PW", None)
 
-    n_new = n_alert = n_archive = 0
+    n_new = n_alert = n_archive = n_kept = 0
     for r in records:
         gid = r.get("gm_msgid")
         if gid and gid in seen:
@@ -203,16 +213,20 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                                           "label": full_label, "priority_tier": cls["tier"]})
             except Exception as e:
                 log("ACCOUNT %s: pool upsert failed: %s" % (slug, e))
-        if pr == "NOISE":
-            if archive(user, gid, full_label, dry, app_pw=pw):
+        if pr == "NOISE" and archive_enabled:
+            # rfc822msgid: matches the RFC822 Message-ID header, NOT gm_msgid (X-GM-MSGID)
+            if archive(user, r.get("message_id"), full_label, dry, app_pw=pw):
                 n_archive += 1
+        elif pr == "NOISE":
+            n_kept += 1  # archiving off: NOISE stays in the INBOX for the owner to see
 
     state["cursors"][key] = new_cursor
     state["seen_gm_msgids"] = em_watch.bound_seen(seen, 50000)  # newest by msgid value
     em_watch.save_state(state_path, state)
-    log("ACCOUNT %s: new=%d alert=%d archived=%d cursor_uid=%d"
-        % (slug, n_new, n_alert, n_archive, new_cursor["last_uid"]))
-    return {"account": slug, "new": n_new, "alert": n_alert, "archived": n_archive}
+    log("ACCOUNT %s: new=%d alert=%d archived=%d kept_in_inbox=%d cursor_uid=%d"
+        % (slug, n_new, n_alert, n_archive, n_kept, new_cursor["last_uid"]))
+    return {"account": slug, "new": n_new, "alert": n_alert, "archived": n_archive,
+            "kept": n_kept}
 
 
 def derive_title(priority, label, subject):
@@ -268,12 +282,20 @@ def main():
     log("classifier mode=%s chain=%s" % (agent_cfg.get("mode", "agent"),
                                          ",".join(agent_cfg.get("chain") or em_agent_classify.DEFAULT_CHAIN)))
 
+    # Archiving is opt-out: when disabled, NOISE is still classified/labelled in the pool but the
+    # message is never moved out of the INBOX -- the owner reviews every mail themselves. Logged
+    # every tick so "nothing is being archived" is never a silent surprise.
+    archive_enabled = bool((cfg.get("archive", {}) or {}).get("enabled", True))
+    log("archive=%s" % ("enabled" if archive_enabled
+                        else "DISABLED (all mail stays in INBOX)"))
+
     os.makedirs(a.state_dir, exist_ok=True)
     results = []
     for acct in cfg.get("accounts", []):
         try:
             results.append(process_account(acct, rules, a.reminder, a.db,
-                                           a.resolve_cred, a.state_dir, a.dry, agent_cfg))
+                                           a.resolve_cred, a.state_dir, a.dry, agent_cfg,
+                                           archive_enabled=archive_enabled))
         except Exception as e:
             log("ACCOUNT %s: UNCAUGHT %s" % (acct.get("slug", "?"), e))
             results.append({"account": acct.get("slug", "?"), "error": str(e)})
