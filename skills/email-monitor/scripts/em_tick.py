@@ -91,8 +91,12 @@ def resolve_app_pw(resolve_cred, cred_path):
     return (p.stdout or "").strip()
 
 
-def archive(user, gm_msgid, label, dry):
+def archive(user, gm_msgid, label, dry, app_pw=None):
     """Archive via the existing bulk tool: add label + de-inbox, selected by X-GM-MSGID.
+
+    The label tool authenticates from GMAIL_APP_PW. That secret is injected into *this child's*
+    environment only -- never left in os.environ, because the surrounding tick also spawns the
+    classifier CLIs (codex/cc/claude) and the Gmail password must not leak into them.
 
     Returns True only if the subprocess actually succeeded (returncode 0). A silent
     archive failure must be visible to the caller so the NOISE counter does not lie
@@ -106,9 +110,14 @@ def archive(user, gm_msgid, label, dry):
             "--add", label, "--archive"]
     if dry:
         args.append("--dry")
-    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
+    env = dict(os.environ)
+    if app_pw:
+        env["GMAIL_APP_PW"] = app_pw
+    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", env=env,
+                       **_NOWINDOW)
     if p.returncode != 0:
-        log("ACCOUNT %s: archive FAILED (rc=%d) msgid=%s" % (user, p.returncode, gm_msgid))
+        log("ACCOUNT %s: archive FAILED (rc=%d) msgid=%s err=%s"
+            % (user, p.returncode, gm_msgid, (p.stderr or p.stdout or "").strip()[:120]))
         return False
     return True
 
@@ -195,7 +204,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             except Exception as e:
                 log("ACCOUNT %s: pool upsert failed: %s" % (slug, e))
         if pr == "NOISE":
-            if archive(user, gid, full_label, dry):
+            if archive(user, gid, full_label, dry, app_pw=pw):
                 n_archive += 1
 
     state["cursors"][key] = new_cursor
