@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.7] - 2026-07-12
+### Fixed
+- **NOISE archiving had been failing on every tick, silently, since the agent-first release.** The
+  bulk label tool (`gmail-imap-label.py`) authenticates from `GMAIL_APP_PW` and exits 2 without it.
+  The tick exported that variable only around the IMAP fetch and popped it in a `finally` **before**
+  the record loop — but archiving happens *inside* that loop, so every archive child ran with no
+  password and died with `rc=2 / ERROR no GMAIL_APP_PW`. `archive()` now takes the resolved
+  `app_pw` and injects it into **that child's env only**.
+  - The secret is deliberately **not** put back into `os.environ`: the same loop spawns the
+    classifier CLIs (codex / cc / claude), and leaking the Gmail app password into an LLM
+    subprocess's environment would be a genuine secret-egress bug.
+  - The archive-failure log line now includes the child's **stderr**. The old line printed only
+    `rc=2` with no reason, which is exactly why this stayed invisible for days.
+- +5 regression tests (`tests/test_archive_credentials.py`): the secret reaches the child, never
+  reaches `os.environ`, does not wipe the inherited env, is not fabricated when absent, and a
+  non-zero child still surfaces as `False` (never a silent success).
+
 ## [0.1.6] - 2026-07-09
 ### Changed
 - **Classification now uses a cost-ordered provider chain, not a single model.** Each new mail is
