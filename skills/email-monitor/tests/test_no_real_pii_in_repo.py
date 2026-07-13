@@ -53,6 +53,31 @@ PII_DENYLIST = [
     "main " + "street",            # real street
 ]
 
+
+def _private_denylist():
+    """Extra tokens supplied by the operator's PRIVATE companion config, if it is present.
+
+    A hardcoded list can only block what someone already thought of. It did not know the operator
+    used a particular therapy platform, so a real provider name and a `@m.<vendor>.co` message-id
+    reached this public repo through an example and a test fixture -- the scanner had nothing to
+    match. Operators can therefore add their own sensitive words to `pii_denylist` in the private
+    registry.json; those words never appear in this public repo (that is the whole point), so they
+    are read at runtime and simply skipped when the config is absent (CI, other machines).
+    """
+    for p in (os.environ.get("EMAIL_MONITOR_CONFIG"),
+              os.path.expanduser("~/.email-monitor-config/registry.json")):
+        if not p or not os.path.isfile(p):
+            continue
+        try:
+            import json
+            with open(p, "r", encoding="utf-8") as f:
+                extra = json.load(f).get("pii_denylist") or []
+            return [str(t).lower() for t in extra if str(t).strip()]
+        except Exception:
+            return []
+    return []
+
+
 # Files that MUST contain denylist literals because they ARE the scanners.
 SCANNER_FILES = {"test_no_real_pii_in_repo.py", "test_audit_round2.py"}
 
@@ -79,7 +104,7 @@ def test_no_real_pii_in_repo():
             text = open(path, encoding="utf-8").read().lower()
         except (UnicodeDecodeError, OSError):
             continue  # binary or unreadable; PII denylist is ASCII text
-        for tok in PII_DENYLIST:
+        for tok in PII_DENYLIST + _private_denylist():
             if tok.lower() in text:
                 leaks.append("%s in %s" % (tok, rel))
     assert not leaks, "real PII present in repo: %s" % leaks

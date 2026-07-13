@@ -87,7 +87,7 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 
 ## Example output
 
-A Discord ping `【待办】personal:example-svc payment method incomplete, fix before next session`
+A Discord ping `【待办】personal:payment method incomplete, fix before the next charge`
 (the classifier's own one-line gist, with any code/token/URL replaced by `(见邮箱)`), a matching pool
 task, and a clean Gmail draft ending exactly `Daize Dong`.
 

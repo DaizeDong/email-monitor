@@ -3,13 +3,13 @@
 
 The owner reads ONE line on their phone. It used to be a redacted English keyword fragment:
 
-    [ACTION] user1: Getting ready to see Jane Doe
+    [ACTION] user1: Getting ready for your upcoming session
 
-which reads like a harmless appointment reminder -- while the body actually said the payment method
-was incomplete before the next session. Real tasks were missed for days. It is now the classifier's
+which reads like a harmless reminder -- while the body actually said the payment method was
+incomplete and would block the next charge. Real tasks were missed for days. It is now the classifier's
 own Chinese gist (the classifier already reads the full body):
 
-    【待办】个人:example-svc支付方式未填,就诊前补
+    【待办】个人:订阅支付方式未填,下次扣款前要补
 
 That is a deliberate, owner-approved (2026-07-13) relaxation of the "never egress content" rule --
 so the guards below pin down exactly HOW MUCH may leave the machine:
@@ -93,8 +93,8 @@ def test_chinese_subject_still_drops_digits():
 
 def test_title_is_chinese_and_uses_config_label():
     t = em_alert.build_title("ACTION", "slug1", "whatever",
-                             summary="AcmeCorp 要你确认假期工时", account_label="学校")
-    assert t == "【待办】学校:AcmeCorp 要你确认假期工时"
+                             summary="雇主要你确认上月工时", account_label="工作")
+    assert t == "【待办】工作:雇主要你确认上月工时"
 
 
 def test_title_falls_back_to_slug_without_label():

@@ -80,7 +80,7 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 
 ## 示例输出
 
-Discord 提醒 `【待办】个人:example-svc支付方式未填,就诊前补`（分类器自己给出的一句中文摘要，
+Discord 提醒 `【待办】个人:订阅支付方式未填,下次扣款前要补`（分类器自己给出的一句中文摘要，
 验证码/token/链接一律替换为 `(见邮箱)`）、对应的池事务、以及结尾恰为 `Daize Dong` 的纯净 Gmail 草稿。
 
 ## 局限
