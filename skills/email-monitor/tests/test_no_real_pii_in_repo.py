@@ -41,8 +41,8 @@ def _repo_root():
 # Compared case-insensitively. Real private identifiers only.
 PII_DENYLIST = [
     "exampleemp" + "loyer",          # real employer
-    "the" + "ExampleResidence",         # real residence (property)
-    "ExampleResidence",                 # real residence (token)
+    "the" + "exampleresi" + "dence",    # real residence (property)
+    "exampleresi" + "dence",            # real residence (token)
     "<account>" + "2019",         # real Gmail account slug
     "exampleslug" + "two",     # real Gmail account slug
     "exampleslug" + "three",             # real Gmail account slug
@@ -57,12 +57,16 @@ PII_DENYLIST = [
 def _private_denylist():
     """Extra tokens supplied by the operator's PRIVATE companion config, if it is present.
 
-    A hardcoded list can only block what someone already thought of. It did not know the operator
-    used a particular therapy platform, so a real provider name and a `@m.<vendor>.co` message-id
-    reached this public repo through an example and a test fixture -- the scanner had nothing to
-    match. Operators can therefore add their own sensitive words to `pii_denylist` in the private
-    registry.json; those words never appear in this public repo (that is the whole point), so they
-    are read at runtime and simply skipped when the config is absent (CI, other machines).
+    A hardcoded list can only block what someone already thought of. It had no entry for a vendor
+    this operator happens to use, so a real contact name and a vendor message-id domain reached the
+    public repo through an example and a test fixture -- the scanner had nothing to match, and the
+    history had to be rewritten. Operators can therefore add their own sensitive words to
+    `pii_denylist` in the private registry.json; those words never appear in this public repo (that
+    is the whole point), so they are read at runtime and simply skipped when the config is absent
+    (CI, other machines).
+
+    Denylist entries here are written as split fragments (`"exampleresi" + "dence"`) on purpose: it stops
+    this scanner from matching itself, and it survives a history rewrite that replaces the literal.
     """
     for p in (os.environ.get("EMAIL_MONITOR_CONFIG"),
               os.path.expanduser("~/.email-monitor-config/registry.json")):

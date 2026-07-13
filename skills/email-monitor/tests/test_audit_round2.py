@@ -55,7 +55,9 @@ def test_secret_files_are_gitignored(relpath):
 
 # ---------- MEDIUM: no real PII in public fixtures ----------
 
-PII_DENYLIST = ["AcmeCorp", "ExampleResidence", "user1"]
+# split fragments on purpose: the scanner must not match itself, and the literals must survive a
+# history rewrite that replaces real identifiers with synthetic stand-ins.
+PII_DENYLIST = ["exampleemp" + "loyer", "the" + "exampleresi" + "dence", "<account>" + "2019"]
 
 
 def test_no_real_pii_in_public_fixtures():
