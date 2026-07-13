@@ -67,6 +67,7 @@ def test_clean_subject_survives():
 
 
 def test_build_title_format_and_no_leak():
+    """Format is Chinese now (v0.1.9); the no-leak guarantee is unchanged and is the point."""
     t = em_alert.build_title("URGENT", "user1", "Re: invoice from a@b.com code XY7Z9")
-    assert t.startswith("[URGENT] user1:")
+    assert t.startswith("【紧急】user1:")
     assert "@" not in t and "xy7z9" not in t.lower()

@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [0.1.9] - 2026-07-13
+### Changed
+- **The push is now the classifier's Chinese gist, not a redacted keyword fragment.** The old line
+  read `[ACTION] user1: Getting ready to see Jane Doe` — indistinguishable from a routine
+  appointment reminder, while the *body* said the payment method was incomplete before the next
+  session. Tasks went unnoticed for days. The classifier already reads the full body, so it now also
+  returns `summary_zh` and the push becomes
+  `【待办】个人:example-svc支付方式未填,就诊前补`. Priority (`【紧急】/【待办】/【知悉】/【噪音】`), the mailbox
+  label, the pool titles (`需回复:` / `待查看:`) and the daily digest (`📬 每日邮件汇总` / `待处理` / …)
+  are all Chinese.
+- **This deliberately relaxes the "never egress content" rule** (owner-approved 2026-07-13), so the
+  new `redact_push()` pins down exactly how much may leave the machine: an email address, URL, or
+  code/token/tracking number (a >=6 char run mixing letters and digits) is replaced with `(见邮箱)`,
+  while **dates, amounts and names survive** — stripping those is precisely what made the old line
+  useless. The mailbox's human label is PII and lives in the **private** companion config
+  (`accounts[].display_zh`); this repo hardcodes no account name (a regression test enforces it,
+  after an earlier draft of this change put the real slugs in `em_alert.py`).
+### Fixed
+- **A Chinese subject used to be erased entirely.** `redact_subject()` kept only ASCII, so every
+  Chinese mail pushed the literal string `new mail` (and `em_summary` re-applied the same filter to
+  pool titles). CJK now survives redaction; digits/secrets are still stripped.
+- +14 regression tests (`tests/test_chinese_push.py`). Suite 155 -> 169.
+
 ## [0.1.8] - 2026-07-12
 ### Fixed
 - **Archiving reported success while archiving nothing (phantom).** `archive()` built the Gmail

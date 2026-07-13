@@ -156,9 +156,15 @@ def build_prompt(msg, owner=""):
         "- NOISE: newsletters, promotions, social notifications, automated noise.\n"
         "\nEmail:\n"
         "From: %s\nSubject: %s\nHas List-Unsubscribe header: %s\n\nBody:\n%s\n"
+        "\nAlso write `summary_zh`: ONE short sentence in **Simplified Chinese** (<= 30 chars) that "
+        "the owner reads on their phone instead of the subject line. Say WHAT it is and WHAT they "
+        "must do -- concrete and specific ('example-svc 治疗账户支付方式未填完,下次 session 前要补'), never "
+        "vague ('有一封重要邮件'). Keep a real deadline or amount if there is one. For NOISE, one word "
+        "is enough ('推广'). NEVER put a verification code, password, token, API key or full URL in "
+        "it -- say '(见邮箱)' instead.\n"
         "\nReturn ONLY a compact JSON object, no prose, no code fence:\n"
         '{\"priority\":\"URGENT|ACTION|FYI|NOISE\",\"label\":\"<short semantic tag>\",'
-        '\"reason\":\"<=12 words\",\"confidence\":0.0}\n'
+        '\"summary_zh\":\"<=30 Chinese chars>\",\"reason\":\"<=12 words\",\"confidence\":0.0}\n'
         % (frm, subj, lu, body or "(empty)")
     )
 
@@ -197,11 +203,14 @@ def _normalize(verdict, msg, tier="agent"):
         return None
     label = str(verdict.get("label") or "notification").strip()[:40] or "notification"
     reason = str(verdict.get("reason") or "").strip()[:120]
+    # summary_zh is what the owner actually reads in the Discord push (see em_alert). It may be
+    # absent when a provider ignores the field -- callers must fall back to the redacted subject.
+    summary = str(verdict.get("summary_zh") or "").strip()[:60]
     try:
         conf = round(float(verdict.get("confidence", 0)), 3)
     except (TypeError, ValueError):
         conf = None
-    return {"priority": pr, "label": label, "tier": tier,
+    return {"priority": pr, "label": label, "tier": tier, "summary_zh": summary,
             "reason": reason or "agent", "score": conf, "needs_l2": False}
 
 

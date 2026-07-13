@@ -45,7 +45,8 @@ loop for user feedback.
 
 ## Alert + archive
 
-- **Alert** (`em_alert.py`): only URGENT/ACTION, only a **redacted title** via the Discord relay
+- **Alert** (`em_alert.py`): only URGENT/ACTION, a **Chinese one-line gist** (`summary_zh`) with every
+  credential stripped by `redact_push()`, via the Discord relay
   (numbers and order/case ids stripped, ASCII only). Never the body or raw subject.
 - **No double-notify**: immediate "new important mail" pings come from the watch; recurring due/overdue
   reminders come from the base `tick`. email-monitor never starts its own recurring notifier.

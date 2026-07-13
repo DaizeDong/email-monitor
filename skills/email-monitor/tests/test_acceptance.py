@@ -179,11 +179,12 @@ def test_thread_key_prefers_thrid_then_ref():
 
 # ---------- alert redaction ----------
 
-def test_alert_redacts_numbers_and_ascii():
+def test_alert_redacts_numbers():
+    """Titles are Chinese now (v0.1.9), so the old ASCII-only assertion is gone -- but numbers/IDs
+    must still never ride along in the fallback (no-summary) path."""
     t = alert.build_title("URGENT", "user1", "Payment failed on order 12345 for $99.50")
-    assert all(ord(c) < 128 for c in t)
     assert "12345" not in t and "99" not in t
-    assert t.startswith("[URGENT]")
+    assert t.startswith("【紧急】")
 
 
 # ---------- signal #3 + #7: base round-trip (real base; skip if absent) ----------
