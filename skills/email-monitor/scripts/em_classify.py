@@ -18,7 +18,7 @@ Safe-fail: when unsure default FYI (park it) not NOISE (silent swallow). FN:FP t
 Deterministic: same input -> same output (self-evolve signal #6). L0/L1 carry NO randomness.
 
 Usage:
-  echo '{"from":"a@b.com","subject":"x","list_unsubscribe":false}' | python em_classify.py \
+  echo '{"from":"a@example.com","subject":"x","list_unsubscribe":false}' | python em_classify.py \
       --rules rules.json [--json]
 Stdlib only.
 """

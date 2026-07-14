@@ -54,9 +54,9 @@ def test_normalize_defaults_label_and_bad_confidence():
 
 
 def test_build_prompt_contains_fields_and_json_contract():
-    p = ac.build_prompt({"from": "a@b.com", "subject": "Hello", "body": "world",
+    p = ac.build_prompt({"from": "a@example.com", "subject": "Hello", "body": "world",
                          "list_unsubscribe": True}, owner="Owner X")
-    assert "a@b.com" in p and "Hello" in p and "world" in p
+    assert "a@example.com" in p and "Hello" in p and "world" in p
     assert "Owner X" in p
     assert "List-Unsubscribe header: yes" in p
     assert '"priority"' in p and "URGENT|ACTION|FYI|NOISE" in p
@@ -64,20 +64,20 @@ def test_build_prompt_contains_fields_and_json_contract():
 
 def test_build_prompt_truncates_long_body():
     big = "x" * (ac.BODY_CHARS + 5000)
-    p = ac.build_prompt({"from": "a@b.com", "subject": "s", "body": big}, "")
+    p = ac.build_prompt({"from": "a@example.com", "subject": "s", "body": big}, "")
     assert "[truncated]" in p
     assert len(p) < len(big) + 2000
 
 
 def test_watch_extract_body_plaintext():
-    raw = ("From: a@b.com\r\nSubject: s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+    raw = ("From: a@example.com\r\nSubject: s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
            "Hello this is the body.\r\n")
     rec = em_watch.parse_header_fetch(raw, 1)
     assert rec["body"].strip() == "Hello this is the body."
 
 
 def test_watch_extract_body_html_stripped():
-    raw = ("From: a@b.com\r\nSubject: s\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+    raw = ("From: a@example.com\r\nSubject: s\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
            "<html><body><p>Hi <b>there</b></p><script>bad()</script></body></html>\r\n")
     rec = em_watch.parse_header_fetch(raw, 1)
     assert "Hi" in rec["body"] and "there" in rec["body"]
@@ -85,6 +85,6 @@ def test_watch_extract_body_html_stripped():
 
 
 def test_watch_header_only_fetch_yields_empty_body():
-    raw = "From: a@b.com\r\nSubject: s\r\n\r\n"
+    raw = "From: a@example.com\r\nSubject: s\r\n\r\n"
     rec = em_watch.parse_header_fetch(raw, 1)
     assert rec["body"] == ""

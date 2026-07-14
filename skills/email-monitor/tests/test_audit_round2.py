@@ -85,12 +85,12 @@ class _FakeProc:
 
 def test_archive_returns_false_on_subprocess_failure(monkeypatch):
     monkeypatch.setattr(tick.subprocess, "run", lambda *a, **k: _FakeProc(1))
-    assert tick.archive("u@x.com", "1234567890", "EM/NOISE/x", dry=False) is False
+    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False) is False
 
 
 def test_archive_returns_true_on_subprocess_success(monkeypatch):
     monkeypatch.setattr(tick.subprocess, "run", lambda *a, **k: _FakeProc(0))
-    assert tick.archive("u@x.com", "1234567890", "EM/NOISE/x", dry=False) is True
+    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False) is True
 
 
 def test_archive_noop_without_msgid(monkeypatch):
@@ -101,7 +101,7 @@ def test_archive_noop_without_msgid(monkeypatch):
         return _FakeProc(0)
 
     monkeypatch.setattr(tick.subprocess, "run", boom)
-    assert tick.archive("u@x.com", None, "EM/NOISE/x", dry=False) is False
+    assert tick.archive("u@example.com", None, "EM/NOISE/x", dry=False) is False
     assert called["n"] == 0  # never shells out without a precise msgid selector
 
 

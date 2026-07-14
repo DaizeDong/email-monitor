@@ -53,7 +53,7 @@ def test_tracking_number_stripped_from_gist():
 
 
 def test_url_and_email_stripped_from_gist():
-    out = em_alert.redact_push("点击 https://evil.example.com/reset ,或联系 boss@company.com")
+    out = em_alert.redact_push("点击 https://evil.example.com/reset ,或联系 boss@example-employer.com")
     assert "http" not in out and "@" not in out and "example" not in out
 
 

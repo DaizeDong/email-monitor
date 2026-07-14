@@ -19,7 +19,7 @@ The pure functions (compute_fetch_range, parse_header_fetch, advance_cursor) are
 fake IMAP so watermark logic is provable without a live server.
 
 Usage:
-  GMAIL_APP_PW=... python em_watch.py --user x@gmail.com --state state.json [--max-batch 400] [--json]
+  GMAIL_APP_PW=... python em_watch.py --user you@example.com --state state.json [--max-batch 400] [--json]
 Stdlib only.
 """
 import argparse
