@@ -104,14 +104,14 @@ def test_golden_classification():
 
 
 def test_l0_l1_deterministic():
-    msg = {"from": "x@y.com", "subject": "please confirm the order", "account": "user1",
+    msg = {"from": "x@example.com", "subject": "please confirm the order", "account": "user1",
            "signals": {"sender_interaction_rate": 0.5}}
     outs = {json.dumps(cls.classify(msg, RULES), sort_keys=True) for _ in range(10)}
     assert len(outs) == 1, "classifier not deterministic"
 
 
 def test_safe_fail_is_fyi_not_noise():
-    msg = {"from": "stranger@unknown.org", "subject": "hello there", "account": "user1"}
+    msg = {"from": "stranger@example.org", "subject": "hello there", "account": "user1"}
     out = cls.classify(msg, RULES)
     assert out["priority"] == "FYI"
 

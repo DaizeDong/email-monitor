@@ -1,8 +1,8 @@
 {"msg": {"from": "recruiter@example-employer.com", "subject": "Re: start date confirmation", "account": "user1"}, "expect_priority": "ACTION", "note": "VIP sender via personal layer"}
-{"msg": {"from": "billing@utility.com", "subject": "URGENT: payment failed, account will be suspended", "account": "user1"}, "expect_priority": "URGENT", "note": "urgent keyword in subject"}
-{"msg": {"from": "promo@shoes.shop", "subject": "50% off sale ends tonight, shop now", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "marketing + list-unsubscribe + noreply pattern"}
-{"msg": {"from": "no-reply@socialapp.com", "subject": "Someone liked your photo", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "social noreply list-unsub"}
+{"msg": {"from": "billing@example-utility.com", "subject": "URGENT: payment failed, account will be suspended", "account": "user1"}, "expect_priority": "URGENT", "note": "urgent keyword in subject"}
+{"msg": {"from": "promo@example-shoes.com", "subject": "50% off sale ends tonight, shop now", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "marketing + list-unsubscribe + noreply pattern"}
+{"msg": {"from": "no-reply@example-social.com", "subject": "Someone liked your photo", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "social noreply list-unsub"}
 {"msg": {"from": "leasing@example-property.com", "subject": "Please sign the renewal by Friday", "account": "user1"}, "expect_priority": "ACTION", "note": "VIP + action verb"}
-{"msg": {"from": "newsletter@medium.com", "subject": "Your weekly digest", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "newsletter marketing"}
-{"msg": {"from": "colleague@company.com", "subject": "quick question about the deck", "account": "user1"}, "expect_priority": "FYI", "note": "unknown sender, no strong signal -> safe FYI"}
-{"msg": {"from": "calendar@zoom.us", "subject": "Meeting invite: project sync tomorrow", "account": "user1"}, "expect_priority": "FYI", "note": "calendar notification, unknown sender"}
+{"msg": {"from": "newsletter@example-blog.com", "subject": "Your weekly digest", "list_unsubscribe": true, "account": "user1"}, "expect_priority": "NOISE", "note": "newsletter marketing"}
+{"msg": {"from": "colleague@example-employer.com", "subject": "quick question about the deck", "account": "user1"}, "expect_priority": "FYI", "note": "unknown sender, no strong signal -> safe FYI"}
+{"msg": {"from": "calendar@example-meetings.com", "subject": "Meeting invite: project sync tomorrow", "account": "user1"}, "expect_priority": "FYI", "note": "calendar notification, unknown sender"}

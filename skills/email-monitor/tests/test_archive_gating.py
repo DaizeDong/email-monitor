@@ -55,25 +55,25 @@ def _query_of(seen):
 
 def test_archive_query_uses_rfc822_message_id(monkeypatch):
     seen = _capture(monkeypatch)
-    tick.archive("u@x.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p")
+    tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p")
     assert _query_of(seen) == "rfc822msgid:20260713022805.1203679ecdd25768@mail.example.com"
 
 
 def test_archive_query_strips_angle_brackets(monkeypatch):
     seen = _capture(monkeypatch)
-    tick.archive("u@x.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p")
+    tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p")
     assert "<" not in _query_of(seen) and ">" not in _query_of(seen)
 
 
 def test_matched_zero_is_a_failure_not_a_phantom_success(monkeypatch):
     """The label tool exits 0 on 'nothing to do'. That must NOT count as an archive."""
     _capture(monkeypatch, rc=0, stdout="matched 0 messages for query: rfc822msgid:%s" % GM_MSGID)
-    assert tick.archive("u@x.com", GM_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is False
+    assert tick.archive("u@example.com", GM_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is False
 
 
 def test_matched_one_is_a_real_success(monkeypatch):
     _capture(monkeypatch, rc=0, stdout="matched 1 messages for query: x")
-    assert tick.archive("u@x.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is True
+    assert tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is True
 
 
 # ---------- 2. the archive switch ----------
