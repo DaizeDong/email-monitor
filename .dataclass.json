@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Every path in a public skill repo belongs to exactly one class (Skill Repo Spec v1 s9).",
+    "TOOL    = code, SKILL.md, docs. Public, hand-written, contains no data.",
+    "FIXTURE = tests and examples. Public, but SYNTHETIC and produced by tools/make_fixtures.py.",
+    "DATA    = anything a real run produced. NEVER git-tracked; lives in the private companion",
+    "          config, resolved at runtime by tools/datadir.py. The repo ships only the schema.",
+    "Enforced by tools/data_boundary.py, in .githooks and in CI."
+  ],
+  "_fixture_note": [
+    "golden_classify.jsonl was the 2026-07 leak in THIS repo: it had been built by pasting real",
+    "emails out of the inbox the skill reads. It is now OUTPUT -- the case table in",
+    "tools/make_fixtures.py is the only input, and data_boundary.py requires byte-equality with a",
+    "fresh generator run. A real email cannot be regenerated, so pasting one back in fails loudly.",
+    "Never hand-edit the .jsonl. Edit CASES, run: python tools/make_fixtures.py"
+  ],
+  "data": [],
+  "_data_note": [
+    "Empty because this repo already points its output pipe outside itself, and nothing DATA-class",
+    "is git-tracked (audited 2026-07-13). For the record, every real-run artifact resolves to:",
+    "  ~/.email-monitor-config/registry.json   accounts, VIP rules, thresholds (gitignored too)",
+    "  ~/.local/state/email-monitor/state/          IMAP UID watermarks",
+    "  ~/.local/state/email-monitor/email-monitor.log        run log",
+    "  rules/merged.json, rules/_personal_layer.json   gitignored; built from the private layer",
+    "The registry SCHEMA ships as a generator (scripts/init_config.py, REGISTRY), not a static",
+    "*.example -- init_config.py writes it INTO the private dir, so the public repo stays an",
+    "uninitialized tool with no *.example to drift out of sync."
+  ],
+  "fixture": [
+    "skills/email-monitor/tests/golden_classify.jsonl"
+  ],
+  "_data_home": "~/.email-monitor-config/   (override with $EMAIL_MONITOR_CONFIG_DIR)"
+}

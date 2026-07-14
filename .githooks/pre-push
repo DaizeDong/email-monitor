@@ -17,16 +17,37 @@
 # Output is captured, not piped -- see the note in pre-commit. A verdict a caller's `| head` can
 # destroy is not a verdict. Belt and braces: the same scan runs in CI (.github/workflows/
 # pii-guard.yml), which no local shell quirk and no --no-verify can reach.
-GUARD="$(git rev-parse --show-toplevel)/tools/pii_guard.py"
-[ -f "$GUARD" ] || exit 0
+ROOT="$(git rev-parse --show-toplevel)"
+GUARD="$ROOT/tools/pii_guard.py"
+BOUNDARY="$ROOT/tools/data_boundary.py"
 PY=$(command -v python || command -v python3 || command -v py) || exit 0
 
-out=$("$PY" "$GUARD" --tree --history 2>&1)
-rc=$?
-[ "$rc" -eq 0 ] && exit 0
+if [ -f "$GUARD" ]; then
+    out=$("$PY" "$GUARD" --tree --history 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf '%s\n' "$out"
+        echo ""
+        echo "push BLOCKED by pii_guard: real private data would become public and permanent."
+        echo "A file edit is NOT a fix once it is in a commit -- rewrite the history (git filter-repo)."
+        exit 1
+    fi
+fi
 
-printf '%s\n' "$out"
-echo ""
-echo "push BLOCKED by pii_guard: real private data would become public and permanent."
-echo "A file edit is NOT a fix once it is in a commit -- rewrite the history (git filter-repo)."
-exit 1
+# The fixture gate, again, at the last local exit. pii_guard asks whether the content LOOKS private;
+# this asks whether it could have been GENERATED -- which is the only question a real record cannot
+# pass, however innocuous it looks. Cheap to re-run, and this is the last point where the fix is still
+# an edit rather than a history rewrite.
+if [ -f "$BOUNDARY" ]; then
+    out=$("$PY" "$BOUNDARY" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf '%s\n' "$out"
+        echo ""
+        echo "push BLOCKED by data_boundary: a fixture does not match its generator."
+        echo "Edit the CASE TABLE in tools/make_fixtures.py, then: python tools/make_fixtures.py"
+        exit 1
+    fi
+fi
+
+exit 0
