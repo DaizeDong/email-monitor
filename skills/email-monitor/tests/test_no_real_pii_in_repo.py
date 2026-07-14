@@ -1,20 +1,32 @@
 #!/usr/bin/env python3
-"""Round-2 PII补清 guard: scan the WHOLE git-tracked repo for real personal PII.
+"""Guard: no real personal PII anywhere in this PUBLIC repo -- tree AND history.
 
-The earlier round-2 MED fix only scrubbed two acceptance fixtures; docs/scripts still
-carried the operator's real Gmail account, employer, and residence tokens. This guard
-scans every git-tracked file (not just fixtures) against a denylist of real private
-identifiers and fails if any literal appears.
+WHAT THIS FILE USED TO BE
+-------------------------
+Until 2026-07-13 this guard carried a hardcoded `PII_DENYLIST` of eleven of the operator's real
+identifiers -- employer, residence, three Gmail slugs, phone (two spellings), street, city -- each
+split into fragments (`"str" + "eet"`) and labeled with a comment saying exactly what it was.
+The stated reason for the fragments was so that the guard "would not self-match".
 
-Program-judged, no model self-assessment. Pre-fix tree => FAIL; post-fix => PASS.
-Run: pytest -q (from skills/email-monitor/).
+That is the same mistake its sibling in demand-mining made, and it is worth naming plainly: the
+author saw that the values would trip the scanner and chose to hide them from it, rather than
+concluding that a public repo is no place for the values. A split-fragment dossier is still a
+dossier -- `"str" + "eet"` reassembles at import. The guard against the leak WAS the leak.
 
-Note on scope: the public byline "Daize Dong" / author "DaizeDong" is intentionally
-NOT on this denylist. It is the Spec-v1-required public authorship of this repo
-(MIT LICENSE (c) DaizeDong, plugin/author=DaizeDong) and the user-sanctioned,
-linter-enforced draft signature contract -- public authorship, not a leaked private
-identifier. Private operational identifiers (mail account, employer, residence,
-phone, street address) are what must never appear.
+    A DENYLIST OF REAL IDENTIFIERS *IS* A PII DOCUMENT.
+    A hardcoded one is also useless as a guard: it can only match what its author already thought
+    of, and the actual 2026-07 leak was a vendor nobody had listed.
+
+WHAT IT IS NOW
+--------------
+It delegates to `tools/pii_guard.py`, which is the inverse design:
+  * an ALLOWLIST -- anything real-world-shaped outside the declared synthetic namespace is a
+    finding, including identifiers nobody predicted; it needs no private data, so it runs in CI.
+  * an optional private denylist read at RUNTIME from `~/.pii-denylist.json`, OUTSIDE every repo,
+    never committed -- the operator's own sensitive words live in exactly one place, off in the
+    dark, and this file holds none of them.
+
+There are no needles here. There cannot be. That is the whole point.
 """
 import os
 import subprocess
@@ -23,95 +35,26 @@ import sys
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # skills/email-monitor/tests -> root
+GUARD = os.path.join(REPO_ROOT, "tools", "pii_guard.py")
 
 
-def _repo_root():
-    try:
-        out = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=HERE,
-                             capture_output=True, text=True)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except Exception:
-        pass
-    return None
+def test_pii_guard_is_vendored():
+    assert os.path.isfile(GUARD), (
+        "tools/pii_guard.py is missing; re-vendor it: "
+        "python the pii-guard installer"
+    )
 
 
-# Denylist tokens are assembled from fragments so this scanner file does not
-# self-match (defense-in-depth on top of the SCANNER_FILES exclusion below).
-# Compared case-insensitively. Real private identifiers only.
-PII_DENYLIST = [
-    "exampleemp" + "loyer",          # real employer
-    "the" + "exampleresi" + "dence",    # real residence (property)
-    "exampleresi" + "dence",            # real residence (token)
-    "<account>" + "2019",         # real Gmail account slug
-    "exampleslug" + "two",     # real Gmail account slug
-    "exampleslug" + "three",             # real Gmail account slug
-    "555-" + "0100",           # real phone (hyphenated)
-    "5550" + "100",            # real phone (joined)
-    "examplest" + "reet",        # real street
-    "examplec" + "ity",         # real city
-    "main " + "street",            # real street
-]
-
-
-def _private_denylist():
-    """Extra tokens supplied by the operator's PRIVATE companion config, if it is present.
-
-    A hardcoded list can only block what someone already thought of. It had no entry for a vendor
-    this operator happens to use, so a real contact name and a vendor message-id domain reached the
-    public repo through an example and a test fixture -- the scanner had nothing to match, and the
-    history had to be rewritten. Operators can therefore add their own sensitive words to
-    `pii_denylist` in the private registry.json; those words never appear in this public repo (that
-    is the whole point), so they are read at runtime and simply skipped when the config is absent
-    (CI, other machines).
-
-    Denylist entries here are written as split fragments (`"exampleresi" + "dence"`) on purpose: it stops
-    this scanner from matching itself, and it survives a history rewrite that replaces the literal.
-    """
-    for p in (os.environ.get("EMAIL_MONITOR_CONFIG"),
-              os.path.expanduser("~/.email-monitor-config/registry.json")):
-        if not p or not os.path.isfile(p):
-            continue
-        try:
-            import json
-            with open(p, "r", encoding="utf-8") as f:
-                extra = json.load(f).get("pii_denylist") or []
-            return [str(t).lower() for t in extra if str(t).strip()]
-        except Exception:
-            return []
-    return []
-
-
-# Files that MUST contain denylist literals because they ARE the scanners.
-SCANNER_FILES = {"test_no_real_pii_in_repo.py", "test_audit_round2.py"}
-
-# Binary/text extensions to skip on decode failure are handled by try/except.
-
-
-def _tracked_files(root):
-    out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True)
-    if out.returncode != 0:
-        return []
-    return [line for line in out.stdout.splitlines() if line.strip()]
-
-
-def test_no_real_pii_in_repo():
-    root = _repo_root()
-    if not root:
-        pytest.skip("not a git checkout")
-    leaks = []
-    for rel in _tracked_files(root):
-        if os.path.basename(rel) in SCANNER_FILES:
-            continue
-        path = os.path.join(root, rel)
-        try:
-            text = open(path, encoding="utf-8").read().lower()
-        except (UnicodeDecodeError, OSError):
-            continue  # binary or unreadable; PII denylist is ASCII text
-        for tok in PII_DENYLIST + _private_denylist():
-            if tok.lower() in text:
-                leaks.append("%s in %s" % (tok, rel))
-    assert not leaks, "real PII present in repo: %s" % leaks
+def test_no_real_pii_in_tree_or_history():
+    """Tree AND history. Once PII is in a commit, editing the file is not a fix -- the commit is
+    still on GitHub. That is how every leak in the 2026-07 audit survived being 'fixed'."""
+    if not os.path.isfile(GUARD):
+        pytest.skip("pii_guard not vendored")
+    p = subprocess.run([sys.executable, GUARD, "--tree", "--history"],
+                       cwd=REPO_ROOT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    assert p.returncode == 0, "pii_guard found real private data:\n" + (p.stdout or "") + (p.stderr or "")
 
 
 if __name__ == "__main__":

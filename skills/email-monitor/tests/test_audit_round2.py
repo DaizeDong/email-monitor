@@ -55,23 +55,24 @@ def test_secret_files_are_gitignored(relpath):
 
 # ---------- MEDIUM: no real PII in public fixtures ----------
 
-# split fragments on purpose: the scanner must not match itself, and the literals must survive a
-# history rewrite that replaces real identifiers with synthetic stand-ins.
-PII_DENYLIST = ["exampleemp" + "loyer", "the" + "exampleresi" + "dence", "<account>" + "2019"]
-
-
 def test_no_real_pii_in_public_fixtures():
-    targets = [os.path.join(HERE, "golden_classify.jsonl"),
-               os.path.join(HERE, "test_acceptance.py")]
-    leaks = []
-    for path in targets:
-        if not os.path.isfile(path):
-            continue
-        text = open(path, encoding="utf-8").read().lower()
-        for tok in PII_DENYLIST:
-            if tok in text:
-                leaks.append("%s in %s" % (tok, os.path.basename(path)))
-    assert not leaks, "real PII present in public fixtures: %s" % leaks
+    """Delegate to tools/pii_guard.py instead of hardcoding needles.
+
+    This test used to hold its own `PII_DENYLIST` of the operator's real employer, residence and
+    Gmail slug (split into fragments). That was a labeled dossier in a public repo -- the guard
+    against the leak WAS the leak, the same mistake documented in test_no_real_pii_in_repo.py.
+    pii_guard checks the whole tree against a synthetic-namespace ALLOWLIST plus the private
+    denylist read from OUTSIDE the repo, so nothing real needs to live here to make the check work.
+    """
+    root = _repo_root()
+    if not root:
+        pytest.skip("not a git checkout")
+    guard = os.path.join(root, "tools", "pii_guard.py")
+    if not os.path.isfile(guard):
+        pytest.skip("pii_guard not vendored")
+    p = subprocess.run([sys.executable, guard, "--tree"], cwd=root,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert p.returncode == 0, "pii_guard found real private data:\n" + (p.stdout or "") + (p.stderr or "")
 
 
 # ---------- LOW: archive() honors returncode ----------
