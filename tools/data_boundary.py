@@ -43,6 +43,10 @@ CHECKS
   2. every FIXTURE path is byte-identical to what tools/make_fixtures.py produces  (the copy-paste)
   3. every DATA path has a `<path>.example` schema in the repo (so the tool is usable uninitialized)
 
+`data_sealed` is a fourth, narrower declaration: a path that USED to hold real data, has been
+purged, and must stay dead. Checked like DATA in (1), exempt from (3) -- a dead path is not owed a
+schema; shipping one would advertise a path the tool no longer uses.
+
   python data_boundary.py [--repo .]     exit 0 clean / 1 violation
 Stdlib only.
 """
@@ -79,8 +83,16 @@ def tracked(root):
 
 
 def check_data_not_tracked(root, m, files, out):
-    """A DATA path in the index means the skill wrote the operator's real life into a public repo."""
-    for pat in m.get("data", []):
+    """A DATA path in the index means the skill wrote the operator's real life into a public repo.
+
+    `data_sealed` is the same rule for a path that is DEAD: it held real data once, the data has
+    been moved out and purged from history, and it must never come back. .gitignore already covers
+    it, but .gitignore is advisory -- `git add -f` walks straight through, and an agent that wants
+    a file tracked will find that flag. This makes the seal enforceable. It differs from `data`
+    only in that a dead path is not owed a schema: publishing one would advertise a path the tool
+    no longer uses.
+    """
+    for pat in m.get("data", []) + m.get("data_sealed", []):
         for rel in sorted(files):
             if rel == pat or rel.startswith(pat.rstrip("/") + "/"):
                 out.append(("DATA-TRACKED", rel,
@@ -166,8 +178,10 @@ def main():
     check_fixtures_are_generated(root, m, out)
 
     if not out:
-        print("data_boundary: clean (%d DATA paths absent, %d FIXTUREs generator-reproducible)"
-              % (len(m.get("data", [])), len(m.get("fixture", []))))
+        print("data_boundary: clean (%d DATA + %d sealed paths absent, %d FIXTUREs "
+              "generator-reproducible)"
+              % (len(m.get("data", [])), len(m.get("data_sealed", [])),
+                 len(m.get("fixture", []))))
         return 0
 
     print("data_boundary: %d violation(s) -- this repo is not an uninitialized tool\n" % len(out),
