@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [Unreleased]
+### Security
+- **Test fixtures are now generated, so a real email cannot get into one.** The 2026-07 leak in this
+  repo was `tests/golden_classify.jsonl`: it had been built by pasting real messages out of the inbox
+  this skill reads. Scrubbing it fixed that one file and nothing else — the next agent writing a
+  classifier test is still holding a real inbox, and copy-paste is still the cheapest move available.
+  The fixture is now **output**: `tools/make_fixtures.py` holds a case table (which classifier path is
+  pinned, and why) and emits the `.jsonl`; `tools/data_boundary.py` requires the committed file to be
+  byte-identical to a fresh generator run. **A real record cannot be regenerated**, so pasting one in
+  fails at commit time — even when it looks perfectly innocuous, which is the case a content scanner
+  structurally cannot catch. Workflow: edit `CASES`, run `python tools/make_fixtures.py`, commit both.
+  Never hand-edit the `.jsonl`.
+- **The boundary is enforced, not just available.** `data_boundary.py` now runs in `.githooks/pre-commit`,
+  `.githooks/pre-push` and CI, alongside `pii_guard`. The two answer different questions: `pii_guard`
+  asks *"does this look private?"* (a sieve — it catches what it was taught); `data_boundary` asks
+  *"could this have been generated?"* (provenance — no real record passes, however harmless it reads).
+- Vendored `tools/datadir.py` + `tools/data_boundary.py` and declared `.dataclass.json`. Audit found
+  **no** DATA-class file tracked here: the registry, IMAP watermarks and logs already resolve outside
+  the repo (`~/.email-monitor-config/`, `~/.local/state/`), so `"data"` is legitimately empty.
+
 ## [0.1.9] - 2026-07-13
 ### Changed
 - **The push is now the classifier's Chinese gist, not a redacted keyword fragment.** The old line

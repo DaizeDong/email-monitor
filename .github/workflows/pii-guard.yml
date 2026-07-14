@@ -38,3 +38,11 @@ jobs:
 
       - name: Scan working tree + full history
         run: python tools/pii_guard.py --tree --history
+
+      # The other half, and the half a scanner structurally cannot do. pii_guard asks "does this look
+      # private?" -- so it only catches what it has been taught. data_boundary asks "could this have
+      # been produced by tools/make_fixtures.py?", and a real email cannot be, however innocuous it
+      # looks. The 2026-07 leak in this repo was a golden fixture pasted from a real inbox; this is
+      # the check that would have caught it on the first push.
+      - name: Data boundary (fixtures are generator-reproducible; no real-run output tracked)
+        run: python tools/data_boundary.py
