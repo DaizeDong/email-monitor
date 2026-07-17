@@ -22,13 +22,13 @@ edit the CASE TABLE in tools/make_fixtures.py  ->  python tools/make_fixtures.py
 ```
 
 The reason is not tidiness. This skill reads a real inbox, and the 2026-07 audit found that the
-golden file had been built by pasting real emails out of it — real senders, a real person, a real
+golden file had been built by pasting real emails out of it, real senders, a real person, a real
 employer. That is not carelessness, it is the path of least resistance: anyone writing a classifier
 test needs a realistic message, and a real one is always within reach.
 
 So the fixture is required to be byte-identical to what `make_fixtures.py` emits, and
 `data_boundary.py` checks it at commit time. **A real email cannot be regenerated.** Paste one in and
-the gate fails immediately — even if it looks completely innocuous, which is precisely what a content
+the gate fails immediately, even if it looks completely innocuous, which is precisely what a content
 scanner cannot promise. Adding a case forces you to state which classifier path you are pinning and
 to invent the message rather than borrow it.
 

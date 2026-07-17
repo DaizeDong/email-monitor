@@ -31,12 +31,12 @@ EMAIL_RE = re.compile(r"\S+@\S+")
 URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b\S+\.(?:com|net|org|io|ai|co|edu|gov|us|uk|dev|app)\b", re.I)
 _MAX_TOKEN = 18  # tokens longer than this are treated as opaque ids/blobs and dropped
 
-# CJK + kana. The old redactor kept only ASCII, which deleted a Chinese subject *entirely* — every
+# CJK + kana. The old redactor kept only ASCII, which deleted a Chinese subject *entirely*, every
 # Chinese mail therefore pushed the literal words "new mail". Chinese must survive redaction.
 CJK_RE = re.compile(r"[㐀-䶿一-鿿぀-ヿ]")
 PUNCT_RE = re.compile(r"[^A-Za-z0-9 㐀-䶿一-鿿぀-ヿ]+")
 # a run of >=6 alphanumerics containing BOTH a letter and a digit = code / token / tracking number.
-# Pure digits (2026, 400) and pure letters (COBRA) are kept — they carry the meaning.
+# Pure digits (2026, 400) and pure letters (COBRA) are kept, they carry the meaning.
 CODE_RE = re.compile(r"\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}\b")
 BLOB_RE = re.compile(r"[A-Za-z0-9]{19,}")
 

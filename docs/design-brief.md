@@ -1,4 +1,4 @@
-# Design Brief — email-monitor
+# Design Brief, email-monitor
 
 > Produced by skill-smith Step 0 (research-first). Rationale is auditable. Full architecture:
 > CodesResearch/_skill-builds/02-email-monitor/ARCHITECTURE.md (7-thread parallel recon synthesis).
