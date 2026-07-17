@@ -3,7 +3,7 @@ name: email-monitor
 description: Auto-monitor Gmail: classify new mail by importance, Discord-alert important ones, archive, draft concise replies, track tasks, daily summary.
 ---
 
-# email-monitor — a thin orchestration skill for your inbox
+# email-monitor, a thin orchestration skill for your inbox
 
 > Governing principle (full text in `PHILOSOPHY.md`): **reuse, never rebuild; and a reply is never
 > auto-sent.** Three substrates already exist on this machine (IMAP read/write toolchain, the
@@ -34,7 +34,7 @@ description: Auto-monitor Gmail: classify new mail by importance, Discord-alert 
 6. **Heartbeat, not a bare IDLE daemon.** One short OS task per tick (`EmailMonitorTick`); IDLE is an
    optional accelerant only, always backed by the reconciliation heartbeat.
 
-## Workflow (thin — load the named reference shard only for the step you are on)
+## Workflow (thin, load the named reference shard only for the step you are on)
 
 | # | Step | Load | Code |
 |---|------|------|------|

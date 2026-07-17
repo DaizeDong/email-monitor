@@ -59,7 +59,7 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 
 ## Config
 
-`email-monitor` is **config-bearing** — it reads per-user/per-machine state (account topology,
+`email-monitor` is **config-bearing**, it reads per-user/per-machine state (account topology,
 classification rules, draft templates, DPAPI credential pointers) from a **separate, private**
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
@@ -74,10 +74,10 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
   # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
   python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
   ```
-- **Switch configs (hot-swap):** point the env var at another config dir — configs are
+- **Switch configs (hot-swap):** point the env var at another config dir, configs are
   self-contained (`cred_path` uses `~`), no other change:
   `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`.
-- **Secrets:** Mode B — `secrets/*` is gitignored and never enters git; real app passwords stay in
+- **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay in
   DPAPI (`~/.local/secrets/gmail-<slug>.cred`), the repo keeps only pointers. Back up out-of-band.
 
 ## How to invoke

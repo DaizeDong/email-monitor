@@ -1,4 +1,4 @@
-# Step 3 — Track the affair in the schedule-reminder pool
+# Step 3, Track the affair in the schedule-reminder pool
 
 email-monitor is the base's designated downstream #2. The personal-affairs memory pool **is** the
 schedule-reminder base. All access is `python reminder.py <verb> --json` via subprocess (`em_pool.py`).
@@ -26,7 +26,7 @@ Never read the `.db`, build SQL, or import internals.
 
 ## Pipeline per new mail
 
-1. Compute `thread_key`; **merge before create** — `em_pool.find_thread` hit -> advance the existing
+1. Compute `thread_key`; **merge before create**, `em_pool.find_thread` hit -> advance the existing
    item (merge ext, bump `msg_count`), never a new item (avoids affair explosion).
 2. Structured extraction (single-mail LLM -> strict JSON): `task_type / title (redacted imperative) /
    description / due (em_duenorm) / priority / project (snapped to controlled vocab) / tags`.
@@ -45,5 +45,5 @@ Gate 1 = `idempotency_key = email-monitor:<Message-ID>` (base UPSERT, same mail 
 `thread_key` semantic merge (advance within a thread, not a new item). Both are regression-tested
 (`test_message_id_idempotent_same_id`, `test_thread_merge_advances_not_duplicates`).
 
-Base DB lives at `the base reminder DB` (local NTFS only; never a sync drive — WAL +
+Base DB lives at `the base reminder DB` (local NTFS only; never a sync drive, WAL +
 sync corrupts). Backup via `sqlite3 VACUUM INTO`, never a raw copy of `.db/-wal/-shm`.

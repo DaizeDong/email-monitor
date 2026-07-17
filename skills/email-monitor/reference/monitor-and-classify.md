@@ -1,4 +1,4 @@
-# Steps 1-2 — Incremental watch, classify, alert, archive
+# Steps 1-2, Incremental watch, classify, alert, archive
 
 ## Incremental watch (`em_watch.py`)
 
@@ -22,7 +22,7 @@ carry all the watermark logic and are unit-tested with a fake IMAP (`tests/test_
 
 Credential: resolve the DPAPI `.cred` at runtime -> env `GMAIL_APP_PW` -> the watcher. Never argv.
 
-## Classify (`em_classify.py`) — three-tier hybrid
+## Classify (`em_classify.py`), three-tier hybrid
 
 Importance == **behavioral probability** (will it be acted on), not topic. High-recall cheap gate ->
 LLM only for the uncertain minority.

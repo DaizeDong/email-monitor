@@ -58,7 +58,7 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 
 ## 配置
 
-`email-monitor` 是**带 config 的 skill** —— 它从一个**独立、私有**的伴随 config 仓
+`email-monitor` 是**带 config 的 skill**, 它从一个**独立、私有**的伴随 config 仓
 (`email-monitor-config`)读取每用户/每机状态(账户拓扑、分类规则、草稿模板、DPAPI 口令指针)。
 完整规范见 **[CONFIG.md](CONFIG.md)**。
 
@@ -72,10 +72,10 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
   # 编辑 registry.json、把 app 口令录入 DPAPI(Mode B)、填 _personal_layer.json
   python scripts/verify_config.py   # doctor:逐项 PASS/FAIL,明确报缺什么
   ```
-- **切换 config(即插即用):** 把环境变量指向另一个 config 目录即可 —— config 自包含
+- **切换 config(即插即用):** 把环境变量指向另一个 config 目录即可, config 自包含
   (`cred_path` 用 `~`),无需任何别的改动:
   `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`。
-- **密钥:** Mode B —— `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
+- **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
   (`~/.local/secrets/gmail-<slug>.cred`),仓内只存指针。请用库外备份。
 
 ## 示例输出

@@ -1,4 +1,4 @@
-# Step 5 — Daily summary + deploy the heartbeat
+# Step 5, Daily summary + deploy the heartbeat
 
 ## Daily summary (due = signal, worker = content, decoupled)
 

@@ -6,23 +6,23 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ### Security
 - **Test fixtures are now generated, so a real email cannot get into one.** The 2026-07 leak in this
   repo was `tests/golden_classify.jsonl`: it had been built by pasting real messages out of the inbox
-  this skill reads. Scrubbing it fixed that one file and nothing else — the next agent writing a
+  this skill reads. Scrubbing it fixed that one file and nothing else, the next agent writing a
   classifier test is still holding a real inbox, and copy-paste is still the cheapest move available.
   The fixture is now **output**: `tools/make_fixtures.py` holds a case table (which classifier path is
   pinned, and why) and emits the `.jsonl`; `tools/data_boundary.py` requires the committed file to be
   byte-identical to a fresh generator run. **A real record cannot be regenerated**, so pasting one in
-  fails at commit time — even when it looks perfectly innocuous, which is the case a content scanner
+  fails at commit time, even when it looks perfectly innocuous, which is the case a content scanner
   structurally cannot catch. Workflow: edit `CASES`, run `python tools/make_fixtures.py`, commit both.
   Never hand-edit the `.jsonl`.
 - **The boundary is enforced, not just available.** `data_boundary.py` now runs in `.githooks/pre-commit`,
   `.githooks/pre-push` and CI, alongside `pii_guard`. The two answer different questions: `pii_guard`
-  asks *"does this look private?"* (a sieve — it catches what it was taught); `data_boundary` asks
-  *"could this have been generated?"* (provenance — no real record passes, however harmless it reads).
+  asks *"does this look private?"* (a sieve, it catches what it was taught); `data_boundary` asks
+  *"could this have been generated?"* (provenance, no real record passes, however harmless it reads).
 - Vendored `tools/datadir.py` + `tools/data_boundary.py` and declared `.dataclass.json`. Audit found
   **no** DATA-class file tracked here: the registry, IMAP watermarks and logs already resolve outside
   the repo (`~/.email-monitor-config/`, `~/.local/state/`), so `"data"` is legitimately empty.
 - **`.gitignore` is advisory; the seal is not.** `registry.json`, `config.json` and the `rules/`
-  personal layer (real accounts, real VIP senders — which are PII — and cred pointers) are now
+  personal layer (real accounts, real VIP senders, which are PII, and cred pointers) are now
   declared `data_sealed`. They have never been tracked in any commit, and this keeps it that way:
   `git add -f` walks straight through `.gitignore`, and an agent making a fresh clone "work out of
   the box" reaches for exactly that flag. Verified the seal blocks a forced add.
@@ -30,7 +30,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [0.1.9] - 2026-07-13
 ### Changed
 - **The push is now the classifier's Chinese gist, not a redacted keyword fragment.** The old line
-  read `[ACTION] user1: Getting ready for your upcoming session` — indistinguishable from a routine
+  read `[ACTION] user1: Getting ready for your upcoming session`, indistinguishable from a routine
   reminder, while the *body* said the payment method was incomplete and would block the next
   charge. Tasks went unnoticed for days. The classifier already reads the full body, so it now also
   returns `summary_zh` and the push becomes
@@ -40,7 +40,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - **This deliberately relaxes the "never egress content" rule** (owner-approved 2026-07-13), so the
   new `redact_push()` pins down exactly how much may leave the machine: an email address, URL, or
   code/token/tracking number (a >=6 char run mixing letters and digits) is replaced with `(见邮箱)`,
-  while **dates, amounts and names survive** — stripping those is precisely what made the old line
+  while **dates, amounts and names survive**, stripping those is precisely what made the old line
   useless. The mailbox's human label is PII and lives in the **private** companion config
   (`accounts[].display_zh`); this repo hardcodes no account name (a regression test enforces it,
   after an earlier draft of this change put the real slugs in `em_alert.py`).
@@ -53,17 +53,17 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [0.1.8] - 2026-07-12
 ### Fixed
 - **Archiving reported success while archiving nothing (phantom).** `archive()` built the Gmail
-  query as `rfc822msgid:<gm_msgid>` — but `gm_msgid` is Gmail's **internal X-GM-MSGID**, while the
+  query as `rfc822msgid:<gm_msgid>`, but `gm_msgid` is Gmail's **internal X-GM-MSGID**, while the
   `rfc822msgid:` operator only matches the **RFC822 `Message-ID` header**. The search therefore
   matched zero messages; the label tool printed `nothing to do` and exited **0**; `archive()` read
   rc=0 as success and the tick logged `archived=1`. Combined with 0.1.7's credential bug, the net
-  effect is that **this skill had never actually archived a single message** — confirmed against the
+  effect is that **this skill had never actually archived a single message**, confirmed against the
   live mailbox, which contained 0 messages carrying any `EM/` label.
   - `archive()` now takes the RFC822 `Message-ID` (strips `<>`), and **treats `matched 0` as a
     failure**, so the `archived` counter can no longer lie about work it did not do.
 ### Added
 - **`archive.enabled` switch in `registry.json` (default `true`, preserving documented behavior).**
-  With `false`, NOISE is still classified and tracked but is **never moved out of the INBOX** — for
+  With `false`, NOISE is still classified and tracked but is **never moved out of the INBOX**, for
   owners who want to review every message themselves. The tick logs `archive=enabled|DISABLED`
   every run and reports a `kept_in_inbox` counter, so "nothing is being archived" is never a
   silent surprise.
@@ -76,7 +76,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - **NOISE archiving had been failing on every tick, silently, since the agent-first release.** The
   bulk label tool (`gmail-imap-label.py`) authenticates from `GMAIL_APP_PW` and exits 2 without it.
   The tick exported that variable only around the IMAP fetch and popped it in a `finally` **before**
-  the record loop — but archiving happens *inside* that loop, so every archive child ran with no
+  the record loop, but archiving happens *inside* that loop, so every archive child ran with no
   password and died with `rc=2 / ERROR no GMAIL_APP_PW`. `archive()` now takes the resolved
   `app_pw` and injects it into **that child's env only**.
   - The secret is deliberately **not** put back into `os.environ`: the same loop spawns the
@@ -107,7 +107,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [0.1.5] - 2026-07-09
 ### Changed
 - **Classification is now agent-first: every new mail is judged by `claude -p` (headless).** The old
-  path could only ever escalate on a literal urgent keyword in the *subject* — VIP promotion, thread-
+  path could only ever escalate on a literal urgent keyword in the *subject*, VIP promotion, thread-
   reply detection and the L1 behavioral signals were never wired in the live deployment, so real mail
   effectively never alerted. New `em_agent_classify.py` feeds sender + subject + full body to a Claude
   model (default `claude-opus-4-8`) and returns the response-obligation tier. Configured via a
@@ -123,8 +123,8 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [0.1.4] - 2026-07-09
 ### Fixed
 - **No more console-window flashing every tick (Windows).** Under the Task Scheduler the tick runs
-  via `pythonw` (windowless), but each child process — `powershell` (resolve-cred, once per account),
-  the label/archive tool, and the daily-summary worker — still popped a visible console window. All
+  via `pythonw` (windowless), but each child process, `powershell` (resolve-cred, once per account),
+  the label/archive tool, and the daily-summary worker, still popped a visible console window. All
   child `subprocess.run` calls now pass `CREATE_NO_WINDOW` on Windows, so a 3-account tick no longer
   flashes 3 PowerShell windows every 5 minutes. Same fix applied to `em_alert.py`'s relay call.
 
@@ -132,12 +132,12 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ### Fixed
 - **register-task.ps1 heartbeat no longer dies after 24h.** The trigger used a fixed
   `RepetitionDuration (New-TimeSpan -Days 1)`, which silently stops the EmailMonitorTick heartbeat
-  after one day — fatal for a monitor. Now uses a duration-less (indefinite) repetition so it runs
+  after one day, fatal for a monitor. Now uses a duration-less (indefinite) repetition so it runs
   every `IntervalMinutes` forever until removed. (Found while deploying the skill live.)
 
 ## [0.1.2] - 2026-07-06
 ### Security (privacy red line)
-- **Redactor hardening.** The outbound alert/summary title redactor leaked non-numeric PII — an
+- **Redactor hardening.** The outbound alert/summary title redactor leaked non-numeric PII, an
   adversarial review pushed emails, alphanumeric secrets (`hunter2`), and order/tracking/confirmation
   codes (`ABC123XYZ`, `1Z999AA10123456784`, `ABX7Q9`) through to Discord. `redact_subject` now also
   strips email addresses, URLs/bare domains, and **any alphanumeric token containing a digit** plus
@@ -150,7 +150,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ### Changed
 - **Discord egress unified through Agent Center relay**: pushes now prefer schedule-reminder's
   `relay.py send --stream mail` (per-stream identity in the Agent Center server) when the base
-  is installed, and **fall back to the Big Brother relay (send.py) when it is not** — fully
+  is installed, and **fall back to the Big Brother relay (send.py) when it is not**, fully
   pluggable, no behaviour change when the base is absent. Existing env/arg overrides still win.
 
 ## [0.1.0] - 2026-06-25

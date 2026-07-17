@@ -1,31 +1,31 @@
-# email-monitor — Config
+# email-monitor, Config
 
 `email-monitor` is **config-bearing**: it reads per-user / per-machine state (account topology,
 classification rules, draft templates, and DPAPI credential pointers) from a **separate, private
 companion config repo** that you create and keep out of this public skill repo. Secrets never live
 here. This file is the authoritative config contract (config-spec E1).
 
-Operating mode: **Mode B** — the companion repo commits a zero-secret `registry.json`; real Gmail
+Operating mode: **Mode B**, the companion repo commits a zero-secret `registry.json`; real Gmail
 app passwords are stored machine-bound in DPAPI at `~/.local/secrets/gmail-<slug>.cred`, and the repo
 keeps only the `cred_path` pointer. `secrets/*`, `rules/merged.json`, `rules/_personal_layer.json`
 and `state/*` are gitignored.
 
-## Discovery convention (how the skill finds your config) — E2
+## Discovery convention (how the skill finds your config), E2
 
 The skill resolves its config **dir** in this order; the first that exists wins, then it reads
 `<dir>/registry.json`:
 
-1. `$EMAIL_MONITOR_CONFIG` — environment variable (recommended; location-independent).
-2. `$EMAIL_MONITOR_CONFIG_DIR` — accepted alias.
-3. `~/.email-monitor-config/` — dotfile-in-home fallback.
-4. `~/.config/email-monitor-config/` — XDG-style fallback (Linux/macOS).
+1. `$EMAIL_MONITOR_CONFIG`, environment variable (recommended; location-independent).
+2. `$EMAIL_MONITOR_CONFIG_DIR`, accepted alias.
+3. `~/.email-monitor-config/`, dotfile-in-home fallback.
+4. `~/.config/email-monitor-config/`, XDG-style fallback (Linux/macOS).
 
 You may always override discovery with an explicit `--config <dir>/registry.json` on the runtime
 scripts (`em_tick.py`, `em_summary.py`); the explicit path wins over the env order. If nothing
-resolves, the skill does not crash — it prints how to set `$EMAIL_MONITOR_CONFIG` / run
+resolves, the skill does not crash, it prints how to set `$EMAIL_MONITOR_CONFIG` / run
 `init_config.py` and exits cleanly (graceful degradation).
 
-## Schema — `registry.json` (E1)
+## Schema, `registry.json` (E1)
 
 Committed, **zero secrets**. Fields:
 
@@ -80,15 +80,15 @@ state/
   *                           # GITIGNORED — UID/UIDVALIDITY watermark + X-GM-MSGID seen-set
 ```
 
-## Secrets — Mode B (E6)
+## Secrets, Mode B (E6)
 
-The companion config repo is **separate and private**. `secrets/*` is **gitignored** — real values
+The companion config repo is **separate and private**. `secrets/*` is **gitignored**, real values
 never enter git. Real Gmail app passwords live in DPAPI (`~/.local/secrets/gmail-<slug>.cred`), which is
 machine-bound and does not travel: re-capture per machine. This public skill repo additionally
 ignores `registry.json`, `*.cred`, `rules/merged.json` etc. defensively so a local test config never
 leaks. Neither repo ever echoes a secret.
 
-## First-time setup (E3) — succeeds on the first try
+## First-time setup (E3), succeeds on the first try
 
 ```bash
 # 1. Stamp a conformant, zero-secret companion skeleton (deterministic — E4):
@@ -102,9 +102,9 @@ export EMAIL_MONITOR_CONFIG=~/.email-monitor-config
 python scripts/verify_config.py      # doctor: PASS/FAIL per check, names gaps
 ```
 
-## Switching between two configs (hot-swap) — E5
+## Switching between two configs (hot-swap), E5
 
-A config dir is **self-contained** — `cred_path` uses `~`, no hardcoded absolute paths. Keep as many
+A config dir is **self-contained**, `cred_path` uses `~`, no hardcoded absolute paths. Keep as many
 as you like and switch by repointing the env var; nothing else changes:
 
 ```bash
@@ -113,5 +113,5 @@ export EMAIL_MONITOR_CONFIG=~/configs/personal    # config B — same skill, dif
 ```
 
 Verify the swap: `init_config.py --out ~/configs/work` and `--out ~/configs/personal`, run
-`verify_config.py` against each, then flip `$EMAIL_MONITOR_CONFIG` between them — both must report
+`verify_config.py` against each, then flip `$EMAIL_MONITOR_CONFIG` between them, both must report
 READY.
