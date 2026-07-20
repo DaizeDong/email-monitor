@@ -16,8 +16,10 @@ assembles the plain-text digest and ships it via the relay.
 
 ## Heartbeat task (EmailMonitorTick)
 
-One OS task runs `em_tick.py --config <registry.json>` every PT2-5M (TimeTrigger Repetition,
-`Duration=P1D`, infinite, `StartWhenAvailable=true`, `MultipleInstancesPolicy=IgnoreNew`, battery on).
+One OS task runs `em_tick.py --config <registry.json>` every PT2-5M (TimeTrigger Repetition with
+NO RepetitionDuration; a fixed Duration like P1D silently STOPS the heartbeat after that window and
+blanks NextRun, so the repetition is duration-less and indefinite, matching register-task.ps1;
+`StartWhenAvailable=true`, `MultipleInstancesPolicy=IgnoreNew`, battery on).
 **Command pinned to absolute** `pythonw.exe` + absolute script + WorkingDirectory (schtasks runs with a
 minimal PATH; a PATH-resolved python silently half-runs). Each tick: (a) per account watch -> classify
 -> alert/archive -> pool; (b) check `due` for the summary event and run the worker if fired.
