@@ -19,117 +19,22 @@ Design:
     `--output-format json` and we unwrap the `result` field.
   - Never raises: any provider failure (missing binary, timeout, unparseable output) is skipped and
     the next provider is tried; if all fail, returns None so the caller falls back to em_classify.
-Stdlib only.
+Transport (the codex -> cc -> claude chain + headless footguns) is the shared `llmcall` package
+(pip dependency, see the repo requirements.txt); the domain logic here is stdlib.
 """
 import json
-import os
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 
-_NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 VALID = ("URGENT", "ACTION", "FYI", "NOISE")
 BODY_CHARS = 12000            # trim body handed to the model (subject/sender stay full)
 DEFAULT_CHAIN = ["codex", "cc", "claude"]
 
-_CODEX_PATHS = [os.path.expanduser(r"~/AppData/Roaming/npm/codex.cmd"),
-                os.path.expanduser(r"~/AppData/Roaming/npm/codex")]
-_CC_PATHS = [os.path.expanduser(r"~/.local/bin/cc.cmd"), os.path.expanduser(r"~/.local/bin/cc")]
-_CLAUDE_PATHS = [os.path.expanduser(r"~/.local/bin/claude.exe"),
-                 os.path.expanduser(r"~/.local/bin/claude")]
-
-
-def _find(name, explicit, candidates):
-    if explicit and os.path.isfile(explicit):
-        return explicit
-    found = shutil.which(name)
-    if found:
-        return found
-    for c in candidates:
-        if os.path.isfile(c):
-            return c
-    return None
-
-
-def _argv(binp, *args):
-    """Prefix a `.cmd`/`.bat` launcher with `cmd /c` on Windows; run other binaries directly."""
-    if sys.platform == "win32" and binp.lower().endswith((".cmd", ".bat")):
-        return ["cmd", "/c", binp, *args]
-    return [binp, *args]
-
-
-def _run(cmd, prompt, timeout):
-    try:
-        p = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
-                           encoding="utf-8", timeout=timeout, **_NOWINDOW)
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if p.returncode != 0:
-        return None
-    return p.stdout or ""
-
-
-def _unwrap_envelope(stdout):
-    """Claude Code `--output-format json` wraps the model text in {result: "..."}; unwrap it."""
-    if not stdout:
-        return ""
-    try:
-        env = json.loads(stdout)
-        if isinstance(env, dict) and "result" in env:
-            return env.get("result") or ""
-    except Exception:
-        pass
-    return stdout
-
-
-# ---------- providers: each returns the model's raw verdict text, or None ----------
-
-def _call_codex(prompt, pcfg, timeout):
-    binp = _find("codex", pcfg.get("bin"), _CODEX_PATHS)
-    if not binp:
-        return None
-    model = pcfg.get("model", "gpt-5.5")
-    effort = pcfg.get("reasoning", "medium")
-    fd, outpath = tempfile.mkstemp(prefix="em_codex_", suffix=".txt")
-    os.close(fd)
-    try:
-        cmd = _argv(binp, "exec", "-m", model, "-c", "model_reasoning_effort=%s" % effort,
-                    "-s", "read-only", "--skip-git-repo-check", "--ephemeral",
-                    "--color", "never", "-o", outpath, "-")
-        if _run(cmd, prompt, timeout) is None:
-            return None
-        with open(outpath, "r", encoding="utf-8") as f:
-            return f.read()
-    except OSError:
-        return None
-    finally:
-        try:
-            os.remove(outpath)
-        except OSError:
-            pass
-
-
-def _call_cc(prompt, pcfg, timeout):
-    binp = _find("cc", pcfg.get("bin"), _CC_PATHS)
-    if not binp:
-        return None
-    model = pcfg.get("model", "claude-opus-4-8")
-    out = _run(_argv(binp, "-p", "--model", model, "--output-format", "json"), prompt, timeout)
-    return _unwrap_envelope(out) if out else None
-
-
-def _call_claude(prompt, pcfg, timeout):
-    binp = _find("claude", pcfg.get("bin"), _CLAUDE_PATHS)
-    if not binp:
-        return None
-    model = pcfg.get("model", "claude-opus-4-8")
-    out = _run(_argv(binp, "-p", "--model", model, "--output-format", "json"), prompt, timeout)
-    return _unwrap_envelope(out) if out else None
-
-
-_CALLERS = {"codex": _call_codex, "cc": _call_cc, "claude": _call_claude}
+# Transport (the codex -> cc -> claude chain + every headless footgun: read-only codex, --ephemeral,
+# absolute-path fallback, MCP off, json-envelope unwrap, single model/effort source) now lives in the
+# shared `llmcall` package. This module keeps only the email-triage DOMAIN logic below: the prompt,
+# JSON extraction, and verdict normalization.
+from llmcall import call as _llmcall  # noqa: E402
 
 
 # ---------- prompt + parsing (pure, unit-tested) ----------
@@ -215,20 +120,18 @@ def _normalize(verdict, msg, tier="agent"):
 
 
 def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
-    """Try providers in `chain` order; return the first parseable verdict, else None.
+    """Try providers in `chain` order via the shared llmcall transport; return the first parseable +
+    valid verdict, else None.
 
     chain     : list of provider names, e.g. ["codex","cc","claude"] (cost-ordered).
-    providers : {name: {model, reasoning, bin}} per-provider settings.
+    providers : accepted for signature compatibility but IGNORED; model/effort now resolve from one
+                source (~/.codex/config.toml) inside llmcall.
     log       : optional callable(str) for diagnostics (which provider answered / failed)."""
     chain = chain or DEFAULT_CHAIN
-    providers = providers or {}
     prompt = build_prompt(msg, owner)
     for name in chain:
-        fn = _CALLERS.get(name)
-        if not fn:
-            continue
-        raw = fn(prompt, providers.get(name, {}), timeout)
-        verdict = _normalize(_extract_json(raw), msg, tier=name)
+        r = _llmcall(prompt, chain=[name], timeout=timeout)
+        verdict = _normalize(_extract_json(r.text), msg, tier=name) if r else None
         if verdict:
             if log:
                 log("classify: %s -> %s (%s)" % (name, verdict["priority"], verdict["label"]))
@@ -245,8 +148,8 @@ def main():
                     help="comma-separated provider order (default: codex,cc,claude)")
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--owner", default="")
-    ap.add_argument("--codex-model", default="gpt-5.5")
-    ap.add_argument("--codex-reasoning", default="medium")
+    ap.add_argument("--codex-model", default="gpt-5.6-sol")
+    ap.add_argument("--codex-reasoning", default="max")
     ap.add_argument("--claude-model", default="claude-opus-4-8")
     a = ap.parse_args()
     providers = {"codex": {"model": a.codex_model, "reasoning": a.codex_reasoning},
