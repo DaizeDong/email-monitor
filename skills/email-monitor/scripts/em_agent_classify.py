@@ -119,6 +119,16 @@ def _normalize(verdict, msg, tier="agent"):
             "reason": reason or "agent", "score": conf, "needs_l2": False}
 
 
+def _valid_verdict(text):
+    """The old per-provider loop's advance condition, expressed as an llmcall extract= hook: return the
+    verdict object IFF it is a dict whose priority (case-insensitive) is in VALID, else None (a provider
+    miss). Uses THIS module's fence-aware _extract_json so a ```json-fenced reply still parses."""
+    obj = _extract_json(text)
+    if isinstance(obj, dict) and str(obj.get("priority", "")).strip().upper() in VALID:
+        return obj
+    return None
+
+
 def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
     """Try providers in `chain` order via the shared llmcall transport; return the first parseable +
     valid verdict, else None.
@@ -129,16 +139,17 @@ def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
     log       : optional callable(str) for diagnostics (which provider answered / failed)."""
     chain = chain or DEFAULT_CHAIN
     prompt = build_prompt(msg, owner)
-    for name in chain:
-        r = _llmcall(prompt, chain=[name], timeout=timeout)
-        verdict = _normalize(_extract_json(r.text), msg, tier=name) if r else None
-        if verdict:
-            if log:
-                log("classify: %s -> %s (%s)" % (name, verdict["priority"], verdict["label"]))
-            return verdict
-        if log:
-            log("classify: %s unavailable/unparseable, trying next" % name)
-    return None
+    # One llmcall pass with extract=_valid_verdict: a reply whose priority is out-of-vocab counts as a
+    # provider miss, so llmcall retries the SAME provider once (a self-correction the old loop lacked)
+    # and only then falls through to the next -- the loop's advance-on-domain-invalid, preserved and
+    # raised. log= reports each attempt; _normalize (domain coercion) still runs on the winning object.
+    r = _llmcall(prompt, chain=chain, extract=_valid_verdict, timeout=timeout, log=log)
+    if not r:
+        return None
+    verdict = _normalize(r.data, msg, tier=r.provider)
+    if verdict and log:
+        log("classify: %s -> %s (%s)" % (r.provider, verdict["priority"], verdict["label"]))
+    return verdict
 
 
 def main():
