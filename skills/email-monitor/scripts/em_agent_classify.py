@@ -6,8 +6,8 @@ the response-obligation tier the way a person would. Providers are tried in a co
 the first one that returns a parseable verdict wins:
 
   1. codex   -- OpenAI Codex CLI (`codex exec`), our least-used quota -> effectively spare capacity
-  2. cc      -- Claude Code headless via the hosted gateway (hosted inference)
-  3. claude  -- plain Claude Code headless (direct Anthropic, full price) -> last resort
+  2. cc      -- Claude Code headless via a hosted gateway
+  3. claude  -- plain Claude Code headless (direct) -> last resort
 
   priority : URGENT | ACTION | FYI | NOISE   (only URGENT/ACTION alert)
   label    : short semantic tag
