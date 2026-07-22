@@ -19,8 +19,8 @@
     "Empty because this repo already points its output pipe OUTSIDE itself, and nothing DATA-class",
     "is git-tracked (audited 2026-07-13). Every real-run artifact resolves to:",
     "  ~/.email-monitor-config/registry.json   accounts, VIP senders, thresholds, cred pointers",
-    "  ~/.local/state/email-monitor/state/          IMAP UID watermarks",
-    "  ~/.local/state/email-monitor/email-monitor.log        run log",
+    "  ~/.local/state/email-monitor/state/            IMAP UID watermarks ($EMAIL_MONITOR_STATE_DIR)",
+    "  ~/.local/state/email-monitor/email-monitor.log run log ($EMAIL_MONITOR_LOG)",
     "The registry SCHEMA ships as a GENERATOR (scripts/init_config.py, REGISTRY), not a static",
     "*.example: init_config.py writes it INTO the private dir. So the public repo stays an",
     "uninitialized tool, and there is no *.example here to drift out of sync with the real shape."

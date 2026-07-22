@@ -20,7 +20,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
   *"could this have been generated?"* (provenance, no real record passes, however harmless it reads).
 - Vendored `tools/datadir.py` + `tools/data_boundary.py` and declared `.dataclass.json`. Audit found
   **no** DATA-class file tracked here: the registry, IMAP watermarks and logs already resolve outside
-  the repo (`~/.email-monitor-config/`, `~/.local/state/`), so `"data"` is legitimately empty.
+  the repo (`~/.email-monitor-config/`, `~/.local/state/email-monitor/`), so `"data"` is legitimately empty.
 - **`.gitignore` is advisory; the seal is not.** `registry.json`, `config.json` and the `rules/`
   personal layer (real accounts, real VIP senders, which are PII, and cred pointers) are now
   declared `data_sealed`. They have never been tracked in any commit, and this keeps it that way:

@@ -45,5 +45,5 @@ Gate 1 = `idempotency_key = email-monitor:<Message-ID>` (base UPSERT, same mail 
 `thread_key` semantic merge (advance within a thread, not a new item). Both are regression-tested
 (`test_message_id_idempotent_same_id`, `test_thread_merge_advances_not_duplicates`).
 
-Base DB lives at `the base reminder DB` (local NTFS only; never a sync drive, WAL +
+The base reminder tool owns its own local DB file (local NTFS only; never a sync drive, WAL +
 sync corrupts). Backup via `sqlite3 VACUUM INTO`, never a raw copy of `.db/-wal/-shm`.

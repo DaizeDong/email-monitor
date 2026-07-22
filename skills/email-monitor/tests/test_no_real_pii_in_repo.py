@@ -41,8 +41,7 @@ GUARD = os.path.join(REPO_ROOT, "tools", "pii_guard.py")
 
 def test_pii_guard_is_vendored():
     assert os.path.isfile(GUARD), (
-        "tools/pii_guard.py is missing; re-vendor it: "
-        "python the pii-guard installer"
+        "tools/pii_guard.py is missing; re-vendor it from the shared pii-guard master."
     )
 
 
