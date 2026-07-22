@@ -11,7 +11,8 @@ Per tick:
   (c) check base `due --source email-monitor` for the daily-summary event; if due, run em_summary.
 
 This is the orchestrator. It NEVER auto-sends mail and NEVER prints secrets. Reads config from the
-companion config repo's registry.json + merged rules. Logs to ~/.local/state/email-monitor/email-monitor.log.
+companion config repo's registry.json + merged rules. Logs to $EMAIL_MONITOR_LOG (default
+~/.local/state/email-monitor/email-monitor.log).
 
 Usage:
   python em_tick.py --config <registry.json> [--db PATH] [--reminder PATH] [--once] [--dry]
@@ -37,8 +38,10 @@ import em_pool            # noqa: E402
 import em_alert           # noqa: E402
 import em_watch           # noqa: E402
 
-LOG = os.path.expanduser(os.path.join("~", ".claude", "logs", "email-monitor.log"))
-LABEL_TOOL = os.path.expanduser(os.path.join("~", ".claude", "scripts", "gmail-imap-label.py"))
+LOG = os.path.expanduser(os.environ.get(
+    "EMAIL_MONITOR_LOG", "~/.local/state/email-monitor/email-monitor.log"))
+LABEL_TOOL = os.path.expanduser(os.environ.get(
+    "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
 
@@ -254,8 +257,8 @@ def main():
     ap.add_argument("--db", default=None)
     ap.add_argument("--reminder", default=em_pool.default_reminder_path())
     ap.add_argument("--resolve-cred", help="path to resolve-cred.ps1 (DPAPI). omit in tests")
-    ap.add_argument("--state-dir", default=os.path.expanduser(
-        os.path.join("~", ".claude", "email-monitor", "state")))
+    ap.add_argument("--state-dir", default=os.path.expanduser(os.environ.get(
+        "EMAIL_MONITOR_STATE_DIR", "~/.local/state/email-monitor/state")))
     ap.add_argument("--summary", default=os.path.join(HERE, "em_summary.py"))
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

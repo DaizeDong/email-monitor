@@ -28,7 +28,7 @@ description: Auto-monitor Gmail: classify new mail by importance, Discord-alert 
    Read-only `BODY.PEEK` (no `\Seen`), anchor INBOX, dedupe on `X-GM-MSGID`.
 4. **Privacy is a red line.** Mail bodies are processed only by the local session model; never fed to
    any external web/API. Discord gets a redacted title only. The public repo stores no body, no PII.
-   App passwords live in DPAPI (`~/.local/secrets`), never on argv / in logs / in git.
+   App passwords live in DPAPI (a private secrets dir, e.g. `~/.local/secrets`), never on argv / in logs / in git.
 5. **Drafts are a compliance object.** Plain ASCII, no markdown, no em-dash, no curly quotes, no AI
    kill-list words, signature exactly `Daize Dong`. Enforced by `em_draft_lint.py`, not by vibes.
 6. **Heartbeat, not a bare IDLE daemon.** One short OS task per tick (`EmailMonitorTick`); IDLE is an

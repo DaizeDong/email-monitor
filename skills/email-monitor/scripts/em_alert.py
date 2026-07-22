@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""email-monitor Discord alert (redacted) -> wraps the notifier.
+"""email-monitor Discord alert (redacted) -> wraps a local notifier script (the Discord relay).
 
 Privacy red line: only a REDACTED title is pushed. NEVER the body, the raw subject, or any PII
 (ARCHITECTURE §2.3, anti-pattern #17). Immediate "new important mail" pings go here; recurring
@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
-RELAY = os.path.expanduser(os.path.join("~", ".claude", "discord_relay", "send.py"))
+RELAY = os.path.expanduser(os.environ.get("EMAIL_MONITOR_NOTIFIER", "~/.local/notifier.py"))
 ORDER_RE = re.compile(r"\b(?:order|case|ticket|inv|invoice|#)\s*[:#]?\s*\w*\d\w*", re.I)
 NUM_RE = re.compile(r"\b\d[\d,.\-]*\b")
 EMAIL_RE = re.compile(r"\S+@\S+")
@@ -107,12 +107,11 @@ def build_title(priority, account, subject, summary="", account_label=None):
 
 
 def _egress_cmd():
-    """Pluggable Agent Center egress: prefer schedule-reminder's unified relay (#mail stream) when
-    the base is installed; fall back to the Big Brother relay (send.py) so this skill works
-    standalone. The message text is appended by the caller as the final arg (works for both
-    `relay.py send --stream mail --text <msg>` and `send.py <msg>`)."""
-    rp = os.environ.get("SCHEDULE_RELAY_PY") or os.path.expanduser(
-        "the base reminder relay")
+    """Pluggable notifier egress: prefer the base reminder tool's unified relay (#mail stream), set
+    via $SCHEDULE_RELAY_PY, when it is installed; fall back to a standalone notifier ($EMAIL_MONITOR_
+    NOTIFIER) so this skill works on its own. The message text is appended by the caller as the final
+    arg (works for both `relay.py send --stream mail --text <msg>` and `notifier.py <msg>`)."""
+    rp = os.path.expanduser(os.environ.get("SCHEDULE_RELAY_PY", "~/.local/relay.py"))
     if os.path.isfile(rp):
         return [sys.executable, rp, "send", "--stream", "mail", "--text"]
     if os.path.isfile(RELAY):
