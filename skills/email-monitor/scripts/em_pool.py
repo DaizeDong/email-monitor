@@ -30,7 +30,7 @@ BASE_REL = ("schedule-reminder", "skills", "schedule-reminder", "scripts", "remi
 
 
 def default_reminder_path():
-    return os.path.expanduser(os.path.join("~", "CodesSelf", *BASE_REL))
+    return os.path.expanduser(os.path.join("~", "CodesClaude", *BASE_REL))
 
 
 class PoolError(RuntimeError):

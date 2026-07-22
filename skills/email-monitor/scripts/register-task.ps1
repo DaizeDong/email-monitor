@@ -6,9 +6,9 @@ minimal PATH and a PATH-resolved python silently half-runs (ARCHITECTURE anti-pa
 PT5M, infinite, StartWhenAvailable, IgnoreNew, battery on. Re-run to update.
 
 Usage:
-  ./register-task.ps1 -Config "C:\Users\<username>\CodesSelf\email-monitor-config\registry.json" `
+  ./register-task.ps1 -Config "C:\Users\<username>\CodesClaude\email-monitor-config\registry.json" `
                       -Pythonw "C:\ProgramData\miniconda3\pythonw.exe" `
-                      [-ResolveCred "C:\Users\<username>\CodesSelf\email-monitor-config\scripts\resolve-cred.ps1"] `
+                      [-ResolveCred "C:\Users\<username>\CodesClaude\email-monitor-config\scripts\resolve-cred.ps1"] `
                       [-IntervalMinutes 5]
 #>
 param(
