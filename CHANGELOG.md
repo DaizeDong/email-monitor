@@ -92,9 +92,9 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ### Changed
 - **Classification now uses a cost-ordered provider chain, not a single model.** Each new mail is
   judged by the first provider that returns a parseable verdict, tried cheapest-first:
-  `codex` (OpenAI Codex CLI `codex exec`, our least-used quota) -> `cc` (Claude Code headless via the
-  hosted gateway, hosted inference) -> `claude` (plain Claude Code, direct
-  Anthropic, full price). Configured via `classifier.chain` + `classifier.providers` in
+  `codex` (OpenAI Codex CLI `codex exec`, our least-used quota) -> `cc` (Claude Code headless via a
+  hosted gateway) -> `claude` (plain Claude Code, direct). Configured via `classifier.chain` +
+  `classifier.providers` in
   `registry.json`; the answering provider is recorded in the verdict's `tier`.
 - Absolute binary paths + `.cmd`-via-`cmd /c` so it works under the minimal-PATH scheduled task.
   codex uses `-o <file>` for a clean final message (read-only sandbox, `--ephemeral`,
