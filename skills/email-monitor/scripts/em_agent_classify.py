@@ -36,6 +36,14 @@ DEFAULT_CHAIN = ["codex", "cc", "claude"]
 # JSON extraction, and verdict normalization.
 from llmcall import call as _llmcall  # noqa: E402
 
+# Date extraction is a sibling, stdlib-only module (email-monitor's own half of the optional
+# dated-reminder co-op). Guard the import so a missing/odd em_dates can never break classification.
+try:
+    from em_dates import normalize_due_at  # noqa: E402
+except Exception:  # pragma: no cover
+    def normalize_due_at(raw, now=None):
+        return None
+
 
 # ---------- prompt + parsing (pure, unit-tested) ----------
 
@@ -67,9 +75,16 @@ def build_prompt(msg, owner=""):
         "vague ('有一封重要邮件'). Keep a real deadline or amount if there is one. For NOISE, one word "
         "is enough ('推广'). NEVER put a verification code, password, token, API key or full URL in "
         "it -- say '(见邮箱)' instead.\n"
+        "\nAlso `due_at`: if the email states a SPECIFIC date/time the OWNER must personally keep -- a "
+        "confirmed appointment, a bill or form due date, an interview time -- return it as ISO8601 "
+        "(YYYY-MM-DDTHH:MM; add a timezone offset ONLY if the email itself gives one; a date with no "
+        "clock time is fine, e.g. 2026-08-03). Otherwise null. Extract ONLY the owner's own "
+        "appointment/deadline -- never a marketing 'sale ends' date or a date merely mentioned in "
+        "passing.\n"
         "\nReturn ONLY a compact JSON object, no prose, no code fence:\n"
         '{\"priority\":\"URGENT|ACTION|FYI|NOISE\",\"label\":\"<short semantic tag>\",'
-        '\"summary_zh\":\"<=30 Chinese chars>\",\"reason\":\"<=12 words\",\"confidence\":0.0}\n'
+        '\"summary_zh\":\"<=30 Chinese chars>\",\"due_at\":\"<ISO8601 or null>\",'
+        '\"reason\":\"<=12 words\",\"confidence\":0.0}\n'
         % (frm, subj, lu, body or "(empty)")
     )
 
@@ -115,8 +130,15 @@ def _normalize(verdict, msg, tier="agent"):
         conf = round(float(verdict.get("confidence", 0)), 3)
     except (TypeError, ValueError):
         conf = None
+    # due_at: the concrete owner-facing date the model found (if any). We keep BOTH the raw model
+    # string (`due_raw`) and a base-less normalization (`due_at`, absolute-ISO only). The caller
+    # (em_tick) re-runs normalization with the mail's Date as `base`, so a relative phrase like
+    # "by Friday" still resolves via em_duenorm -- which needs that base and isn't available here.
+    due_raw = str(verdict.get("due_at") or "").strip() or None
+    due_at = normalize_due_at(due_raw)
     return {"priority": pr, "label": label, "tier": tier, "summary_zh": summary,
-            "reason": reason or "agent", "score": conf, "needs_l2": False}
+            "due_at": due_at, "due_raw": due_raw, "reason": reason or "agent",
+            "score": conf, "needs_l2": False}
 
 
 def _valid_verdict(text):

@@ -40,12 +40,20 @@ description: Auto-monitor Gmail: classify new mail by importance, Discord-alert 
 |---|------|------|------|
 | 1 | Incremental watch + classify each new mail | `reference/monitor-and-classify.md` | `em_watch.py`, `em_classify.py` |
 | 2 | Alert important + archive noise | `reference/monitor-and-classify.md` | `em_alert.py`, `gmail-imap-label.py` |
-| 3 | Track the affair in the task pool | `reference/memory-pool.md` | `em_pool.py`, `em_duenorm.py` |
+| 3 | Track the affair in the pool (+ a *dated* reminder if the mail names a date) | `reference/memory-pool.md` | `em_pool.py`, `em_dates.py`, `em_duenorm.py` |
 | 4 | Draft a reply (review-only) | `reference/drafting.md` | `em_draft_lint.py`, Gmail `create_draft` |
 | 5 | Daily summary + deploy the heartbeat | `reference/summary-and-deploy.md` | `em_summary.py`, `em_tick.py` |
 
 A full unattended cycle is `em_tick.py --config <registry.json>` (the OS task runs exactly this).
 Manual one-shot: run the same with `--dry` to see what it would do without alerting/archiving.
+
+**The pool step is an OPTIONAL co-op (plug-and-play).** With schedule-reminder installed, email-monitor
+tracks each actionable/FYI mail in its pool -- and, when the classifier extracts a concrete
+appointment/deadline, as a *dated* reminder (absolute dates normalized by `em_dates.py`, time-preserving;
+relative/English phrases like "by Friday" resolved by `em_duenorm.py` against the mail's own Date). With
+schedule-reminder ABSENT, email-monitor runs alert-only (watch + classify + Discord) and skips the pool;
+it never preflight-fails on the base skill's absence (`em_pool.available()` gates every pool write). So
+the two skills interoperate when both are present, and each still stands alone.
 
 ## Config lives in a private companion repo
 
