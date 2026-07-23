@@ -153,6 +153,34 @@ def classify_record(msg, rules, agent_cfg):
     return em_classify.classify(msg, rules)
 
 
+def classify_records_parallel(msgs, rules, agent_cfg):
+    """Classify a list of messages CONCURRENTLY, returning verdicts in the SAME ORDER as msgs. Each
+    message's classification is independent (agent judgment + heuristic fallback, no shared state), so
+    N new mails in a tick run one provider call each at the same time instead of back-to-back. Falls
+    back to the serial path for 0/1 messages or when the agent chain is disabled (nothing to overlap).
+    A per-message failure degrades to the heuristic verdict, never taking the whole tick down."""
+    if not msgs:
+        return []
+    max_workers = int(agent_cfg.get("max_parallel", 8)) if agent_cfg else 8
+    # Only the agent path makes a (slow, IO-bound) provider call worth overlapping; the pure-heuristic
+    # path is CPU-only microseconds, so run it serially and skip the thread pool overhead.
+    agent_on = bool(agent_cfg) and agent_cfg.get("mode", "agent") == "agent"
+    if len(msgs) == 1 or max_workers <= 1 or not agent_on:
+        return [classify_record(m, rules, agent_cfg) for m in msgs]
+
+    import concurrent.futures as _cf
+
+    def _one(m):
+        try:
+            return classify_record(m, rules, agent_cfg)
+        except Exception as e:  # never let one message's failure sink the tick
+            log("ACCOUNT %s: classify failed (%s) -> heuristic" % (m.get("account", "?"), str(e)[:100]))
+            return em_classify.classify(m, rules)
+
+    with _cf.ThreadPoolExecutor(max_workers=min(max_workers, len(msgs))) as ex:
+        return list(ex.map(_one, msgs))
+
+
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
                     archive_enabled=True):
     agent_cfg = agent_cfg or {}
@@ -181,18 +209,28 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
     finally:
         os.environ.pop("GMAIL_APP_PW", None)
 
-    n_new = n_alert = n_archive = n_kept = 0
+    # Collect this tick's genuinely-new records first (dedup), THEN classify them ALL IN PARALLEL, then
+    # apply side effects serially. Classification is an independent per-message LLM judgment with no side
+    # effect but a log line, so N new mails used to cost N serial provider calls (~10s each); fanning
+    # them out runs one codex per mail at once. Side effects (alert / pool upsert / archive) stay in the
+    # original order AFTER the fan-out, so ordering and dedup semantics are unchanged.
+    fresh = []
     for r in records:
         gid = r.get("gm_msgid")
         if gid and gid in seen:
             continue
         if gid:
             seen.add(gid)
-        n_new += 1
-        msg = {"from": r["from"], "subject": r["subject"], "account": slug,
-               "list_unsubscribe": r.get("list_unsubscribe", False),
-               "body": r.get("body", "")}
-        cls = classify_record(msg, rules, agent_cfg)
+        fresh.append(r)
+
+    n_new = len(fresh)
+    n_alert = n_archive = n_kept = 0
+    msgs = [{"from": r["from"], "subject": r["subject"], "account": slug,
+             "list_unsubscribe": r.get("list_unsubscribe", False),
+             "body": r.get("body", "")} for r in fresh]
+    verdicts = classify_records_parallel(msgs, rules, agent_cfg)
+
+    for r, cls in zip(fresh, verdicts):
         pr, label = cls["priority"], cls["label"]
         full_label = label_scheme.replace("{priority}", pr).replace("{semantic}", label)
 
