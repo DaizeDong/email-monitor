@@ -33,6 +33,15 @@ def default_reminder_path():
     return os.path.expanduser(os.path.join("~", "CodesClaude", *BASE_REL))
 
 
+def available(reminder=None):
+    """True iff the schedule-reminder base is installed (its reminder.py is resolvable). The
+    email -> pool co-op is OPTIONAL: when this is False, email-monitor still watches, classifies and
+    alerts -- it just does not track items (or dated reminders) in the pool. Every pool write is
+    gated on this so the skill runs standalone when the base skill is not installed."""
+    reminder = reminder or default_reminder_path()
+    return bool(reminder) and os.path.isfile(os.path.expanduser(reminder))
+
+
 class PoolError(RuntimeError):
     def __init__(self, code, message, payload=None):
         super().__init__("%s: %s" % (code, message))

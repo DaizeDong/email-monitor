@@ -37,6 +37,7 @@ import em_agent_classify  # noqa: E402
 import em_pool            # noqa: E402
 import em_alert           # noqa: E402
 import em_watch           # noqa: E402
+import em_dates           # noqa: E402
 
 LOG = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LOG", "~/.local/state/email-monitor/email-monitor.log"))
@@ -73,9 +74,12 @@ def log(msg):
 
 
 def preflight(reminder, resolve_cred):
+    # NOTE: reminder.py (the schedule-reminder base) is intentionally NOT hard-required here. Without
+    # it email-monitor still watches, classifies and alerts; it only skips pool + dated-reminder
+    # tracking (gated by pool_enabled in main). So its absence is a soft, non-fatal mode switch, not a
+    # preflight failure. The hard requirements are the alert egress + label tool + credential resolver.
     missing = []
-    for path, label in [(reminder, "reminder.py"), (LABEL_TOOL, "gmail-imap-label.py"),
-                        (em_alert.RELAY, "discord relay")]:
+    for path, label in [(LABEL_TOOL, "gmail-imap-label.py"), (em_alert.RELAY, "discord relay")]:
         if not os.path.isfile(path):
             missing.append(label)
     if resolve_cred and not os.path.isfile(resolve_cred):
@@ -182,7 +186,7 @@ def classify_records_parallel(msgs, rules, agent_cfg):
 
 
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
-                    archive_enabled=True):
+                    archive_enabled=True, pool_enabled=True):
     agent_cfg = agent_cfg or {}
     user = acct["user"]
     slug = acct.get("slug", user.split("@")[0])
@@ -244,12 +248,20 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             except Exception as e:
                 log("ACCOUNT %s: alert failed: %s" % (slug, e))
 
-        # pool upsert for actionable; FYI logged but still tracked; NOISE archived silently
-        if pr in ("URGENT", "ACTION", "FYI"):
+        # pool upsert for actionable + FYI (NOISE is archived/kept silently). Gated on pool_enabled:
+        # with schedule-reminder absent this whole block is skipped (alert-only mode). due_at -- when
+        # the classifier extracted a concrete owner date -- makes it a DATED reminder, not an undated note.
+        if pool_enabled and pr in ("URGENT", "ACTION", "FYI"):
             try:
                 title = derive_title(pr, label, r["subject"], cls.get("summary_zh", ""))
+                # Resolve the date with the mail's own Date as base: absolute ISO already normalized in
+                # the classifier (cls["due_at"]); otherwise a relative/English phrase (cls["due_raw"])
+                # is resolved against this mail's date via em_duenorm. None -> undated item, as before.
+                due_at = cls.get("due_at") or em_dates.normalize_due_at(
+                    cls.get("due_raw"), base=r.get("date"))
                 em_pool.upsert(reminder, db, r["message_id"], r["thread_key"], title,
                                kind="task" if pr in ("URGENT", "ACTION") else "event",
+                               due_at=due_at,
                                priority=2 if pr == "URGENT" else (4 if pr == "ACTION" else 7),
                                tags=["acct:%s" % slug, label],
                                ext_extra={"account": slug, "uid": r["uid"],
@@ -338,13 +350,21 @@ def main():
     log("archive=%s" % ("enabled" if archive_enabled
                         else "DISABLED (all mail stays in INBOX)"))
 
+    # The email -> pool co-op is OPTIONAL. If schedule-reminder is not installed, run alert-only
+    # (watch + classify + Discord alert) and skip pool + dated-reminder tracking. Logged every tick so
+    # "nothing landed in my schedule" is never a silent surprise.
+    pool_enabled = em_pool.available(a.reminder)
+    if not pool_enabled:
+        log("schedule-reminder not installed -> alert-only mode (no pool / dated-reminder tracking)")
+
     os.makedirs(a.state_dir, exist_ok=True)
     results = []
     for acct in cfg.get("accounts", []):
         try:
             results.append(process_account(acct, rules, a.reminder, a.db,
                                            a.resolve_cred, a.state_dir, a.dry, agent_cfg,
-                                           archive_enabled=archive_enabled))
+                                           archive_enabled=archive_enabled,
+                                           pool_enabled=pool_enabled))
         except Exception as e:
             log("ACCOUNT %s: UNCAUGHT %s" % (acct.get("slug", "?"), e))
             results.append({"account": acct.get("slug", "?"), "error": str(e)})

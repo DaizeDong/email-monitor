@@ -3,6 +3,22 @@
 All notable changes to this project are documented here (Keep a Changelog style).
 
 ## [Unreleased]
+### Added
+- **Appointment/deadline dates in mail now become *dated* reminders -- an optional email-monitor <->
+  schedule-reminder co-op.** The agent classifier additionally extracts a `due_at` when an email states
+  a concrete owner-facing date; `em_pool.upsert` already accepted `due_at` but `em_tick` never passed
+  it, so every tracked mail was undated -- an appointment confirmation ("8月3日15:45") landed as a note
+  with the date only in its title, never a time-based reminder. The date is now set on the pool item.
+  Division of labour, no duplication with the pre-existing (but never-wired) `em_duenorm`: absolute/ISO
+  dates are normalized in the new stdlib `em_dates.py` (time-preserving, rejects past/absurd); relative
+  and English natural-language phrases ("by Friday", "August 3 at 3:45pm") are delegated to `em_duenorm`,
+  resolved against the mail's own Date header. Unit-tested in `tests/test_em_dates.py`.
+- **email-monitor now runs standalone (plug-and-play) without schedule-reminder.** The pool/reminder
+  integration is an optional downstream: `em_pool.available()` gates every pool write and `preflight`
+  no longer hard-requires `reminder.py`. With the base skill absent, email-monitor still watches,
+  classifies and Discord-alerts (alert-only mode, logged each tick); with it present the two skills
+  interoperate. Others can install email-monitor on its own.
+
 ### Security
 - **Test fixtures are now generated, so a real email cannot get into one.** The 2026-07 leak in this
   repo was `tests/golden_classify.jsonl`: it had been built by pasting real messages out of the inbox
