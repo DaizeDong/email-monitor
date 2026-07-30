@@ -6,10 +6,14 @@ minimal PATH and a PATH-resolved python silently half-runs (ARCHITECTURE anti-pa
 PT5M, infinite, StartWhenAvailable, IgnoreNew, battery on. Re-run to update.
 
 Usage:
-  ./register-task.ps1 -Config "C:\Users\<username>\CodesClaude\email-monitor-config\registry.json" `
+  ./register-task.ps1 -Config "C:\Users\<username>\.email-monitor-config\registry.json" `
                       -Pythonw "C:\ProgramData\miniconda3\pythonw.exe" `
-                      [-ResolveCred "C:\Users\<username>\CodesClaude\email-monitor-config\scripts\resolve-cred.ps1"] `
+                      [-ResolveCred "C:\Users\<username>\.email-monitor-config\scripts\resolve-cred.ps1"] `
                       [-IntervalMinutes 5]
+
+The -Config path is wherever the companion config repo is checked out. The example uses the
+dotfile-in-home location, which is the default the skill falls back to when $EMAIL_MONITOR_CONFIG
+is unset. See CONFIG.md for the full resolution order.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Config,
