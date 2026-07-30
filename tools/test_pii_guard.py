@@ -277,7 +277,7 @@ def test_generic_and_placeholder_usernames_pass(path):
     "_RUNNER = os.path.expanduser(r'~/.claude/scripts/agent.ps1')",   # the exact llmcall leak shape
     'relay = os.path.expanduser("~/.claude/scripts/notify.py")',
     'relay = "~/.claude/skills/other-tool/scripts/relay.py"',        # deep cross-tool path (llmcall leaked this)
-    "reads the local secrets dir/token.cred",
+    "reads ~/.secrets/token.cred",
     r"$HOME/.agent-center/state",
     r"%USERPROFILE%\.pw-auth\sephora.json",
     r'-File "$env:USERPROFILE\.claude\scripts\runner.ps1"',   # the PowerShell wrapper form ($env: anchor)
