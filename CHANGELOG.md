@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
-## [Unreleased]
+## [0.2.0] - 2026-07-23
 ### Added
 - **Appointment/deadline dates in mail now become *dated* reminders -- an optional email-monitor <->
   schedule-reminder co-op.** The agent classifier additionally extracts a `due_at` when an email states
