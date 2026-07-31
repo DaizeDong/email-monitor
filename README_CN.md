@@ -52,10 +52,6 @@ python skills/email-monitor/scripts/em_tick.py --config <路径>/registry.json -
 pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.json
 ```
 
-## 如何触发
-
-"监控我的邮箱"、"分诊收件箱"、"帮我起草回复"、"有什么重要邮件"、"每日邮件摘要"。注册心跳后无人值守运行。
-
 ## 配置
 
 `email-monitor` 是**带 config 的 skill**, 它从一个**独立、私有**的伴随 config 仓
@@ -77,6 +73,10 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
   `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`。
 - **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
   (`~/.local/secrets/gmail-<slug>.cred`),仓内只存指针。请用库外备份。
+
+## 如何触发
+
+"监控我的邮箱"、"分诊收件箱"、"帮我起草回复"、"有什么重要邮件"、"每日邮件摘要"。注册心跳后无人值守运行。
 
 ## 示例输出
 
