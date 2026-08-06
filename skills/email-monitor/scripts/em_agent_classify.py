@@ -28,6 +28,10 @@ import sys
 
 VALID = ("URGENT", "ACTION", "FYI", "NOISE")
 BODY_CHARS = 12000            # trim body handed to the model (subject/sender stay full)
+# Kept for callers that still import it, but it is NOT the routing decision any more: llmcall owns
+# that (llmcall.active_chain, overridable fleet-wide with LLMCALL_CHAIN). A local copy of the ladder
+# is exactly how a provider that has been routed around keeps receiving traffic from one forgotten
+# corner, so nothing here may pass it as a default.
 DEFAULT_CHAIN = ["codex", "cc", "claude"]
 
 # Transport (the codex -> cc -> claude chain + every headless footgun: read-only codex, --ephemeral,
@@ -159,7 +163,7 @@ def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
     providers : accepted for signature compatibility but IGNORED; model/effort now resolve from one
                 source (~/.codex/config.toml) inside llmcall.
     log       : optional callable(str) for diagnostics (which provider answered / failed)."""
-    chain = chain or DEFAULT_CHAIN
+    chain = chain or None      # None means "whatever llmcall is routing to right now"
     prompt = build_prompt(msg, owner)
     # One llmcall pass with extract=_valid_verdict: a reply whose priority is out-of-vocab counts as a
     # provider miss, so llmcall retries the SAME provider once (a self-correction the old loop lacked)
@@ -177,8 +181,12 @@ def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--chain", default=",".join(DEFAULT_CHAIN),
-                    help="comma-separated provider order (default: codex,cc,claude)")
+    # Default None, not the ladder spelled out. A CLI default that names every provider is an
+    # EXPLICIT chain on every invocation, and an explicit chain outranks llmcall's routing, so this
+    # flag alone would have kept the tick calling a provider the fleet had deliberately stopped using.
+    ap.add_argument("--chain", default=None,
+                    help="comma-separated provider order (default: llmcall's active chain, "
+                         "which honours LLMCALL_CHAIN)")
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--owner", default="")
     ap.add_argument("--codex-model", default="gpt-5.6-sol")
@@ -188,7 +196,7 @@ def main():
     providers = {"codex": {"model": a.codex_model, "reasoning": a.codex_reasoning},
                  "cc": {"model": a.claude_model}, "claude": {"model": a.claude_model}}
     msg = json.loads(sys.stdin.read())
-    out = classify(msg, [c.strip() for c in a.chain.split(",") if c.strip()],
+    out = classify(msg, [c.strip() for c in a.chain.split(",") if c.strip()] if a.chain else None,
                    providers, a.timeout, a.owner, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(out, ensure_ascii=False))
     return 0 if out else 1
