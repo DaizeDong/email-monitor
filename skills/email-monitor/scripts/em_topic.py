@@ -52,7 +52,7 @@ def verify_labels(proposed, msg):
 
 
 _ADDR = re.compile(r"<([^>]+)>")
-_BARE = re.compile(r"[\w.\-+]+@[\w.\-]+")
+_BARE = re.compile(r"([\w.\-+]+@[\w.\-]+)")
 
 
 def sender_address(frm):
