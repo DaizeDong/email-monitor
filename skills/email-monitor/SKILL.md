@@ -1,6 +1,6 @@
 ---
 name: email-monitor
-description: Auto-monitor Gmail: classify new mail by importance, Discord-alert important ones, archive, draft concise replies, track tasks, daily summary.
+description: Auto-monitor Gmail: classify new mail by importance, alert important ones, label mail by topic, draft concise replies, track tasks, daily summary.
 ---
 
 # email-monitor, a thin orchestration skill for your inbox
