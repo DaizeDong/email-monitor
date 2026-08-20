@@ -25,6 +25,27 @@ All notable changes to this project are documented here (Keep a Changelog style)
   distinguishable signals. Tests marked `integration` (need a live private config and a working
   model transport) are excluded on the runner, which has neither, and are meant to run locally only.
 
+### Fixed
+- **A pre-gate sender-map hit was never checked against the account's own allowed-label set**, only
+  the model's proposals were. A live run over real mail wrote a label spelled one way by a shared
+  sender map to an account whose `labels.json` spelled it another way. `em_topic.judge` now runs
+  pre-gate labels through the same allowed check the model's labels get; a hit outside the set is
+  dropped with a `drop_reason`, exactly like a model label would be.
+- **`TYPE_LABELS` was a hardcoded public guess at part of the private standard's spelling, and drift
+  was silent.** `labels.json` may now carry an optional `_type_labels` override that lives with the
+  standard it belongs to; when absent, `em_topic.load_config` still falls back to the module default
+  but now logs a warning, naming the account, when that default does not occur in the account's own
+  allowed set -- the case where the type/source split silently does nothing.
+- **`em_tick._label_add` could count a phantom write.** It was written as `archive()`'s narrow
+  sibling but omitted the matched-count check that function already carries: the label tool exits 0
+  and prints "nothing to do" when its query matches no message. `_label_add` now parses the same
+  `matched (\d+) messages` count and returns `False` on zero, so `topic_labeled=N` in the tick log
+  can no longer count a label that was never applied.
+- **"topic_labeling enabled but not configured" used to log as `enabled` and silently label nothing.**
+  `em_tick.topic_label` now logs explicitly when it is reached (topic labeling is on) but
+  `em_topic.load_config` returns `None` for that account, so "on but uninitialised" is never
+  indistinguishable from "working".
+
 ## [0.2.0] - 2026-07-23
 ### Added
 - **Appointment/deadline dates in mail now become *dated* reminders -- an optional email-monitor <->

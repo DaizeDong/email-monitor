@@ -81,7 +81,17 @@ rules/
                           #   each value a label name; address beats domain beats list identity
   labels.json              # GITIGNORED (private) — {"<account_slug>": ["<label>", ...]}, the closed
                           #   set of labels that account may be judged against; a model reply
-                          #   naming anything outside this set is discarded, not coerced
+                          #   naming anything outside this set is discarded, not coerced.
+                          #   The pre-gate's own sender-map hits are checked against this same
+                          #   set: a hit for a label this account never listed (a spelling drift
+                          #   between accounts sharing one sender map) is dropped, not written.
+                          #   OPTIONAL reserved key `_type_labels`: a list of labels that answer
+                          #   "what KIND of mail is this" rather than "who sent it", so a
+                          #   sender-map hit alone can never settle them and the model is always
+                          #   asked. Falls back to the skill's own module default when absent;
+                          #   if that default does not appear in an account's own list, the
+                          #   type/source split is inert for that account and a tick logs a
+                          #   warning naming it.
 ```
 
 Every label the model proposes must carry a verbatim evidence span copied from the message's own

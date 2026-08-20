@@ -192,6 +192,11 @@ def _label_add(user, rfc_msgid, label, dry, app_pw=None):
         log("ACCOUNT %s: topic label FAILED (rc=%d) label=%s msgid=%s err=%s"
             % (user, p.returncode, label, mid, (p.stderr or p.stdout or "").strip()[:120]))
         return False
+    m = re.search(r"matched (\d+) messages", p.stdout or "")
+    if m and int(m.group(1)) == 0:
+        log("ACCOUNT %s: topic label MATCHED 0 label=%s msgid=%s (not applied)"
+            % (user, label, mid))
+        return False
     return True
 
 
@@ -201,10 +206,15 @@ def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
 
     Loads the private per-account config once per tick (`em_topic.load_config`) and
     returns immediately when it is None: an uninitialised machine stays inert rather
-    than erroring, the same posture as the rest of this file's optional co-ops.
+    than erroring, the same posture as the rest of this file's optional co-ops. This
+    function is only reached when topic_labeling.enabled is True (see caller), so a
+    None config here means "on but uninitialised", not "off" -- and the top level
+    enabled= log line cannot tell those apart on its own, so this logs it explicitly.
     """
-    cfg = em_topic.load_config(slug)
+    cfg = em_topic.load_config(slug, log=log)
     if cfg is None:
+        log("ACCOUNT %s: topic_labeling enabled but not configured (no private "
+            "taxonomy for this account) -- no labels added" % slug)
         return 0
     call = _make_transport(timeout, log=log)
     n_labeled = 0
@@ -212,7 +222,8 @@ def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
         msg = {"from": r.get("from", ""), "subject": r.get("subject", ""),
                "date": r.get("date", ""), "list_id": r.get("list_id", "")}
         verdict = em_topic.judge(msg, cfg["taxonomy"], cfg["sender_map"],
-                                 cfg["allowed_labels"], call=call, log=log)
+                                 cfg["allowed_labels"], call=call, log=log,
+                                 type_labels=cfg["type_labels"])
         if verdict["state"] != "decided":
             continue
         for item in verdict["labels"]:
