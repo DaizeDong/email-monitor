@@ -103,7 +103,7 @@ STANDARD (the only standard; do not invent labels or reinterpret these):
 
 ALLOWED LABELS (copy byte for byte; anything else is discarded):
 %(allowed)s
-
+%(known)s
 MESSAGE
 From: %(frm)s
 Subject: %(subj)s
@@ -124,10 +124,15 @@ An empty list is a valid and often correct answer.
 """
 
 
-def build_prompt(msg, taxonomy, allowed_labels):
+def build_prompt(msg, taxonomy, allowed_labels, known_source=None):
+    known = ""
+    if known_source:
+        known = ("\nALREADY SETTLED, do not question it and do not repeat it: this message's source "
+                 "label is %s. You are only deciding the labels listed below.\n" % known_source)
     return PROMPT % {
         "taxonomy": taxonomy or "(no taxonomy configured)",
         "allowed": "\n".join("- %s" % l for l in allowed_labels),
+        "known": known,
         "frm": msg.get("from", ""),
         "subj": msg.get("subject", ""),
         "date": msg.get("date", ""),
@@ -139,51 +144,84 @@ def _verdict(state, labels=None, dropped=None, reason=""):
             "reason": reason}
 
 
-def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None):
+# Labels that answer "what KIND of mail is this", as opposed to "who sent it".
+# A sender-keyed rule can never settle these, so they always reach the model.
+TYPE_LABELS = ("Receipt", "Promo")
+
+
+def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
+          type_labels=TYPE_LABELS):
     """Decide a message's topic labels, or decline.
+
+    The pre-gate contributes SOURCE labels only ("who sent this"). TYPE labels
+    ("is this proof money already moved") are a property of the individual
+    message, so a sender-keyed rule can never settle them: they always reach
+    the model, even on a pre-gate hit. When the source is already known, the
+    model is asked the smaller question of type labels only.
 
     Three states, because "the call broke" and "the model judged but did not
     clear the bar" need different responses from the operator even though both
-    write nothing to the mailbox.
+    write nothing to the mailbox. A settled source label survives either way:
+    "the source is settled but the model is unreachable" must not discard what
+    the map already established.
     """
     mapped = pregate(msg, sender_map)
+    source_kept, dropped = ([], [])
     if mapped:
-        kept, dropped = verify_labels(mapped, msg)
-        if kept:
-            return _verdict("decided", kept, dropped, "sender map")
-        return _verdict("unsure", [], dropped, "sender map evidence did not verify")
+        source_kept, dropped = verify_labels(mapped, msg)
+
+    known = source_kept[0]["label"] if source_kept else None
+    askable = [l for l in allowed_labels if l in type_labels] if known else list(allowed_labels)
+
+    # Nothing left for the model to decide: the source is settled and this account
+    # has no type labels enabled.
+    if known and not askable:
+        return _verdict("decided", source_kept, dropped, "sender map")
 
     if call is None:
+        # A settled source label is still a real answer; a missing transport must not
+        # discard what the map already established.
+        if source_kept:
+            return _verdict("decided", source_kept, dropped, "sender map, no transport for type labels")
         return _verdict("failed", reason="no transport supplied")
 
     try:
-        reply = call(prompt=build_prompt(msg, taxonomy, allowed_labels))
+        reply = call(prompt=build_prompt(msg, taxonomy, askable, known_source=known))
     except Exception as exc:                     # transport is allowed to fail
         if log:
             log("topic judge transport failed: %s" % exc)
+        if source_kept:
+            return _verdict("decided", source_kept, dropped,
+                            "sender map; type labels unavailable: %s" % exc)
         return _verdict("failed", reason="transport error: %s" % exc)
 
     if not isinstance(reply, dict) or not isinstance(reply.get("labels"), list):
+        if source_kept:
+            return _verdict("decided", source_kept, dropped,
+                            "sender map; type labels unavailable: unparseable reply")
         return _verdict("failed", reason="unparseable model reply")
 
-    allowed = set(allowed_labels)
-    proposed, dropped = [], []
+    allowed = set(askable)
+    proposed = []
     for item in reply["labels"]:
         if not isinstance(item, dict):
             continue
         label = item.get("label")
         if label not in allowed:
-            dropped.append({"label": label, "evidence": item.get("evidence"),
-                            "source": "model",
-                            "drop_reason": "label not in this account's allowed set"})
+            dropped.append({"label": label, "evidence": item.get("evidence"), "source": "model",
+                            "drop_reason": "label not in the set this message was judged against"})
             continue
-        proposed.append({"label": label, "evidence": item.get("evidence"),
-                         "source": "model"})
+        if any(k["label"] == label for k in source_kept):
+            continue                      # the map already settled it
+        proposed.append({"label": label, "evidence": item.get("evidence"), "source": "model"})
 
-    kept, ev_dropped = verify_labels(proposed, msg)
+    model_kept, ev_dropped = verify_labels(proposed, msg)
     dropped.extend(ev_dropped)
-    if kept:
-        return _verdict("decided", kept, dropped, "model")
+    labels = source_kept + model_kept
+    if labels:
+        return _verdict("decided", labels, dropped,
+                        "sender map + model" if source_kept and model_kept
+                        else ("sender map" if source_kept else "model"))
     return _verdict("unsure", [], dropped, "no proposed label survived verification")
 
 
