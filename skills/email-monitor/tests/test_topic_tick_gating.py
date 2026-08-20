@@ -17,12 +17,26 @@ def test_topic_labeling_defaults_to_disabled():
 
 def test_topic_path_never_archives():
     """Structural assertion: the topic write path must not reference the archive
-    helper at all. Adding a label and hiding a message are different decisions."""
+    flag at all. Adding a label and hiding a message are different decisions.
+
+    Must cover `_label_add`, the function that actually builds the argv, not just
+    `topic_label`, its caller: `_label_add` is defined earlier in the file, so a
+    slice starting at `def topic_label` misses it entirely, and a regression that
+    adds `--archive` only to `_label_add` would leave a topic_label-only slice
+    green. The check is narrowed to the literal `--archive` flag (rather than also
+    matching the bare substring `archive(`) because `_label_add`'s own docstring
+    names `archive()` in prose when explaining that it is that function's narrow
+    sibling; matching on `archive(` would fail on that prose with no code defect
+    present."""
     src = open(os.path.join(SCRIPTS, "em_tick.py"), encoding="utf-8").read()
-    block = src[src.index("def topic_label"):] if "def topic_label" in src else ""
-    assert block, "expected a dedicated topic_label function"
-    body = block.split("\ndef ")[0]
-    assert "--archive" not in body and "archive(" not in body
+    assert "def _label_add" in src and "def topic_label" in src
+    start = src.index("def _label_add")
+    after_label_add = src[start:]
+    tl_idx = after_label_add.index("def topic_label")
+    after_topic_label = after_label_add[tl_idx:]
+    end = after_topic_label.index("\ndef ")
+    body = after_label_add[:tl_idx] + after_topic_label[:end]
+    assert "--archive" not in body
 
 
 def test_transport_closure_maps_a_dead_chain_to_failed(monkeypatch):

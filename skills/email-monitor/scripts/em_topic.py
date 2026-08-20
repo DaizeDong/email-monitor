@@ -168,7 +168,17 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
     mapped = pregate(msg, sender_map)
     source_kept, dropped = ([], [])
     if mapped:
-        source_kept, dropped = verify_labels(mapped, msg)
+        allowed_set = set(allowed_labels)
+        in_taxonomy, out_of_taxonomy = [], []
+        for item in mapped:
+            if item["label"] in allowed_set:
+                in_taxonomy.append(item)
+            else:
+                d = dict(item)
+                d["drop_reason"] = "label not in the set this message was judged against"
+                out_of_taxonomy.append(d)
+        source_kept, ev_dropped = verify_labels(in_taxonomy, msg)
+        dropped = out_of_taxonomy + ev_dropped
 
     known = source_kept[0]["label"] if source_kept else None
     askable = [l for l in allowed_labels if l in type_labels] if known else list(allowed_labels)
@@ -269,9 +279,18 @@ def _resolve_config_dir():
         return None
 
 
-def load_config(account_slug):
+def load_config(account_slug, log=None):
     """Return the topic config for one account, or None if this machine has not
-    been initialised for topic labeling. Never raises, never falls back."""
+    been initialised for topic labeling. Never raises, never falls back.
+
+    `type_labels` is OPTIONAL in `labels.json`, under the reserved top-level key
+    `_type_labels` (never an account slug in practice). When absent, this falls
+    back to the module default `TYPE_LABELS`, which is a public hardcoded guess
+    at the private standard's spelling. If that guess does not land in this
+    account's own allowed set, the type/source split R8 exists for is inert for
+    it and the model is never asked the type question -- so this is logged
+    rather than left to fail silently the way it did before R8.
+    """
     config_dir = _resolve_config_dir()
     if not config_dir:
         return None
@@ -290,4 +309,12 @@ def load_config(account_slug):
     allowed = labels.get(account_slug)
     if not allowed:
         return None
-    return {"taxonomy": taxonomy, "sender_map": sender_map, "allowed_labels": allowed}
+    type_labels = labels.get("_type_labels")
+    if type_labels is None:
+        type_labels = list(TYPE_LABELS)
+        if log and not any(t in allowed for t in type_labels):
+            log("ACCOUNT %s: type_labels falls back to the module default %r, but none of "
+                "those labels are in this account's allowed_labels -- the type/source split "
+                "is inert for it" % (account_slug, type_labels))
+    return {"taxonomy": taxonomy, "sender_map": sender_map, "allowed_labels": allowed,
+            "type_labels": type_labels}

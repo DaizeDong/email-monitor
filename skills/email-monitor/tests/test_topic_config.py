@@ -42,6 +42,47 @@ def test_complete_config_loads(tmp_path, monkeypatch):
     assert "money moved" in cfg["taxonomy"]
 
 
+def test_type_labels_defaults_and_warns_when_unreachable(tmp_path, monkeypatch):
+    """I-1b: TYPE_LABELS is a public guess at part of the private standard's
+    spelling. When labels.json does not override it, and none of the guessed
+    labels occur in this account's own allowed set, the type/source split R8
+    exists for is inert for it -- that must be logged, not left silent."""
+    d = tmp_path / "cfg" / "rules"
+    d.mkdir(parents=True)
+    (d / "taxonomy.md").write_text("x", encoding="utf-8")
+    (d / "sender_map.json").write_text("{}", encoding="utf-8")
+    (d / "labels.json").write_text(json.dumps({"dz": ["Accounts/Bank", "receipt"]}),
+                                   encoding="utf-8")
+    monkeypatch.setenv("EMAIL_MONITOR_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    warnings = []
+    cfg = em_topic.load_config("dz", log=warnings.append)
+    assert cfg["type_labels"] == list(em_topic.TYPE_LABELS)
+    assert len(warnings) == 1
+    assert "dz" in warnings[0]
+
+
+def test_type_labels_override_from_labels_json_is_used_silently(tmp_path, monkeypatch):
+    """An explicit override lives with the standard (one standard, invariant 1)
+    and is trusted as-is: no warning fires even though the account's allowed
+    set spells the type labels in lowercase, because the operator already told
+    the loader what to look for."""
+    d = tmp_path / "cfg" / "rules"
+    d.mkdir(parents=True)
+    (d / "taxonomy.md").write_text("x", encoding="utf-8")
+    (d / "sender_map.json").write_text("{}", encoding="utf-8")
+    (d / "labels.json").write_text(json.dumps({
+        "dz": ["Accounts/Bank", "receipt"],
+        "_type_labels": ["receipt"],
+    }), encoding="utf-8")
+    monkeypatch.setenv("EMAIL_MONITOR_CONFIG_DIR", str(tmp_path / "cfg"))
+
+    warnings = []
+    cfg = em_topic.load_config("dz", log=warnings.append)
+    assert cfg["type_labels"] == ["receipt"]
+    assert warnings == []
+
+
 def test_unknown_account_returns_none(tmp_path, monkeypatch):
     d = tmp_path / "cfg" / "rules"
     d.mkdir(parents=True)
