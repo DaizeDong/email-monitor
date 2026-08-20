@@ -94,3 +94,94 @@ def pregate(msg, sender_map):
         if label:
             return [{"label": label, "evidence": lid, "source": "map"}]
     return None
+
+
+PROMPT = """You label one email by topic. Sender and subject only, never a body.
+
+STANDARD (the only standard; do not invent labels or reinterpret these):
+%(taxonomy)s
+
+ALLOWED LABELS (copy byte for byte; anything else is discarded):
+%(allowed)s
+
+MESSAGE
+From: %(frm)s
+Subject: %(subj)s
+Date: %(date)s
+
+RULES
+- Judge THIS message from ITS OWN sender and subject. Never reason "this sender
+  is usually X so this one is X".
+- Omission over commission: a missing label costs nothing, a wrong label is the
+  defect being fixed. When the evidence is not plain, return an empty list.
+- For every label you propose you MUST quote an "evidence" span copied VERBATIM
+  from the From or Subject above. Not a paraphrase, not a summary. A label whose
+  evidence cannot be found in the input is discarded automatically.
+
+Reply with JSON only:
+{"labels": [{"label": "<one of the allowed labels>", "evidence": "<verbatim span>"}]}
+An empty list is a valid and often correct answer.
+"""
+
+
+def build_prompt(msg, taxonomy, allowed_labels):
+    return PROMPT % {
+        "taxonomy": taxonomy or "(no taxonomy configured)",
+        "allowed": "\n".join("- %s" % l for l in allowed_labels),
+        "frm": msg.get("from", ""),
+        "subj": msg.get("subject", ""),
+        "date": msg.get("date", ""),
+    }
+
+
+def _verdict(state, labels=None, dropped=None, reason=""):
+    return {"state": state, "labels": labels or [], "dropped": dropped or [],
+            "reason": reason}
+
+
+def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None):
+    """Decide a message's topic labels, or decline.
+
+    Three states, because "the call broke" and "the model judged but did not
+    clear the bar" need different responses from the operator even though both
+    write nothing to the mailbox.
+    """
+    mapped = pregate(msg, sender_map)
+    if mapped:
+        kept, dropped = verify_labels(mapped, msg)
+        if kept:
+            return _verdict("decided", kept, dropped, "sender map")
+        return _verdict("unsure", [], dropped, "sender map evidence did not verify")
+
+    if call is None:
+        return _verdict("failed", reason="no transport supplied")
+
+    try:
+        reply = call(prompt=build_prompt(msg, taxonomy, allowed_labels))
+    except Exception as exc:                     # transport is allowed to fail
+        if log:
+            log("topic judge transport failed: %s" % exc)
+        return _verdict("failed", reason="transport error: %s" % exc)
+
+    if not isinstance(reply, dict) or not isinstance(reply.get("labels"), list):
+        return _verdict("failed", reason="unparseable model reply")
+
+    allowed = set(allowed_labels)
+    proposed, dropped = [], []
+    for item in reply["labels"]:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("label")
+        if label not in allowed:
+            dropped.append({"label": label, "evidence": item.get("evidence"),
+                            "source": "model",
+                            "drop_reason": "label not in this account's allowed set"})
+            continue
+        proposed.append({"label": label, "evidence": item.get("evidence"),
+                         "source": "model"})
+
+    kept, ev_dropped = verify_labels(proposed, msg)
+    dropped.extend(ev_dropped)
+    if kept:
+        return _verdict("decided", kept, dropped, "model")
+    return _verdict("unsure", [], dropped, "no proposed label survived verification")
