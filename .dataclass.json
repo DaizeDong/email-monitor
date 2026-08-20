@@ -46,5 +46,6 @@
   "fixture": [
     "skills/email-monitor/tests/golden_classify.jsonl"
   ],
-  "_data_home": "~/.email-monitor-config/   (override with $EMAIL_MONITOR_CONFIG_DIR)"
+  "_data_home": "~/.email-monitor-config/   (override with $EMAIL_MONITOR_CONFIG_DIR)",
+  "_audited": "2026-08-20: the empty data list is a finding, not a default. This skill writes nothing into its own repo; every real artifact (registry.json, rules, state, secrets) lives in the private companion repo email-monitor-config, resolved by tools/datadir.py. Verified by running datadir.py --path email-monitor, which returns that directory, and by confirming the companion is a git repo with its own private remote and 24 tracked files. Note the companion sits at a dotfile path under the user profile rather than beside this repo: that location is documented in CONFIG.md as the third discovery step and is deliberate, not drift."
 }
