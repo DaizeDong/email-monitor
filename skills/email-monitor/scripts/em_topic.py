@@ -185,3 +185,53 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None):
     if kept:
         return _verdict("decided", kept, dropped, "model")
     return _verdict("unsure", [], dropped, "no proposed label survived verification")
+
+
+import json
+import os
+import sys
+
+SKILL = "email-monitor"
+
+
+def _resolve_config_dir():
+    """Locate the private companion config via the repo's canonical resolver.
+
+    realpath, not abspath: this skill is deployed through a symlink, and abspath
+    would compute a tools/ path that does not exist in the deployed copy. Returns
+    None on any failure, so an unresolvable config leaves the capability inert
+    rather than guessing a path.
+    """
+    here = os.path.dirname(os.path.realpath(__file__))
+    tools = os.path.abspath(os.path.join(here, "..", "..", "..", "tools"))
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    try:
+        import datadir
+        return datadir.resolve_data_dir(SKILL)
+    except Exception:
+        return None
+
+
+def load_config(account_slug):
+    """Return the topic config for one account, or None if this machine has not
+    been initialised for topic labeling. Never raises, never falls back."""
+    config_dir = _resolve_config_dir()
+    if not config_dir:
+        return None
+    base = os.path.join(config_dir, "rules")
+    tax_p = os.path.join(base, "taxonomy.md")
+    map_p = os.path.join(base, "sender_map.json")
+    lab_p = os.path.join(base, "labels.json")
+    if not (os.path.isfile(tax_p) and os.path.isfile(map_p) and os.path.isfile(lab_p)):
+        return None
+    try:
+        taxonomy = open(tax_p, encoding="utf-8").read()
+        sender_map = json.load(open(map_p, encoding="utf-8"))
+        labels = json.load(open(lab_p, encoding="utf-8"))
+    except Exception:
+        return None
+    allowed = labels.get(account_slug)
+    if not allowed:
+        return None
+    return {"taxonomy": taxonomy, "sender_map": sender_map, "allowed_labels": allowed}
