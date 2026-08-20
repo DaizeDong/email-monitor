@@ -195,12 +195,16 @@ SKILL = "email-monitor"
 
 
 def _resolve_config_dir():
-    """Locate the private companion config via the repo's canonical resolver.
+    """Locate the private companion config.
 
-    realpath, not abspath: this skill is deployed through a symlink, and abspath
-    would compute a tools/ path that does not exist in the deployed copy. Returns
-    None on any failure, so an unresolvable config leaves the capability inert
-    rather than guessing a path.
+    An explicit override is AUTHORITATIVE, present or absent. datadir tries several
+    candidates in order, which is right for discovery and wrong for an override: if the
+    operator names a path and it is not there, the answer is "no config", not "I found a
+    different one". Silently resolving elsewhere is how a test asserting inertness passes
+    against a real config.
+
+    realpath, not abspath: this skill is deployed through a symlink, and abspath would
+    compute a tools/ path that does not exist in the deployed copy.
     """
     here = os.path.dirname(os.path.realpath(__file__))
     tools = os.path.abspath(os.path.join(here, "..", "..", "..", "tools"))
@@ -208,6 +212,20 @@ def _resolve_config_dir():
         sys.path.insert(0, tools)
     try:
         import datadir
+    except Exception:
+        return None
+    for var in ("EMAIL_MONITOR_CONFIG_DIR", "EMAIL_MONITOR_CONFIG"):
+        override = os.environ.get(var)
+        if override:
+            p = os.path.expanduser(override)
+            if not os.path.isdir(p):
+                return None
+            try:
+                datadir._reject_if_inside_own_repo(p, SKILL)
+            except Exception:
+                return None
+            return p
+    try:
         return datadir.resolve_data_dir(SKILL)
     except Exception:
         return None
