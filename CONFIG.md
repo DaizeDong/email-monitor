@@ -109,6 +109,10 @@ rules/
   kill_list.txt               # committed — AI-flavor words the draft linter strips
   _personal_layer.json        # GITIGNORED — VIP senders (PII) + personal overrides
   merged.json                 # GITIGNORED — apply.py-derived (global + personal)
+  taxonomy.md                 # GITIGNORED (private) -- see "Topic labeling" above; init_config.py
+  sender_map.json              # GITIGNORED (private)    stamps a synthetic skeleton for all three
+  labels.json                   # GITIGNORED (private)    so `topic_labeling.enabled: true` has
+                                 #   somewhere real to read once you fill them in
 templates/
   business.txt dealer.txt support.txt personal.txt   # committed draft profiles
 secrets/
