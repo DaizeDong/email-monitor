@@ -76,6 +76,23 @@ def test_matched_one_is_a_real_success(monkeypatch):
     assert tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is True
 
 
+# ---------- 1b. _label_add must not count the same phantom archive() already guards against ----------
+
+def test_label_add_matched_zero_is_not_counted_as_a_write(monkeypatch):
+    """I-2: `_label_add` was written as `archive()`'s narrow sibling but omitted the
+    matched-count check `archive()` carries a docstring recording as an already-fixed
+    bug: the label tool exits 0 and prints 'nothing to do' on a query that matched
+    nothing. Without this check, `topic_labeled=N` in the tick log can count labels
+    that were never applied."""
+    _capture(monkeypatch, rc=0, stdout="matched 0 messages for query: rfc822msgid:%s" % GM_MSGID)
+    assert tick._label_add("u@example.com", GM_MSGID, "Receipt", dry=False, app_pw="p") is False
+
+
+def test_label_add_matched_one_is_a_real_write(monkeypatch):
+    _capture(monkeypatch, rc=0, stdout="matched 1 messages for query: x")
+    assert tick._label_add("u@example.com", RFC_MSGID, "Receipt", dry=False, app_pw="p") is True
+
+
 # ---------- 2. the archive switch ----------
 
 def test_archive_disabled_keeps_noise_in_inbox(monkeypatch):

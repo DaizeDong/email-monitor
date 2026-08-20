@@ -148,6 +148,25 @@ def test_transport_failure_keeps_a_settled_source_label():
     assert [l["label"] for l in got["labels"]] == ["Accounts/Bank"]
 
 
+def test_pregate_label_outside_allowed_is_dropped_not_written():
+    """I-1a: a merged sender map can spell a label differently across accounts
+    (the live finding this locks down: 'Accounts/GitHub' written to an account
+    whose allowed set spells it 'Accounts/Github'). The pre-gate must be run
+    through the same allowed check the model's labels get -- a hit for a label
+    this account never listed must be dropped with a reason, not written."""
+    msg = {"from": "Billing <pay@bank.example.com>", "subject": "Your receipt for $42.00"}
+    sm = {"version": 1, "by_address": {"pay@bank.example.com": "Accounts/Bank"}}
+
+    # A real transport that finds nothing further, so the failure being isolated here is
+    # the pre-gate filter, not the unrelated "no transport supplied" path.
+    got = em_topic.judge(msg, "tax", sm, ["accounts/bank", "receipt"],
+                         call=lambda **kw: {"labels": []})
+    assert got["labels"] == [], "a spelling drift must never reach the mailbox"
+    assert got["dropped"][0]["label"] == "Accounts/Bank"
+    assert got["dropped"][0]["source"] == "map"
+    assert got["dropped"][0]["drop_reason"]
+
+
 def test_unmapped_sender_is_asked_about_everything():
     msg = {"from": "Stranger <who@unknown.example.com>", "subject": "Hello"}
     seen = {}
