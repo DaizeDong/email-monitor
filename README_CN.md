@@ -74,6 +74,15 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 - **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
   (`~/.local/secrets/gmail-<slug>.cred`),仓内只存指针。请用库外备份。
 
+## 主题打标(默认关闭,只加标签)
+
+email-monitor 还可以给新邮件附加主题标签 -- 判断邮件"是关于什么的",而不只是重要程度。这是一个
+独立的、默认关闭的能力:`registry.json` 里的 `topic_labeling.enabled`(默认 `false`),规范见
+**[CONFIG.md](CONFIG.md)**。每条标签判定都必须从发件人或主题里逐字引用一段证据;证据核对不通过的
+候选标签会被丢弃而不是硬猜,证据不充分的邮件干脆不打标签。标签只会被加到邮件上;写入路径永远不会
+把邮件移出收件箱 -- 加标签和隐藏邮件是两个不同的决定。标签体系本身(有哪些标签、哪些发件人对应哪个
+标签)属于 DATA 而非代码,只存在于私有配套 config 里,绝不进这个公开仓库。
+
 ## 如何触发
 
 "监控我的邮箱"、"分诊收件箱"、"帮我起草回复"、"有什么重要邮件"、"每日邮件摘要"。注册心跳后无人值守运行。
