@@ -15,6 +15,7 @@
     "Never hand-edit the .jsonl. Edit CASES, run: python tools/make_fixtures.py"
   ],
   "data": [],
+  "_audited": "2026-07-13 full-tree audit found nothing DATA-class git-tracked; every real-run artifact resolves outside this repo via tools/datadir.py -- see _data_note below for the exact paths. Re-verified 2026-08-20 (data_boundary check 4 pass, 0 RUN-SHAPE).",
   "_data_note": [
     "Empty because this repo already points its output pipe OUTSIDE itself, and nothing DATA-class",
     "is git-tracked (audited 2026-07-13). Every real-run artifact resolves to:",
@@ -44,7 +45,8 @@
     "schema, and publishing one would advertise it."
   ],
   "fixture": [
-    "skills/email-monitor/tests/golden_classify.jsonl"
+    "skills/email-monitor/tests/golden_classify.jsonl",
+    "skills/email-monitor/tests/topic_regression.jsonl"
   ],
   "_data_home": "~/.email-monitor-config/   (override with $EMAIL_MONITOR_CONFIG_DIR)"
 }
