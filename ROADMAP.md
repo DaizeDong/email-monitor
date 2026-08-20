@@ -20,6 +20,26 @@ Current: **v0.2.0**
 - Daily summary worker (due=signal / worker=content) + EmailMonitorTick heartbeat template.
 - Program-judged acceptance suite (27 tests).
 
+## Deferred from topic labeling
+
+These were scoped out of the initial topic-labeling capability (evidence-gated add-only labels,
+off by default) and are recorded here rather than dropped:
+
+- **Provenance ledger with per-batch rollback.** A record of which labels were written when and by
+  which taxonomy version, so a bad taxonomy revision or a bad model run can be undone as a unit
+  instead of hand-picked message by message.
+- **Frozen regression gating with a deliberate ambiguous stratum.** A held-out evaluation set that
+  never grows or shrinks silently, including cases chosen specifically because their correct label
+  is genuinely unclear, so a labeling change is graded against "does it handle the hard cases
+  consistently" rather than only the easy majority.
+- **A novelty gate measuring distance from a label's confirmed members.** Before accepting a new
+  message under an existing label, compare it against that label's already-confirmed examples and
+  flag it when it is an outlier, catching taxonomy drift before it reaches the mailbox.
+- **Stratified audit with exact binomial intervals.** Periodic sampling of labeled mail, stratified
+  by label and by pre-gate vs model source, with a proper exact confidence interval on the error
+  rate per stratum rather than one pooled accuracy number that can hide a bad label behind a lot of
+  easy ones.
+
 ## Planned
 
 The v0.2 slot was taken by the release above, which shipped different work. The labels below are a

@@ -80,6 +80,18 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 - **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay in
   DPAPI (`~/.local/secrets/gmail-<slug>.cred`), the repo keeps only pointers. Back up out-of-band.
 
+## Topic labeling (opt-in, add-only)
+
+email-monitor can additionally attach topic labels to new mail -- what a message is about, not just
+how important it is. This is a separate, off-by-default capability: `topic_labeling.enabled` in
+`registry.json` (default `false`), documented in **[CONFIG.md](CONFIG.md)**. Every label decision
+must quote a verbatim span from the sender or subject as evidence; a proposed label whose evidence
+does not check out is dropped rather than guessed, and a message with no clear evidence gets no
+label at all. Labels are added to the message; the write path can never remove it from the inbox --
+adding a label and hiding a message are different decisions. The label taxonomy itself (what labels
+exist, which senders map to which label) is DATA, not code: it lives only in the private companion
+config, never in this public repo.
+
 ## How to invoke
 
 "monitor my email", "triage my inbox", "draft a reply to this", "what important mail came in",
