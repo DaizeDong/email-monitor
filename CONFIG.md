@@ -55,9 +55,39 @@ Committed, **zero secrets**. Fields:
     "cron_hook": "",                   //   str — external scheduler hook
     "local_time": "08:00",             //   str — local send time
     "tz": "America/New_York"           //   str — IANA tz for DST-correct re-arm
+  },
+  "topic_labeling": {                  // OPTIONAL obj — add-only topic labels, off by default
+    "enabled": false,                  //   bool — REQUIRED false default; an uninitialised
+                                        //   machine must stay inert
+    "timeout_sec": 120                 //   OPTIONAL int — per-call model transport timeout
   }
 }
 ```
+
+### Topic labeling, `rules/taxonomy.md` + `rules/sender_map.json` + `rules/labels.json`
+
+These three files are what `topic_labeling.enabled: true` reads. They are DATA, not code: this
+public skill repo ships the labeling method (evidence-gated, add-only, never de-inboxes); the
+operator's own taxonomy, sender mappings, and label counts never appear here, only in the private
+companion config. Nothing is written unless all three files are present and valid; a missing or
+malformed set is treated as "not configured", not an error.
+
+```
+rules/
+  taxonomy.md            # GITIGNORED (private) — prose standard describing what each label means,
+                          #   fed verbatim to the model as the only standard it may reason from
+  sender_map.json         # GITIGNORED (private) — deterministic pre-gate, checked before any model
+                          #   call: {"by_address": {...}, "by_domain": {...}, "by_list_id": {...}},
+                          #   each value a label name; address beats domain beats list identity
+  labels.json              # GITIGNORED (private) — {"<account_slug>": ["<label>", ...]}, the closed
+                          #   set of labels that account may be judged against; a model reply
+                          #   naming anything outside this set is discarded, not coerced
+```
+
+Every label the model proposes must carry a verbatim evidence span copied from the message's own
+From or Subject; a label whose evidence does not occur in the input is dropped before it ever
+reaches Gmail. A message with no clear evidence for any label gets no label -- omission over
+commission, the same posture as the rest of this skill's classification.
 
 ### Companion-repo layout
 

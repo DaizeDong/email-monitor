@@ -42,7 +42,8 @@ description: Auto-monitor Gmail: classify new mail by importance, Discord-alert 
 | 2 | Alert important + archive noise | `reference/monitor-and-classify.md` | `em_alert.py`, `gmail-imap-label.py` |
 | 3 | Track the affair in the pool (+ a *dated* reminder if the mail names a date) | `reference/memory-pool.md` | `em_pool.py`, `em_dates.py`, `em_duenorm.py` |
 | 4 | Draft a reply (review-only) | `reference/drafting.md` | `em_draft_lint.py`, Gmail `create_draft` |
-| 5 | Daily summary + deploy the heartbeat | `reference/summary-and-deploy.md` | `em_summary.py`, `em_tick.py` |
+| 5 | Topic-label each new mail (add-only, opt-in) | `reference/monitor-and-classify.md` | `em_topic.py`, `gmail-imap-label.py` |
+| 6 | Daily summary + deploy the heartbeat | `reference/summary-and-deploy.md` | `em_summary.py`, `em_tick.py` |
 
 A full unattended cycle is `em_tick.py --config <registry.json>` (the OS task runs exactly this).
 Manual one-shot: run the same with `--dry` to see what it would do without alerting/archiving.
@@ -61,6 +62,12 @@ Account topology, classification rules, the VIP/kill lists, draft templates, and
 project vocabulary are all externalized to a private `email-monitor-config` repo (Mode B: secrets
 gitignored, app passwords in DPAPI). The skill is the method; the config is the signal. See
 `reference/summary-and-deploy.md` for the registry schema.
+
+Topic labeling (step 5) follows the same split: the taxonomy, sender map, and allowed-label set
+(`rules/taxonomy.md`, `rules/sender_map.json`, `rules/labels.json`) are DATA and live only in that
+private companion config, never in this public repo. See `CONFIG.md` for the schema. The skill
+ships the method (evidence-gated labeling that never de-inboxes); the operator's actual taxonomy
+is theirs alone.
 
 ## Progressive loading
 

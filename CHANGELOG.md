@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [Unreleased]
+### Added
+- **Topic labeling: an opt-in, add-only capability that decides what a new mail is about, not
+  just how important it is.** Off by default (`topic_labeling.enabled: false` in `registry.json`);
+  the resolved state is logged every tick alongside `archive=`, so a disabled or misconfigured
+  capability is never a silent surprise. A deterministic sender/domain/list-id pre-gate (`em_topic.py`)
+  settles the obvious cases without a model call; anything left goes to the model, which must quote
+  a verbatim evidence span from the sender or subject for every label it proposes -- a label whose
+  evidence does not occur in the input is dropped automatically, and a message with no clear
+  evidence gets no label at all (omission over commission). The transport is the shared `llmcall`
+  package, wrapped in `em_tick._make_transport` to map its never-raises falsy-Result contract onto
+  the three states `judge` needs to tell apart: `decided`, `unsure` (a taxonomy problem), and
+  `failed` (the model chain is down). Labels are written with `gmail-imap-label.py --add` only; the
+  write path (`em_tick.topic_label`) is asserted structurally to never reach `--archive` -- adding a
+  label and hiding a message are different decisions, and topic labeling must never remove
+  `\Inbox`. The taxonomy, sender map, and allowed-label set (`rules/taxonomy.md`,
+  `rules/sender_map.json`, `rules/labels.json`) are DATA, not code: documented in `CONFIG.md`, they
+  live only in the private companion config and never in this public repo.
+- `skills/email-monitor/tests/` is now run in CI (`.github/workflows/skill-tests.yml`), separate
+  from the `pii-guard` security workflow so an ordinary test failure and a detected leak stay
+  distinguishable signals. Tests marked `integration` (need a live private config and a working
+  model transport) are excluded on the runner, which has neither, and are meant to run locally only.
+
 ## [0.2.0] - 2026-07-23
 ### Added
 - **Appointment/deadline dates in mail now become *dated* reminders -- an optional email-monitor <->
