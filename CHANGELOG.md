@@ -24,6 +24,18 @@ All notable changes to this project are documented here (Keep a Changelog style)
   from the `pii-guard` security workflow so an ordinary test failure and a detected leak stay
   distinguishable signals. Tests marked `integration` (need a live private config and a working
   model transport) are excluded on the runner, which has neither, and are meant to run locally only.
+- **`scripts/init_config.py` now stamps the topic labeling capability, and gets real test
+  coverage.** A mutation probe found that nothing imports `init_config.py`, so a broken generator
+  was invisible to the suite; that in turn had let the generator drift out of sync with the
+  capability above -- it wrote `topic_labeling` nowhere in `registry.json` and stamped none of
+  `rules/taxonomy.md`, `rules/sender_map.json` or `rules/labels.json`, so a fresh machine
+  following `CONFIG.md` got a config directory missing everything the capability reads.
+  `REGISTRY` now carries `topic_labeling.enabled: false`, matching `em_tick.py`'s inert default,
+  and the generator stamps a synthetic skeleton for all three `rules/` files (all three are
+  gitignored in the stamped companion repo; only the skeleton this generator produces is ever
+  written by it). `skills/email-monitor/tests/test_init_config.py` runs the generator into a temp
+  directory and asserts `em_topic.load_config` can consume exactly what it produced, plus `write()`
+  force semantics, idempotent re-runs, and a `verify_config.py` pass/fail check.
 
 ### Fixed
 - **A pre-gate sender-map hit was never checked against the account's own allowed-label set**, only
