@@ -52,3 +52,47 @@ def test_transport_closure_maps_a_dead_chain_to_failed(monkeypatch):
     monkeypatch.setattr(em_tick.llmcall, "call", lambda *a, **k: DeadResult())
     call = em_tick._make_transport(5)
     assert call(prompt="anything") is None
+
+
+def test_topic_verdicts_are_counted_not_just_successes(monkeypatch, capsys):
+    """unsure and failed must reach the log, because both write nothing.
+
+    `topic_labeled=N` alone cannot separate "the gate is calibrated and this mail
+    genuinely has no label" from "the gate refuses everything" from "the model
+    chain is down", and those need three different responses. This drives one
+    message into each state and asserts all three counts appear, so a regression
+    that logs only successes fails here rather than four days later when someone
+    tries to review the run and finds the number missing.
+    """
+    import em_tick
+
+    cfg = {"taxonomy": "t", "sender_map": {"by_address": {}},
+           "allowed_labels": ["Alpha"], "type_labels": []}
+    monkeypatch.setattr(em_tick.em_topic, "load_config", lambda slug, log=None: cfg)
+    monkeypatch.setattr(em_tick, "_make_transport", lambda *a, **k: (lambda **kw: None))
+
+    states = iter(["decided", "unsure", "failed"])
+    monkeypatch.setattr(em_tick.em_topic, "judge",
+                        lambda *a, **k: {"state": next(states),
+                                         "labels": [{"label": "Alpha", "evidence": "e"}],
+                                         "dropped": [], "reason": ""})
+    added = []
+    monkeypatch.setattr(em_tick, "_label_add",
+                        lambda u, mid, label, dry, app_pw=None: added.append(label) or True)
+
+    records = [{"from": "a@example.com", "subject": "s%d" % i, "message_id": str(i)}
+               for i in range(3)]
+    n = em_tick.topic_label("u@example.com", "acct", records, dry=True)
+
+    out = capsys.readouterr().out
+    assert "judged=3" in out, out
+    assert "decided=1" in out and "unsure=1" in out and "failed=1" in out, out
+    assert "labels_added=1" in out, out
+    assert n == 1 and added == ["Alpha"]
+
+
+def test_verdict_counter_stays_silent_when_there_is_nothing_to_judge():
+    """No records means no line. A counter that prints zeros every five minutes
+    trains the reader to skip it, which is how the real one gets missed."""
+    import em_tick
+    assert em_tick.topic_label("u@example.com", "acct", [], dry=True) == 0
