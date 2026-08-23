@@ -3,7 +3,27 @@
 All notable changes to this project are documented here (Keep a Changelog style).
 
 ## [Unreleased]
+### Fixed
+- **The test suite no longer writes into the operator's real log.** `em_tick.LOG` resolves
+  `$EMAIL_MONITOR_LOG` at import time and nothing overrode it, so every `pytest` run appended its
+  synthetic failures to the file a human reads to find real ones: measured over four days, 58 lines
+  of `classify failed (boom) -> heuristic` and 24 of `topic label MATCHED ... (not applied)`, all
+  from fixtures. That defeats the reason `failed` is logged separately from `unsure` -- grepping for
+  the calls that actually broke returns test noise. A new root `conftest.py` redirects `EMAIL_MONITOR_LOG`
+  and `EMAIL_MONITOR_STATE_DIR` into a temp sandbox. It does this at MODULE level, not in a fixture:
+  pytest imports test modules (and therefore `em_tick`) before any fixture runs, so a fixture would
+  land after the constant was already read and would change nothing while looking like a fix.
+  Verified by running the suite and asserting the real log gained zero lines while the sandbox log
+  gained some, so "did not grow" cannot be satisfied by nothing having logged at all.
+
 ### Added
+- **`reference/topic-labeling.md`, the missing home for the load-bearing gate.** Step 5 of the
+  workflow table pointed at `reference/monitor-and-classify.md`, which documents watch, classify,
+  alert and archive and says nothing about topic labeling: a reader loading the named shard to
+  perform the step found none of the step's rules there. The mechanism (pre-gate ordering, why a
+  sender-keyed rule can never settle a type label, the evidence gate, the three states, the
+  `--add` creates-a-label hazard and the rename ordering it forces) now has one home, and the
+  index points at it.
 - **Topic labeling: an opt-in, add-only capability that decides what a new mail is about, not
   just how important it is.** Off by default (`topic_labeling.enabled: false` in `registry.json`);
   the resolved state is logged every tick alongside `archive=`, so a disabled or misconfigured

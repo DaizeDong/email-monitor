@@ -42,7 +42,7 @@ description: Auto-monitor Gmail: classify new mail by importance, alert importan
 | 2 | Alert important + archive noise | `reference/monitor-and-classify.md` | `em_alert.py`, `gmail-imap-label.py` |
 | 3 | Track the affair in the pool (+ a *dated* reminder if the mail names a date) | `reference/memory-pool.md` | `em_pool.py`, `em_dates.py`, `em_duenorm.py` |
 | 4 | Draft a reply (review-only) | `reference/drafting.md` | `em_draft_lint.py`, Gmail `create_draft` |
-| 5 | Topic-label each new mail (add-only, opt-in) | `reference/monitor-and-classify.md` | `em_topic.py`, `gmail-imap-label.py` |
+| 5 | Topic-label each new mail (add-only, opt-in) | `reference/topic-labeling.md` | `em_topic.py`, `gmail-imap-label.py` |
 | 6 | Daily summary + deploy the heartbeat | `reference/summary-and-deploy.md` | `em_summary.py`, `em_tick.py` |
 
 A full unattended cycle is `em_tick.py --config <registry.json>` (the OS task runs exactly this).
