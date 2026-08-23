@@ -218,17 +218,29 @@ def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
         return 0
     call = _make_transport(timeout, log=log)
     n_labeled = 0
+    # Counting only successes makes the one question worth asking unanswerable.
+    # `topic_labeled=N` cannot distinguish "the gate is calibrated and most mail
+    # genuinely has no label" from "the gate refuses everything" from "the model
+    # chain is down", yet those need three different responses. unsure is a
+    # taxonomy signal, failed is an outage, and both write nothing -- so both are
+    # invisible unless they are counted here.
+    states = {"decided": 0, "unsure": 0, "failed": 0}
     for r in records:
         msg = {"from": r.get("from", ""), "subject": r.get("subject", ""),
                "date": r.get("date", ""), "list_id": r.get("list_id", "")}
         verdict = em_topic.judge(msg, cfg["taxonomy"], cfg["sender_map"],
                                  cfg["allowed_labels"], call=call, log=log,
                                  type_labels=cfg["type_labels"])
+        states[verdict["state"]] = states.get(verdict["state"], 0) + 1
         if verdict["state"] != "decided":
             continue
         for item in verdict["labels"]:
             if _label_add(user, r.get("message_id"), item["label"], dry, app_pw=app_pw):
                 n_labeled += 1
+    if records:
+        log("ACCOUNT %s: topic verdicts judged=%d decided=%d unsure=%d failed=%d labels_added=%d"
+            % (slug, len(records), states["decided"], states["unsure"],
+               states["failed"], n_labeled))
     return n_labeled
 
 

@@ -4,6 +4,14 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 ### Fixed
+- **The tick now counts topic verdicts, not just successes.** `topic_labeled=N` cannot separate
+  "the gate is calibrated and this mail genuinely has no label" from "the gate refuses everything"
+  from "the model chain is down", and those need three different responses; `unsure` and `failed`
+  both write nothing, so both were invisible. Each account now logs
+  `topic verdicts judged=.. decided=.. unsure=.. failed=.. labels_added=..`, and only when there
+  was something to judge, since a line of zeros every five minutes trains the reader to skip it.
+  Covered by a test that drives one message into each of the three states, verified by poisoning
+  the counter and watching the test go red.
 - **The test suite no longer writes into the operator's real log.** `em_tick.LOG` resolves
   `$EMAIL_MONITOR_LOG` at import time and nothing overrode it, so every `pytest` run appended its
   synthetic failures to the file a human reads to find real ones: measured over four days, 58 lines
