@@ -38,6 +38,10 @@ import em_pool            # noqa: E402
 import em_alert           # noqa: E402
 import em_watch           # noqa: E402
 import em_dates           # noqa: E402
+import em_topic            # noqa: E402
+# Module import (not `from llmcall import call`): the transport closure below reaches
+# llmcall.call at call time, so tests can monkeypatch em_tick.llmcall.call directly.
+import llmcall              # noqa: E402
 
 LOG = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LOG", "~/.local/state/email-monitor/email-monitor.log"))
@@ -138,6 +142,108 @@ def archive(user, rfc_msgid, label, dry, app_pw=None):
     return True
 
 
+# The topic verdict's wire format. Validated by the transport, not by em_topic.judge, so a
+# malformed reply costs a same-provider retry instead of an abstention.
+TOPIC_SCHEMA = {
+    "type": "object",
+    "properties": {"labels": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"label": {"type": "string"}, "evidence": {"type": "string"}},
+        "required": ["label", "evidence"]}}},
+    "required": ["labels"],
+}
+
+
+def _make_transport(timeout, log=None):
+    """Adapt llmcall to the contract em_topic.judge expects.
+
+    llmcall never raises; it returns a falsy Result when the whole provider chain failed.
+    Converting that to None is what lets judge report `failed` (an outage) rather than
+    `unsure` (a taxonomy problem) -- those two states exist precisely to be told apart.
+    mode="judge" is the right tier and already the default: read only, no MCP, deterministic.
+    """
+    def _call(prompt):
+        r = llmcall.call(prompt, schema=TOPIC_SCHEMA, mode="judge",
+                         timeout=timeout, log=log)
+        return r.data if r else None
+    return _call
+
+
+def _label_add(user, rfc_msgid, label, dry, app_pw=None):
+    """Add one Gmail label via the existing bulk tool, selected by RFC822 Message-ID.
+
+    Deliberately the narrow sibling of `archive()` above: it passes `--add` and nothing
+    else, so this path can never de-inbox a message. Adding a label and hiding a message
+    are different decisions.
+    """
+    if not rfc_msgid:
+        return False
+    mid = str(rfc_msgid).strip().strip("<>")
+    query = "rfc822msgid:%s" % mid
+    args = [sys.executable, LABEL_TOOL, "--user", user, "--query", query, "--add", label]
+    if dry:
+        args.append("--dry")
+    env = dict(os.environ)
+    if app_pw:
+        env["GMAIL_APP_PW"] = app_pw
+    p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", env=env,
+                       **_NOWINDOW)
+    if p.returncode != 0:
+        log("ACCOUNT %s: topic label FAILED (rc=%d) label=%s msgid=%s err=%s"
+            % (user, p.returncode, label, mid, (p.stderr or p.stdout or "").strip()[:120]))
+        return False
+    m = re.search(r"matched (\d+) messages", p.stdout or "")
+    if m and int(m.group(1)) == 0:
+        log("ACCOUNT %s: topic label MATCHED 0 label=%s msgid=%s (not applied)"
+            % (user, label, mid))
+        return False
+    return True
+
+
+def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
+    """Gated topic-labeling step: decide what each new message is about, and add the
+    decided labels. Never removes \\Inbox -- see `_label_add`, its only writer.
+
+    Loads the private per-account config once per tick (`em_topic.load_config`) and
+    returns immediately when it is None: an uninitialised machine stays inert rather
+    than erroring, the same posture as the rest of this file's optional co-ops. This
+    function is only reached when topic_labeling.enabled is True (see caller), so a
+    None config here means "on but uninitialised", not "off" -- and the top level
+    enabled= log line cannot tell those apart on its own, so this logs it explicitly.
+    """
+    cfg = em_topic.load_config(slug, log=log)
+    if cfg is None:
+        log("ACCOUNT %s: topic_labeling enabled but not configured (no private "
+            "taxonomy for this account) -- no labels added" % slug)
+        return 0
+    call = _make_transport(timeout, log=log)
+    n_labeled = 0
+    # Counting only successes makes the one question worth asking unanswerable.
+    # `topic_labeled=N` cannot distinguish "the gate is calibrated and most mail
+    # genuinely has no label" from "the gate refuses everything" from "the model
+    # chain is down", yet those need three different responses. unsure is a
+    # taxonomy signal, failed is an outage, and both write nothing -- so both are
+    # invisible unless they are counted here.
+    states = {"decided": 0, "unsure": 0, "failed": 0}
+    for r in records:
+        msg = {"from": r.get("from", ""), "subject": r.get("subject", ""),
+               "date": r.get("date", ""), "list_id": r.get("list_id", "")}
+        verdict = em_topic.judge(msg, cfg["taxonomy"], cfg["sender_map"],
+                                 cfg["allowed_labels"], call=call, log=log,
+                                 type_labels=cfg["type_labels"])
+        states[verdict["state"]] = states.get(verdict["state"], 0) + 1
+        if verdict["state"] != "decided":
+            continue
+        for item in verdict["labels"]:
+            if _label_add(user, r.get("message_id"), item["label"], dry, app_pw=app_pw):
+                n_labeled += 1
+    if records:
+        log("ACCOUNT %s: topic verdicts judged=%d decided=%d unsure=%d failed=%d labels_added=%d"
+            % (slug, len(records), states["decided"], states["unsure"],
+               states["failed"], n_labeled))
+    return n_labeled
+
+
 def classify_record(msg, rules, agent_cfg):
     """Primary path: agent judgment via a cost-ordered provider chain (codex -> cc -> claude). Fall
     back to the deterministic heuristic when disabled or every provider fails, so a tick never goes
@@ -186,7 +292,8 @@ def classify_records_parallel(msgs, rules, agent_cfg):
 
 
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
-                    archive_enabled=True, pool_enabled=True):
+                    archive_enabled=True, pool_enabled=True, topic_enabled=False,
+                    topic_timeout=120.0):
     agent_cfg = agent_cfg or {}
     user = acct["user"]
     slug = acct.get("slug", user.split("@")[0])
@@ -276,13 +383,21 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         elif pr == "NOISE":
             n_kept += 1  # archiving off: NOISE stays in the INBOX for the owner to see
 
+    # Topic labeling is independent of the priority triage above: it runs over every fresh
+    # record regardless of URGENT/ACTION/FYI/NOISE, adds labels only, and never de-inboxes.
+    # Off by default (topic_enabled=False); em_topic.load_config also inertly declines when
+    # this machine has no private taxonomy configured, so a partial rollout is a no-op, not
+    # a crash.
+    n_topic = topic_label(user, slug, fresh, dry, app_pw=pw, timeout=topic_timeout) \
+        if topic_enabled else 0
+
     state["cursors"][key] = new_cursor
     state["seen_gm_msgids"] = em_watch.bound_seen(seen, 50000)  # newest by msgid value
     em_watch.save_state(state_path, state)
-    log("ACCOUNT %s: new=%d alert=%d archived=%d kept_in_inbox=%d cursor_uid=%d"
-        % (slug, n_new, n_alert, n_archive, n_kept, new_cursor["last_uid"]))
+    log("ACCOUNT %s: new=%d alert=%d archived=%d kept_in_inbox=%d topic_labeled=%d cursor_uid=%d"
+        % (slug, n_new, n_alert, n_archive, n_kept, n_topic, new_cursor["last_uid"]))
     return {"account": slug, "new": n_new, "alert": n_alert, "archived": n_archive,
-            "kept": n_kept}
+            "kept": n_kept, "topic_labeled": n_topic}
 
 
 def derive_title(priority, label, subject, summary=""):
@@ -357,6 +472,13 @@ def main():
     if not pool_enabled:
         log("schedule-reminder not installed -> alert-only mode (no pool / dated-reminder tracking)")
 
+    # Topic labeling is opt-in and off by default: an uninitialised machine (no config flag,
+    # no private taxonomy) must stay inert. Logged every tick, the same as archive= above, so
+    # a disabled or silently-broken capability is never indistinguishable from a working one.
+    topic_enabled = bool((cfg.get("topic_labeling", {}) or {}).get("enabled", False))
+    topic_timeout = float((cfg.get("topic_labeling", {}) or {}).get("timeout_sec", 120.0))
+    log("topic_labeling=%s" % ("enabled" if topic_enabled else "DISABLED (no labels added)"))
+
     os.makedirs(a.state_dir, exist_ok=True)
     results = []
     for acct in cfg.get("accounts", []):
@@ -364,7 +486,9 @@ def main():
             results.append(process_account(acct, rules, a.reminder, a.db,
                                            a.resolve_cred, a.state_dir, a.dry, agent_cfg,
                                            archive_enabled=archive_enabled,
-                                           pool_enabled=pool_enabled))
+                                           pool_enabled=pool_enabled,
+                                           topic_enabled=topic_enabled,
+                                           topic_timeout=topic_timeout))
         except Exception as e:
             log("ACCOUNT %s: UNCAUGHT %s" % (acct.get("slug", "?"), e))
             results.append({"account": acct.get("slug", "?"), "error": str(e)})

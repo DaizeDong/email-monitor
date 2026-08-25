@@ -167,8 +167,73 @@ def render():
         json.dumps(build_row(c), ensure_ascii=False, sort_keys=False) + "\n" for c in CASES)
 
 
+TOPIC_FIXTURE = os.path.join("skills", "email-monitor", "tests", "topic_regression.jsonl")
+
+# Each case reproduces a SHAPE of failure observed in a real audit, using
+# invented senders. The shapes, not the messages, are what must not regress.
+TOPIC_CASES = [
+    {
+        "shape": "keyword-in-subject-is-not-the-topic",
+        "from": "Hotel Front Desk <no-reply@hotel.example.com>",
+        "subject": "Your temporary account password",
+        "expect_labels": [],
+        "why": "the word password is not a purchase; nothing here shows money moved",
+    },
+    {
+        "shape": "receipt-of-documents-is-not-a-purchase",
+        "from": "Graduate Admissions <admissions@school.example.org>",
+        "subject": "Recommendation Confirmation of Receipt",
+        "expect_labels": [],
+        "why": "receipt here means documents arrived, not that a payment occurred",
+    },
+    {
+        "shape": "wrong-domain-entirely",
+        "from": "Paper Digest <digest@papers.example.org>",
+        "subject": "Access to the project group was granted",
+        "expect_labels": [],
+        "why": "a paper recommendation service is not a code hosting platform, and "
+               "no allowed label is plainly supported by sender or subject",
+    },
+    {
+        "shape": "money-in-is-not-a-spend",
+        "from": "Marketplace <noreply@market.example.com>",
+        "subject": "You sold an item on the community market",
+        "expect_labels": [],
+        "why": "money arrived rather than left; a receipt proves a spend",
+    },
+    {
+        "shape": "genuine-receipt-must-still-be-labelled",
+        "from": "Billing <billing@shop.example.com>",
+        "subject": "Receipt for your payment of $42.00",
+        "expect_labels": ["Receipt"],
+        "why": "positive control: if this one stops being labelled the gate is too tight",
+    },
+]
+
+
+def build_topic_row(case):
+    """One TOPIC_CASE -> one topic-regression row. Same fixed-key-order discipline as
+    build_row: data_boundary.py compares bytes, so key order is part of the contract."""
+    return {"shape": case["shape"], "from": case["from"], "subject": case["subject"],
+            "expect_labels": case["expect_labels"], "why": case["why"]}
+
+
+def render_topic():
+    """The whole topic-regression fixture as one string. Same format rules as render()."""
+    return "".join(
+        json.dumps(build_topic_row(c), ensure_ascii=False, sort_keys=False) + "\n"
+        for c in TOPIC_CASES)
+
+
 def repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _write(dest, text):
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    # newline="\n": never let Windows translate this to CRLF -- the bytes are the contract.
+    with open(dest, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
 
 
 def main():
@@ -176,17 +241,19 @@ def main():
     ap.add_argument("--out", help="write fixtures into this directory (default: regenerate in place)")
     a = ap.parse_args()
 
+    root = a.out if a.out else repo_root()
     if a.out:
         os.makedirs(a.out, exist_ok=True)
         dest = os.path.join(a.out, os.path.basename(FIXTURE))
+        topic_dest = os.path.join(a.out, os.path.basename(TOPIC_FIXTURE))
     else:
-        dest = os.path.join(repo_root(), FIXTURE)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        dest = os.path.join(root, FIXTURE)
+        topic_dest = os.path.join(root, TOPIC_FIXTURE)
 
-    # newline="\n": never let Windows translate this to CRLF -- the bytes are the contract.
-    with open(dest, "w", encoding="utf-8", newline="\n") as f:
-        f.write(render())
+    _write(dest, render())
+    _write(topic_dest, render_topic())
     print("make_fixtures: wrote %d case(s) -> %s" % (len(CASES), dest))
+    print("make_fixtures: wrote %d case(s) -> %s" % (len(TOPIC_CASES), topic_dest))
     return 0
 
 

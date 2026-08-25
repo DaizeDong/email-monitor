@@ -1,0 +1,31 @@
+# The skill's own test suite in CI.
+#
+# Until 2026-08-20 CI ran only the guard suites under tools/, so skills/email-monitor/tests/ was
+# never executed anywhere except the maintainer's laptop. That is the wrong place for it to live:
+# the suite's most important tests are negative controls that FAIL when a gate is disabled, and a
+# negative control nobody runs protects nothing.
+#
+# The integration marker is excluded here on purpose. Those tests need the private companion config,
+# which by design never exists on a CI runner. Excluding them is honest; making them pass by
+# weakening them would not be.
+name: skill-tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Skill test suite (offline subset)
+        run: |
+          python -m pip install --quiet pytest
+          test -d skills/email-monitor/tests || { echo "::error::skills/email-monitor/tests is MISSING -- a suite that is not here is not a suite"; exit 1; }
+          python -m pytest skills/email-monitor/tests/ -q -m "not integration"
