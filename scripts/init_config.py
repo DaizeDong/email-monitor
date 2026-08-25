@@ -56,6 +56,9 @@ REGISTRY = {
         "local_time": "08:00",
         "tz": "America/New_York",
     },
+    # off by default (CONFIG.md): an uninitialised machine must stay inert until the
+    # operator has actually populated rules/taxonomy.md + sender_map.json + labels.json.
+    "topic_labeling": {"enabled": False},
 }
 
 GITIGNORE = """\
@@ -76,6 +79,12 @@ secrets/*
 # derived / personal layers (never committed)
 rules/merged.json
 rules/_personal_layer.json
+# topic labeling standard (config-spec, CONFIG.md): the operator's real taxonomy, sender
+# mappings and label counts are private data, never committed. init_config.py stamps the
+# skeleton below once; every edit after that stays local.
+rules/taxonomy.md
+rules/sender_map.json
+rules/labels.json
 state/*
 !state/SCHEMA.md
 !state/.gitkeep
@@ -141,6 +150,41 @@ PERSONAL_LAYER_TEMPLATE = """\
 }
 """
 
+# The three files topic_labeling.enabled: true reads (CONFIG.md, "Topic labeling"). All three
+# are GITIGNORED above: this is a skeleton to fill in, not a shipped taxonomy. Content is
+# synthetic (example.com) on purpose -- the operator's real labels, senders and mailing lists
+# are private data and never belong in this public skill repo, only in the private companion.
+TAXONOMY_MD = """\
+# taxonomy.md -- the topic labeling standard (private; edit freely, never committed).
+#
+# This is prose, fed VERBATIM to the model as the only standard it may reason from (CONFIG.md).
+# Write one short paragraph per label: what it means, and what it explicitly does NOT mean, so
+# the model has something falsifiable to check a candidate label against instead of guessing.
+# Every proposed label must also carry a verbatim evidence span from the message's own From or
+# Subject; a label with no such span is dropped before it reaches Gmail, so keep labels tied to
+# things that actually show up there rather than to body content the model never sees.
+#
+# Example (synthetic, replace with your own):
+#
+# Payments
+#   A message says money already moved: a receipt, an invoice, a statement. Not a marketing
+#   email that merely mentions a price. Example sender: billing@example.com.
+#
+# Scheduling
+#   A message proposes, confirms, or changes a specific date/time commitment. Not a generic
+#   newsletter that happens to list events. Example sender: calendar@example.org.
+"""
+
+SENDER_MAP_JSON = json.dumps(
+    {"version": 1, "by_address": {}, "by_domain": {}, "by_list_id": {}},
+    indent=2, ensure_ascii=False,
+) + "\n"
+
+# Empty per-account mapping (private; edit freely, never committed): {"<slug>": ["<label>", ...]}.
+# An account with no entry here is simply never asked to topic-label -- add-only, off by default,
+# same posture as topic_labeling.enabled in registry.json.
+LABELS_JSON = json.dumps({}, indent=2, ensure_ascii=False) + "\n"
+
 TEMPLATES = {
     "business.txt": "Hi {name},\n\n{body}\n\nBest,\nDaize Dong\n",
     "dealer.txt": "Hi {name},\n\n{body}\n\nThanks,\nDaize Dong\n",
@@ -191,6 +235,9 @@ def main():
     write(os.path.join(out, "rules", "project_vocab.yaml"), PROJECT_VOCAB_YAML, a.force)
     write(os.path.join(out, "rules", "kill_list.txt"), KILL_LIST, a.force)
     write(os.path.join(out, "rules", "_personal_layer.json.template"), PERSONAL_LAYER_TEMPLATE, a.force)
+    write(os.path.join(out, "rules", "taxonomy.md"), TAXONOMY_MD, a.force)
+    write(os.path.join(out, "rules", "sender_map.json"), SENDER_MAP_JSON, a.force)
+    write(os.path.join(out, "rules", "labels.json"), LABELS_JSON, a.force)
     for name, body in TEMPLATES.items():
         write(os.path.join(out, "templates", name), body, a.force)
     write(os.path.join(out, "secrets", "README.md"), SECRETS_README, a.force)
@@ -205,6 +252,8 @@ def main():
     print("  3) Copy rules/_personal_layer.json.template -> _personal_layer.json (gitignored), fill VIPs.")
     print("  4) export %s=%s   (or use the default path)" % (env_var(), out))
     print("  5) python scripts/verify_config.py   # doctor: confirms the config is ready")
+    print("  6) Optional, topic labeling: fill in rules/taxonomy.md, rules/sender_map.json and")
+    print("     rules/labels.json, then flip registry.json's topic_labeling.enabled to true.")
     return 0
 
 

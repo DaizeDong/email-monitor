@@ -2,6 +2,90 @@
 
 All notable changes to this project are documented here (Keep a Changelog style).
 
+## [Unreleased]
+### Fixed
+- **The tick now counts topic verdicts, not just successes.** `topic_labeled=N` cannot separate
+  "the gate is calibrated and this mail genuinely has no label" from "the gate refuses everything"
+  from "the model chain is down", and those need three different responses; `unsure` and `failed`
+  both write nothing, so both were invisible. Each account now logs
+  `topic verdicts judged=.. decided=.. unsure=.. failed=.. labels_added=..`, and only when there
+  was something to judge, since a line of zeros every five minutes trains the reader to skip it.
+  Covered by a test that drives one message into each of the three states, verified by poisoning
+  the counter and watching the test go red.
+- **The test suite no longer writes into the operator's real log.** `em_tick.LOG` resolves
+  `$EMAIL_MONITOR_LOG` at import time and nothing overrode it, so every `pytest` run appended its
+  synthetic failures to the file a human reads to find real ones: measured over four days, 58 lines
+  of `classify failed (boom) -> heuristic` and 24 of `topic label MATCHED ... (not applied)`, all
+  from fixtures. That defeats the reason `failed` is logged separately from `unsure` -- grepping for
+  the calls that actually broke returns test noise. A new root `conftest.py` redirects `EMAIL_MONITOR_LOG`
+  and `EMAIL_MONITOR_STATE_DIR` into a temp sandbox. It does this at MODULE level, not in a fixture:
+  pytest imports test modules (and therefore `em_tick`) before any fixture runs, so a fixture would
+  land after the constant was already read and would change nothing while looking like a fix.
+  Verified by running the suite and asserting the real log gained zero lines while the sandbox log
+  gained some, so "did not grow" cannot be satisfied by nothing having logged at all.
+
+### Added
+- **`reference/topic-labeling.md`, the missing home for the load-bearing gate.** Step 5 of the
+  workflow table pointed at `reference/monitor-and-classify.md`, which documents watch, classify,
+  alert and archive and says nothing about topic labeling: a reader loading the named shard to
+  perform the step found none of the step's rules there. The mechanism (pre-gate ordering, why a
+  sender-keyed rule can never settle a type label, the evidence gate, the three states, the
+  `--add` creates-a-label hazard and the rename ordering it forces) now has one home, and the
+  index points at it.
+- **Topic labeling: an opt-in, add-only capability that decides what a new mail is about, not
+  just how important it is.** Off by default (`topic_labeling.enabled: false` in `registry.json`);
+  the resolved state is logged every tick alongside `archive=`, so a disabled or misconfigured
+  capability is never a silent surprise. A deterministic sender/domain/list-id pre-gate (`em_topic.py`)
+  settles the obvious cases without a model call; anything left goes to the model, which must quote
+  a verbatim evidence span from the sender or subject for every label it proposes -- a label whose
+  evidence does not occur in the input is dropped automatically, and a message with no clear
+  evidence gets no label at all (omission over commission). The transport is the shared `llmcall`
+  package, wrapped in `em_tick._make_transport` to map its never-raises falsy-Result contract onto
+  the three states `judge` needs to tell apart: `decided`, `unsure` (a taxonomy problem), and
+  `failed` (the model chain is down). Labels are written with `gmail-imap-label.py --add` only; the
+  write path (`em_tick.topic_label`) is asserted structurally to never reach `--archive` -- adding a
+  label and hiding a message are different decisions, and topic labeling must never remove
+  `\Inbox`. The taxonomy, sender map, and allowed-label set (`rules/taxonomy.md`,
+  `rules/sender_map.json`, `rules/labels.json`) are DATA, not code: documented in `CONFIG.md`, they
+  live only in the private companion config and never in this public repo.
+- `skills/email-monitor/tests/` is now run in CI (`.github/workflows/skill-tests.yml`), separate
+  from the `pii-guard` security workflow so an ordinary test failure and a detected leak stay
+  distinguishable signals. Tests marked `integration` (need a live private config and a working
+  model transport) are excluded on the runner, which has neither, and are meant to run locally only.
+- **`scripts/init_config.py` now stamps the topic labeling capability, and gets real test
+  coverage.** A mutation probe found that nothing imports `init_config.py`, so a broken generator
+  was invisible to the suite; that in turn had let the generator drift out of sync with the
+  capability above -- it wrote `topic_labeling` nowhere in `registry.json` and stamped none of
+  `rules/taxonomy.md`, `rules/sender_map.json` or `rules/labels.json`, so a fresh machine
+  following `CONFIG.md` got a config directory missing everything the capability reads.
+  `REGISTRY` now carries `topic_labeling.enabled: false`, matching `em_tick.py`'s inert default,
+  and the generator stamps a synthetic skeleton for all three `rules/` files (all three are
+  gitignored in the stamped companion repo; only the skeleton this generator produces is ever
+  written by it). `skills/email-monitor/tests/test_init_config.py` runs the generator into a temp
+  directory and asserts `em_topic.load_config` can consume exactly what it produced, plus `write()`
+  force semantics, idempotent re-runs, and a `verify_config.py` pass/fail check.
+
+### Fixed
+- **A pre-gate sender-map hit was never checked against the account's own allowed-label set**, only
+  the model's proposals were. A live run over real mail wrote a label spelled one way by a shared
+  sender map to an account whose `labels.json` spelled it another way. `em_topic.judge` now runs
+  pre-gate labels through the same allowed check the model's labels get; a hit outside the set is
+  dropped with a `drop_reason`, exactly like a model label would be.
+- **`TYPE_LABELS` was a hardcoded public guess at part of the private standard's spelling, and drift
+  was silent.** `labels.json` may now carry an optional `_type_labels` override that lives with the
+  standard it belongs to; when absent, `em_topic.load_config` still falls back to the module default
+  but now logs a warning, naming the account, when that default does not occur in the account's own
+  allowed set -- the case where the type/source split silently does nothing.
+- **`em_tick._label_add` could count a phantom write.** It was written as `archive()`'s narrow
+  sibling but omitted the matched-count check that function already carries: the label tool exits 0
+  and prints "nothing to do" when its query matches no message. `_label_add` now parses the same
+  `matched (\d+) messages` count and returns `False` on zero, so `topic_labeled=N` in the tick log
+  can no longer count a label that was never applied.
+- **"topic_labeling enabled but not configured" used to log as `enabled` and silently label nothing.**
+  `em_tick.topic_label` now logs explicitly when it is reached (topic labeling is on) but
+  `em_topic.load_config` returns `None` for that account, so "on but uninitialised" is never
+  indistinguishable from "working".
+
 ## [0.2.0] - 2026-07-23
 ### Added
 - **Appointment/deadline dates in mail now become *dated* reminders -- an optional email-monitor <->
