@@ -39,6 +39,7 @@ import em_alert           # noqa: E402
 import em_watch           # noqa: E402
 import em_dates           # noqa: E402
 import em_topic            # noqa: E402
+import em_retry            # noqa: E402
 # Module import (not `from llmcall import call`): the transport closure below reaches
 # llmcall.call at call time, so tests can monkeypatch em_tick.llmcall.call directly.
 import llmcall              # noqa: E402
@@ -200,7 +201,7 @@ def _label_add(user, rfc_msgid, label, dry, app_pw=None):
     return True
 
 
-def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
+def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0, state=None):
     """Gated topic-labeling step: decide what each new message is about, and add the
     decided labels. Never removes \\Inbox -- see `_label_add`, its only writer.
 
@@ -210,6 +211,14 @@ def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
     function is only reached when topic_labeling.enabled is True (see caller), so a
     None config here means "on but uninitialised", not "off" -- and the top level
     enabled= log line cannot tell those apart on its own, so this logs it explicitly.
+
+    When `state` is given, messages whose verdict came back `failed` are queued in it
+    and retried on later ticks (see em_retry). `failed` means the model was never
+    reached, so the message has not been judged at all; dropping it would lose it for
+    good, because the caller advances the INBOX cursor whatever happened here. Retries
+    run BEFORE the fresh batch so an outage drains in arrival order, and they only ever
+    reach this function -- never the alert, archive or pool steps, which already ran for
+    those messages on their first pass and must not run twice.
     """
     cfg = em_topic.load_config(slug, log=log)
     if cfg is None:
@@ -225,22 +234,59 @@ def topic_label(user, slug, records, dry, app_pw=None, timeout=120.0):
     # taxonomy signal, failed is an outage, and both write nothing -- so both are
     # invisible unless they are counted here.
     states = {"decided": 0, "unsure": 0, "failed": 0}
-    for r in records:
+
+    queue = em_retry.load(state) if state is not None else []
+    retried = [em_retry.to_record(e) for e in queue]
+    kept = []          # entries still owed a future attempt
+    seen_retry = set()
+
+    for r in retried + list(records):
+        mid = r.get("message_id", "")
+        is_retry = mid in {e.get("message_id") for e in queue} and mid not in seen_retry
+        if is_retry:
+            seen_retry.add(mid)
         msg = {"from": r.get("from", ""), "subject": r.get("subject", ""),
                "date": r.get("date", ""), "list_id": r.get("list_id", "")}
         verdict = em_topic.judge(msg, cfg["taxonomy"], cfg["sender_map"],
                                  cfg["allowed_labels"], call=call, log=log,
                                  type_labels=cfg["type_labels"])
-        states[verdict["state"]] = states.get(verdict["state"], 0) + 1
-        if verdict["state"] != "decided":
+        state_name = verdict["state"]
+        states[state_name] = states.get(state_name, 0) + 1
+
+        if state_name == "failed" and state is not None:
+            entry = next((e for e in queue if e.get("message_id") == mid), None)
+            if entry is None:
+                queue = em_retry.enqueue(queue, r, verdict.get("reason", ""), log=log)
+            else:
+                # Already waiting: count this attempt, and give up once the cap is hit
+                # rather than letting one message be retried forever.
+                if em_retry.mark_attempt(entry):
+                    kept.append(entry)
+                else:
+                    log("ACCOUNT %s: topic retry giving up after %d attempts msgid=%s subject=%r"
+                        % (slug, entry.get("attempts"), mid, r.get("subject", "")[:60]))
+            continue
+
+        if state_name != "decided":
             continue
         for item in verdict["labels"]:
             if _label_add(user, r.get("message_id"), item["label"], dry, app_pw=app_pw):
                 n_labeled += 1
-    if records:
-        log("ACCOUNT %s: topic verdicts judged=%d decided=%d unsure=%d failed=%d labels_added=%d"
-            % (slug, len(records), states["decided"], states["unsure"],
-               states["failed"], n_labeled))
+
+    if state is not None:
+        # Anything that just succeeded (decided or unsure -- both are real verdicts)
+        # leaves the queue. Only entries re-queued above survive, plus newly failed ones.
+        fresh_failures = [e for e in queue
+                          if e.get("message_id") not in seen_retry
+                          and not em_retry.exhausted(e)]
+        em_retry.store(state, kept + fresh_failures)
+
+    if records or retried:
+        log("ACCOUNT %s: topic verdicts judged=%d (retried=%d) decided=%d unsure=%d "
+            "failed=%d labels_added=%d retry_queue=%d"
+            % (slug, len(records) + len(retried), len(retried), states["decided"],
+               states["unsure"], states["failed"],
+               n_labeled, len(em_retry.load(state)) if state is not None else 0))
     return n_labeled
 
 
@@ -388,7 +434,8 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
     # Off by default (topic_enabled=False); em_topic.load_config also inertly declines when
     # this machine has no private taxonomy configured, so a partial rollout is a no-op, not
     # a crash.
-    n_topic = topic_label(user, slug, fresh, dry, app_pw=pw, timeout=topic_timeout) \
+    n_topic = topic_label(user, slug, fresh, dry, app_pw=pw, timeout=topic_timeout,
+                          state=state) \
         if topic_enabled else 0
 
     state["cursors"][key] = new_cursor
