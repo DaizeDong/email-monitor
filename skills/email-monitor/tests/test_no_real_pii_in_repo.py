@@ -19,7 +19,7 @@ dossier -- `"str" + "eet"` reassembles at import. The guard against the leak WAS
 
 WHAT IT IS NOW
 --------------
-It delegates to `tools/pii_guard.py`, which is the inverse design:
+It delegates to `guards/tools/pii_guard.py`, which is the inverse design:
   * an ALLOWLIST -- anything real-world-shaped outside the declared synthetic namespace is a
     finding, including identifiers nobody predicted; it needs no private data, so it runs in CI.
   * an optional private denylist read at RUNTIME from `~/.pii-denylist.json`, OUTSIDE every repo,
@@ -36,12 +36,13 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # skills/email-monitor/tests -> root
-GUARD = os.path.join(REPO_ROOT, "tools", "pii_guard.py")
+GUARD = os.path.join(REPO_ROOT, "guards", "tools", "pii_guard.py")
 
 
 def test_pii_guard_is_vendored():
     assert os.path.isfile(GUARD), (
-        "tools/pii_guard.py is missing; re-vendor it from the shared pii-guard master."
+        "guards/tools/pii_guard.py is missing, so nothing scanned this repo. "
+        "The guards submodule is not checked out: run `git submodule update --init`. Do not re-vendor a copy."
     )
 
 

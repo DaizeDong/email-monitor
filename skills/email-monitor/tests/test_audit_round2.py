@@ -56,7 +56,7 @@ def test_secret_files_are_gitignored(relpath):
 # ---------- MEDIUM: no real PII in public fixtures ----------
 
 def test_no_real_pii_in_public_fixtures():
-    """Delegate to tools/pii_guard.py instead of hardcoding needles.
+    """Delegate to guards/tools/pii_guard.py instead of hardcoding needles.
 
     This test used to hold its own `PII_DENYLIST` of the operator's real employer, residence and
     Gmail slug (split into fragments). That was a labeled dossier in a public repo -- the guard
@@ -67,7 +67,7 @@ def test_no_real_pii_in_public_fixtures():
     root = _repo_root()
     if not root:
         pytest.skip("not a git checkout")
-    guard = os.path.join(root, "tools", "pii_guard.py")
+    guard = os.path.join(root, "guards", "tools", "pii_guard.py")
     if not os.path.isfile(guard):
         pytest.skip("pii_guard not vendored")
     p = subprocess.run([sys.executable, guard, "--tree"], cwd=root,
