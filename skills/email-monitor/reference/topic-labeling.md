@@ -153,3 +153,33 @@ second set in place and reported the label as unfixable.
 Re-run the review on exactly the labels touched, plus the labels the mail moved INTO. The second is
 easy to skip and is the one that catches a bad move: a corpus that was clean before a bulk insert
 and is dirty after it was polluted by that insert.
+
+## Audit only what the kernel decided
+
+The kernel advances an INBOX cursor, so it never judges outgoing mail. But sent mail does carry
+topic labels: thread-level operations during a historical retriage put them there, and on one
+account 144 of 249 sent messages had one. Sampling those made the reviewer grade decisions nobody
+made, and it was not a small effect -- 7 of 17 findings in one round, every one quoting a rule
+about mail the sender received. Those crowd out findings that can actually be acted on.
+
+The review therefore excludes the account's own address. Excluding is the right verb rather than
+merely the quieter one: **stripping the labels would change nothing anyway**, because Gmail resolves
+`label:` to threads, so a reply carrying its thread's label alters no search result in either
+direction. There is nothing to fix in the mailbox, only something to stop grading.
+
+The general form: an audit's population must be the population its subject actually decided. Any
+message that reached its label some other way is noise at best, and at worst it is noise that looks
+exactly like signal and gets acted on.
+
+## When the reviewer and the standard disagree, the standard wins
+
+A review flagged a whole employment thread as belonging to a different label, quoting a generic
+tie-break rule ("prefer the single closest label") rather than a definition. The definition of the
+label it was sitting under named that exact case. The finding was rejected and the DEFINITION was
+sharpened instead, so the next run stops rediscovering the same ambiguity.
+
+Worth separating two things a finding can mean. When it quotes a definition, it is evidence about
+the message. When it quotes a tie-break, a priority rule, or a general principle, it is evidence
+about the standard being underspecified, and the repair belongs in `taxonomy.md`, not in the
+mailbox. Moving mail on the second kind is how a taxonomy gap turns into a recurring migration that
+reverses itself.

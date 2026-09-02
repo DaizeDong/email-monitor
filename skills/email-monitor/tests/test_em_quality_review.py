@@ -207,3 +207,27 @@ def test_reviewer_is_told_it_cannot_judge_body_evidence():
     assert "BODY" in p
     low = p.lower()
     assert "absence" in low and "subject line is not evidence" in low
+
+
+def test_fetch_excludes_the_owners_own_sent_mail():
+    """The kernel never labels outgoing mail, so the review must not audit it.
+
+    em_tick advances an INBOX cursor. Labels on sent mail came from thread-level
+    operations during the historical retriage, and reviewing them makes the
+    reviewer judge a decision the kernel never made. In one real run that was 7
+    of 17 findings, crowding out the ones that could be acted on.
+    """
+    seen = {}
+
+    def runner(args, env):
+        seen["args"] = args
+        class P:
+            returncode = 0
+            stdout = "matched 0 messages"
+        return P()
+
+    qr.fetch_labelled("me@example.com", "Accounts", 0, None, runner=runner)
+    q = seen["args"][seen["args"].index("--query") + 1]
+    assert "-from:me@example.com" in q, \
+        "the query must exclude the account's own address; got %r" % q
+    assert 'label:"Accounts"' in q, "and must still scope to the label"
