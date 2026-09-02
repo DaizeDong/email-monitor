@@ -135,9 +135,20 @@ def fetch_labelled(user, label, limit, app_pw, runner=None):
 
     Uses the existing label tool in --dry mode, which prints matched From/Subject
     and writes nothing. Read-only is not a promise here, it is the only mode used.
+
+    The owner's OWN sent mail is excluded, because this review audits the kernel
+    and the kernel never sees it: em_tick advances an INBOX cursor, so nothing it
+    judges is outgoing. The labels on sent mail came from thread-level operations
+    during the historical retriage, and on one account 144 of 249 sent messages
+    carry one. Sampling them made the reviewer judge decisions nobody made, which
+    is not a finding that anyone can act on -- and it crowded out real ones: 7 of
+    17 findings in one run were this, all quoting rules about mail the sender
+    received. Excluding is right rather than merely quieter, and note that
+    stripping those labels would NOT be: Gmail resolves `label:` to threads, so a
+    reply carrying its thread's label changes no search result either way.
     """
     args = [sys.executable, LABEL_TOOL, "--user", user,
-            "--query", 'label:"%s"' % label, "--add", label, "--dry"]
+            "--query", 'label:"%s" -from:%s' % (label, user), "--add", label, "--dry"]
     env = dict(os.environ)
     if app_pw:
         env["GMAIL_APP_PW"] = app_pw
