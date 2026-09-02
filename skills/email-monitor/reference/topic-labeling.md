@@ -97,3 +97,43 @@ from `registry.json`**, not by any shorter nickname: `load_config` does a plain 
 `None` on a miss, which makes the whole capability inert while the flag still reads enabled. The
 tick logs that case explicitly, because the top-level `topic_labeling=` line cannot tell "off" from
 "on but unconfigured" on its own.
+
+## Repairing a corpus in bulk: the two ways it lies to you
+
+Fixing a bad map entry does not fix the mail it already mislabelled, so a rule change is normally
+followed by a bulk move through `gmail-imap-label.py`. Both times that was done on 2026-09-01 the
+tool reported success while doing less than it claimed.
+
+**`matched 0` exits 0.** Every move in a 72-message batch returned rc=0 and 14 of them changed
+nothing; the count only surfaced because the residual was checked afterwards and came back higher
+than the verdicts predicted. `rc` answers "did the tool run", never "did it find anything". A caller
+that does not parse the `matched N` line cannot tell a completed move from a no-op, which is the
+same clean-versus-never-looked confusion the exit codes elsewhere in this skill exist to prevent.
+
+**The listing truncates the subject at ~54 characters, mid-word.** So a query built from that
+listing asks Gmail for `subject:"...and Course Assign"`, phrase search tokenizes, and `Assign` never
+matches `Assignments`. Drop the trailing partial token before querying. This is also why a subject
+query is a poor message identifier in general: it is not unique either, and duplicates in the same
+batch will move together on the first query and report `matched 0` on the second, which looks
+identical to the truncation failure and is harmless. Distinguish them by the residual count, not by
+the per-move output.
+
+The check that catches both: after the batch, count what still carries the old label and compare it
+to the number of verdicts that said "keep". Equal means every intended move landed and nothing was
+swept in by accident. That number disagreeing in EITHER direction is a real defect -- lower means a
+query over-matched and moved mail nobody judged, higher means moves silently did nothing.
+
+## Re-judging a mixed sender is not the same as retargeting it
+
+Some addresses are not a topic. One department list (`announce@example.edu`) carried HR onboarding
+forms, seminar invitations, job ads, free t-shirt notices and visa paperwork through a single
+address, and re-judging all 84 of its messages moved 74 of them to six different labels. No entry in the sender map could have been right, so the
+entry was removed and the mail falls through to per-message judgement, which the map's own note
+already names as the safe direction for anything the audit cannot settle. Two shapes to recognise:
+a list that serves a whole organisation, and any individual human, who by definition writes about
+more than one thing.
+
+When re-judging a corpus, require a quorum of parseable verdicts before writing anything. The first
+attempt got 6 valid verdicts out of 26 and aborted on a 90% bar rather than applying a quarter of a
+plan; smaller batches with a retry then returned 26 of 26. A partial apply here is worse than no
+apply, because the next run cannot tell which messages it already handled.
