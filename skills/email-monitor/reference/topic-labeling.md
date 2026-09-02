@@ -137,3 +137,19 @@ When re-judging a corpus, require a quorum of parseable verdicts before writing 
 attempt got 6 valid verdicts out of 26 and aborted on a 90% bar rather than applying a quarter of a
 plan; smaller batches with a retry then returned 26 of 26. A partial apply here is worse than no
 apply, because the next run cannot tell which messages it already handled.
+
+## One review pass is not enough, and the reason is structural
+
+After the first round of map fixes, two labels that had sampled 7 wrong out of 20 came back at 0,
+and the corpus the mail moved into sampled clean. The fix held. But the label with the worst rate
+came back at the SAME rate, with entirely different senders behind it.
+
+That is not the fix failing. It is what a sample does: the loudest sender crowds the sample, and
+only once it is gone do the next ones become visible. So a label that is still red after a fix has
+to be read as new evidence, not as a failed repair, and the senders behind it have to be listed
+again rather than assumed to be the ones already dealt with. A single pass would have left the
+second set in place and reported the label as unfixable.
+
+Re-run the review on exactly the labels touched, plus the labels the mail moved INTO. The second is
+easy to skip and is the one that catches a bad move: a corpus that was clean before a bulk insert
+and is dirty after it was polluted by that insert.
