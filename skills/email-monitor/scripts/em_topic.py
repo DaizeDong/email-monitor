@@ -252,16 +252,26 @@ def _resolve_config_dir():
     against a real config.
 
     realpath, not abspath: this skill is deployed through a symlink, and abspath would
-    compute a tools/ path that does not exist in the deployed copy.
+    compute a path that does not exist in the deployed copy.
+
+    The resolver lives in the guards submodule now, one copy for the fleet instead of one per
+    repo. A MISSING resolver raises rather than returning None: those two answers used to be the
+    same here and they mean opposite things. None is "this machine has no companion configured",
+    an ordinary state. A missing module means the submodule was never checked out and NOTHING was
+    consulted, and reporting that as "no config" is how an unchecked-out kit looks exactly like a
+    clean uninitialized install.
     """
     here = os.path.dirname(os.path.realpath(__file__))
-    tools = os.path.abspath(os.path.join(here, "..", "..", "..", "tools"))
+    tools = os.path.abspath(os.path.join(here, "..", "..", "..", "guards", "tools"))
     if tools not in sys.path:
         sys.path.insert(0, tools)
     try:
         import datadir
-    except Exception:
-        return None
+    except ImportError as e:
+        raise RuntimeError(
+            "cannot import datadir from %s, so the companion resolver never ran. The guards "
+            "submodule is not checked out: run `git submodule update --init`. This is not the "
+            "same as having no config, and must not be read as one." % tools) from e
     for var in ("EMAIL_MONITOR_CONFIG_DIR", "EMAIL_MONITOR_CONFIG"):
         override = os.environ.get(var)
         if override:
