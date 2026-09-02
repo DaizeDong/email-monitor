@@ -159,3 +159,51 @@ def test_fetch_returns_empty_on_tool_failure():
         return P()
 
     assert qr.fetch_labelled("u@x", "L", 0, None, runner=runner) == []
+
+
+# ---------- the two reviewer errors the first real run produced ----------
+
+def test_prompt_lists_only_this_accounts_labels():
+    """A proposal outside the account's set is worse than no proposal.
+
+    `em_topic.judge` DROPS a mapped label that is not in the account's allowed
+    set, so acting on such a finding strips the message and adds nothing. Two of
+    the three reviewer errors in the first real run were this same mistake.
+    """
+    seen = {}
+    qr.judge([("a@x.example", "S", "Accounts")], "std",
+             allowed=["Accounts", "Accounts/AI", "Life/Housing"],
+             call=lambda p: seen.setdefault("p", p) and [])
+    p = seen["p"]
+    assert "Accounts/AI" in p and "Life/Housing" in p
+    assert "THIS ACCOUNT HAS" in p, "the constraint must be stated, not just the list"
+    # Negative control: a label the account does not have must be absent, or the
+    # constraint is decorative and the reviewer can still propose it.
+    assert "Accounts/Bank" not in p
+
+
+def test_allowed_block_is_omitted_when_unknown():
+    # An empty list must not render an empty "the account has exactly these:" section,
+    # which would read as "this account has no labels" and forbid every proposal.
+    seen = {}
+    qr.judge([("a@x.example", "S", "Accounts")], "std", allowed=None,
+             call=lambda p: seen.setdefault("p", p) and [])
+    assert "THIS ACCOUNT HAS" not in seen["p"]
+
+
+def test_reviewer_is_told_it_cannot_judge_body_evidence():
+    """The header-only cut has to forbid BOTH directions of inference.
+
+    The prompt already said a label survives even if the body might contradict it.
+    The inverse cost a real false finding: a card notification whose subject is
+    just the merchant name was called a bad receipt label because no amount
+    appeared in the subject, when the amount was in the body the reviewer never
+    sees. Absence from the headers is not absence from the message.
+    """
+    seen = {}
+    qr.judge([("a@x.example", "S", "Life/Receipt")], "std",
+             call=lambda p: seen.setdefault("p", p) and [])
+    p = seen["p"]
+    assert "BODY" in p
+    low = p.lower()
+    assert "absence" in low and "subject line is not evidence" in low

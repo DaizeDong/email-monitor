@@ -104,7 +104,12 @@ RULES THAT DECIDE MOST CASES. Read these before judging anything:
 - Multiple SOURCE labels on one message are forbidden unless it genuinely spans two domains.
 - You see only From and Subject, which is all the labeller saw. If those two lines genuinely
   supported the label, it is NOT wrong, even if you suspect the body says otherwise.
-
+- The same cut forbids the opposite move. When the standard requires evidence that normally
+  lives in the BODY -- an amount, an order total, the words receipt or invoice -- its absence
+  from the subject line is NOT evidence that it is absent from the message. You cannot see the
+  body, so you cannot find that kind of violation at all. Say nothing rather than infer it. A
+  card notification whose subject is only the merchant name still carries the amount inside.
+%(allowed)s
 MESSAGES, each with the label it currently carries:
 %(items)s
 
@@ -173,7 +178,26 @@ def sample(items, n, stride_seed=0):
     return [items[int(i * step) + stride_seed % max(1, int(step))] for i in range(n)]
 
 
-def judge(items, taxonomy, call=None, timeout=300.0):
+def _allowed_block(allowed):
+    """The labels this ACCOUNT actually has, which is not the same as the taxonomy's.
+
+    A proposal outside this set is worse than no proposal: `em_topic.judge` drops a
+    mapped label that is not in the account's allowed set, so acting on it leaves the
+    message carrying nothing at all. Two of the three reviewer errors in the first
+    real run were this exact mistake, both proposing a bank sublabel to an account
+    that has none.
+    """
+    if not allowed:
+        return ""
+    parts = ["- `should_be` MUST name one of the labels THIS ACCOUNT HAS, or be empty to",
+             "  mean the label should simply be removed. The account has exactly these:"]
+    parts += ["    %s" % l for l in allowed]
+    parts += ["  A label absent from that list does not exist here. Proposing one is worse",
+              "  than proposing nothing: acting on it strips the message and adds nothing."]
+    return "\n".join(parts) + "\n"
+
+
+def judge(items, taxonomy, allowed=None, call=None, timeout=300.0):
     """Ask one reviewer to refute the whole batch. Returns [] when the call fails.
 
     Returning [] on failure rather than raising keeps an outage from being read as
@@ -184,7 +208,8 @@ def judge(items, taxonomy, call=None, timeout=300.0):
     listing = "\n".join(
         "%d. FROM: %s\n   SUBJECT: %s\n   LABEL: %s" % (i + 1, f, s, l)
         for i, (f, s, l) in enumerate(items))
-    prompt = PROMPT % {"taxonomy": taxonomy, "items": listing}
+    prompt = PROMPT % {"taxonomy": taxonomy, "items": listing,
+                       "allowed": _allowed_block(allowed)}
     if call is not None:
         return call(prompt)
     if llmcall is None:
@@ -251,7 +276,7 @@ def main(argv=None):
         if not pool:
             continue
         picked = [(f, s, label) for (f, s) in sample(pool, a.sample)]
-        verdicts = judge(picked, cfg["taxonomy"])
+        verdicts = judge(picked, cfg["taxonomy"], cfg["allowed_labels"])
         if verdicts is None:
             # An outage is not a clean result. Name it, and keep it out of the counts.
             unreviewed.append((label, len(picked)))
