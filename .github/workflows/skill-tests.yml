@@ -32,5 +32,14 @@ jobs:
       - name: Skill test suite (offline subset)
         run: |
           python -m pip install --quiet pytest
+          # requirements.txt already declared llmcall; this job just never installed it, so the
+          # suite could not be COLLECTED and had been red since 2026-08-31 with "No module named
+          # 'llmcall'". On a workstation it resolves off sys.path because the package sits in a
+          # neighbouring directory; a runner has no such neighbour.
+          #
+          # Installing the declared file rather than naming the package here keeps one list. A
+          # second copy in a workflow is how a dependency added later goes missing in CI only.
+          python -m pip install --quiet -r requirements.txt
+          python -c "import llmcall" || { echo "::error::llmcall did not import after install; the suite would fail at collection, which reads as a code defect rather than a missing dependency"; exit 1; }
           test -d skills/email-monitor/tests || { echo "::error::skills/email-monitor/tests is MISSING -- a suite that is not here is not a suite"; exit 1; }
           python -m pytest skills/email-monitor/tests/ -q -m "not integration"

@@ -79,3 +79,24 @@ def test_empty_or_vague_phrase_no_fake_softdue():
     # em_duenorm invents a soft-due for an empty phrase; we must reject that, never surface a fake date
     assert normalize_due_at("", now=NOW, base=BASE) is None
     assert normalize_due_at("see you soon", now=NOW, base=BASE) is None
+
+
+# ---------- the timezone database, and what happens without it ----------
+def test_the_new_york_zone_is_the_real_one_not_a_fixed_offset():
+    """A fixed offset is wrong for half the year, so the code must say which one it got.
+
+    zoneinfo reads the SYSTEM tz database. Linux has one, Windows does not, and there the tzdata
+    package supplies it. Without either, em_duenorm falls back to a constant. Neither constant is
+    right: -4 makes every January date an hour early, -5 makes every July date an hour late, and
+    the suite fails two tests under each. The failure is silent in production, where nobody is
+    comparing the answer to a known one.
+
+    So the fallback is FLAGGED, and this asserts the flag rather than the offset: on a machine set
+    up per requirements.txt the real zone is in use. If this fails, the answer is to install the
+    database, not to adjust a constant.
+    """
+    import em_duenorm
+    assert getattr(em_duenorm, "NY_IS_REAL", None) is True, (
+        "em_duenorm fell back to a fixed UTC offset because no tz database was found. "
+        "Install it (requirements.txt pulls tzdata on Windows); do not tune the constant, "
+        "because no constant is correct across a DST boundary.")
