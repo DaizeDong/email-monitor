@@ -1,2 +1,8 @@
 # The headless LLM chain (codex -> cc -> claude) is the shared llmcall package.
 llmcall @ git+https://github.com/DaizeDong/llmcall.git
+
+# zoneinfo reads the SYSTEM tz database. Linux has one, Windows does not, and without it the
+# due-date parser falls back to a FIXED offset that is wrong for half the year: two tests
+# fail in January under one choice of offset and two different ones fail in July under the
+# other. There is no correct constant, so the database is a real dependency, not a nicety.
+tzdata; sys_platform == "win32"

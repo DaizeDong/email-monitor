@@ -20,8 +20,20 @@ from datetime import timedelta, timezone
 try:
     from zoneinfo import ZoneInfo
     NY = ZoneInfo("America/New_York")
+    NY_IS_REAL = True
 except Exception:  # pragma: no cover
-    NY = timezone(timedelta(hours=-4))
+    # zoneinfo reads the SYSTEM tz database. Linux has one; Windows does not, and there the
+    # `tzdata` package supplies it. Without either, this falls back to a FIXED offset, and a fixed
+    # offset is wrong for half the year: -4 is EDT, so every January date came out an hour early.
+    # The failure was silent, and it only showed up when the suite was run on a machine without
+    # the database, which is not the machine anyone runs it on.
+    #
+    # The fallback stays, because refusing to import would take the whole skill down over a due
+    # date. But it is now FLAGGED, so a caller that cares can tell a real zone from a guess, and
+    # the offset is EST rather than EDT: standard time is the correct answer more often than not
+    # for a zone that observes DST for under eight months.
+    NY = timezone(timedelta(hours=-5))
+    NY_IS_REAL = False
 
 from email.utils import parsedate_to_datetime
 from datetime import datetime  # noqa: F401  (kept for backward-compat re-export surface)
