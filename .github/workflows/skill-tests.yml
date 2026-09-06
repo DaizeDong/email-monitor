@@ -43,3 +43,6 @@ jobs:
           python -c "import llmcall" || { echo "::error::llmcall did not import after install; the suite would fail at collection, which reads as a code defect rather than a missing dependency"; exit 1; }
           test -d skills/email-monitor/tests || { echo "::error::skills/email-monitor/tests is MISSING -- a suite that is not here is not a suite"; exit 1; }
           python -m pytest skills/email-monitor/tests/ -q -m "not integration"
+          # The pytest summary above carries the deselected count, but a count with no name reads
+          # as noise. Say once, in the job log, WHICH tests did not run and why.
+          echo "::notice::integration-marked tests were NOT run (they need the private companion config, which by design never exists on a runner); their count is the 'deselected' number in the pytest summary above"

@@ -129,7 +129,10 @@ def _normalize(verdict, msg, tier="agent"):
     reason = str(verdict.get("reason") or "").strip()[:120]
     # summary_zh is what the owner actually reads in the Discord push (see em_alert). It may be
     # absent when a provider ignores the field -- callers must fall back to the redacted subject.
-    summary = str(verdict.get("summary_zh") or "").strip()[:60]
+    # The 60-char cut ends in an ellipsis: a clipped gist must not read as a complete sentence.
+    summary = str(verdict.get("summary_zh") or "").strip()
+    if len(summary) > 60:
+        summary = summary[:59] + "…"
     try:
         conf = round(float(verdict.get("confidence", 0)), 3)
     except (TypeError, ValueError):
