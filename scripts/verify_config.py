@@ -94,6 +94,65 @@ def main():
     check("rules/ dir present", os.path.isdir(os.path.join(cfg, "rules")))
     check("templates/ dir present", os.path.isdir(os.path.join(cfg, "templates")))
 
+    # rules/ contents. Until 2026-09-15 this script checked that rules/ EXISTS and never
+    # looked inside: emptying rules/sender_map.json or rules/labels.json still printed
+    # READY, and those two files are the whole classification behaviour of this skill.
+    # Found by a config mutation probe that breaks each field and demands the doctor go red.
+    rules_dir = os.path.join(cfg, "rules")
+
+    def _load_rule(name):
+        p = os.path.join(rules_dir, name)
+        if not os.path.isfile(p):
+            check("rules/%s present" % name, False, p)
+            return None
+        check("rules/%s present" % name, True)
+        try:
+            with open(p, "r", encoding="utf-8-sig") as f:
+                doc = json.load(f)
+        except Exception as e:
+            check("rules/%s valid JSON" % name, False, str(e))
+            return None
+        check("rules/%s valid JSON" % name, True)
+        if not isinstance(doc, dict):
+            check("rules/%s is an object" % name, False,
+                  "top level is %s" % type(doc).__name__)
+            return None
+        return doc
+
+    smap = _load_rule("sender_map.json")
+    if smap is not None:
+        # An empty mapping is a valid JSON object, so "valid JSON" alone passes on a file
+        # that classifies nothing. Every bucket must exist and at least one must be populated.
+        buckets = ("by_address", "by_domain", "by_list_id")
+        for b in buckets:
+            check("sender_map.%s is an object" % b, isinstance(smap.get(b), dict),
+                  "got %s" % type(smap.get(b)).__name__)
+        populated = sum(len(smap.get(b) or {}) for b in buckets
+                        if isinstance(smap.get(b), dict))
+        check("sender_map has at least one rule across the three buckets", populated > 0,
+              "%d total" % populated)
+        check("sender_map.version present", smap.get("version") is not None)
+
+    labels = _load_rule("labels.json")
+    if labels is not None and isinstance(data.get("accounts"), list):
+        # Cross-check instead of a hand-written key list: every account registered in
+        # registry.json must have a labels entry. A hand-written list can be incomplete,
+        # and those slugs are real account names that must never be committed here.
+        missing = [ac.get("slug") for ac in data["accounts"]
+                   if ac.get("slug") and ac.get("slug") not in labels]
+        check("every registered account has a labels.json entry", not missing,
+              "%d account(s) registered but unmapped" % len(missing))
+        mapped = [k for k in labels if not k.startswith("_")]
+        check("labels.json has at least one account mapping", len(mapped) > 0)
+        # Each account entry is a LIST of label names, not an object. The first draft of
+        # this check asserted dict and went red on real data -- the data is the fact, so
+        # the assertion moved, not the file.
+        badshape = [k for k in mapped
+                    if not (isinstance(labels[k], list) and labels[k]
+                            and all(isinstance(x, str) for x in labels[k]))]
+        check("each labels.json account entry is a non-empty list of label names",
+              not badshape, "%d entr(ies) have the wrong shape" % len(badshape))
+
     sec = os.path.join(cfg, "secrets")
     check("secrets/ dir present", os.path.isdir(sec))
 
