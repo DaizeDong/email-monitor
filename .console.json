@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "component": "email-monitor",
+  "read": "task-console-status --configured",
+  "tasks": [
+    {
+      "id": "emailmonitortick",
+      "kind": "oneshot",
+      "entrypoint": "task:emailmonitortick",
+      "timeout_seconds": 3600,
+      "concurrency_key": "email-monitor/emailmonitortick",
+      "checks": [
+        {
+          "id": "legacy-1",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "emailqualityreview",
+      "kind": "oneshot",
+      "entrypoint": "task:emailqualityreview",
+      "timeout_seconds": 259200,
+      "concurrency_key": "email-monitor/emailqualityreview",
+      "checks": [
+        {
+          "id": "legacy-1",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

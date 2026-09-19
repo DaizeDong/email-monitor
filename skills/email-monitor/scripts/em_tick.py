@@ -33,7 +33,8 @@ _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_classify        # noqa: E402
-import em_agent_classify  # noqa: E402
+import em_agent_classify
+from llmcall import active_chain as llmcall_active_chain  # noqa: E402
 import em_pool            # noqa: E402
 import em_alert           # noqa: E402
 import em_watch           # noqa: E402
@@ -396,7 +397,9 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                 em_alert.send(em_alert.build_title(
                     pr, slug, r["subject"],
                     summary=cls.get("summary_zh", ""),
-                    account_label=acct.get("display_zh")))
+                    account_label=acct.get("display_zh")),
+                    run_id=em_alert.message_run_id(slug, r.get("gm_msgid") or r.get("message_id")),
+                    condition="important")
                 n_alert += 1
             except Exception as e:
                 log("ACCOUNT %s: alert failed: %s" % (slug, e))
@@ -496,14 +499,19 @@ def main():
         msg = "[email-monitor] preflight FAILED, missing: %s" % ", ".join(missing)
         log(msg)
         try:
-            em_alert.send(msg)
-        except Exception:
-            pass
+            em_alert.send(msg, phase="preflight", condition="missing-dependency")
+        except Exception as exc:
+            log("preflight notification failed: %s" % exc)
         return 2
 
     agent_cfg = cfg.get("classifier", {}) or {}
-    log("classifier mode=%s chain=%s" % (agent_cfg.get("mode", "agent"),
-                                         ",".join(agent_cfg.get("chain") or em_agent_classify.DEFAULT_CHAIN)))
+    # Report the ladder that will actually be walked. A configured chain overrides routing;
+    # with none configured it is llmcall's live chain, NOT em_agent_classify.DEFAULT_CHAIN,
+    # which is a kept-for-import relic and would print a ladder nobody is using.
+    _routed = agent_cfg.get("chain") or list(llmcall_active_chain())
+    log("classifier mode=%s chain=%s%s" % (agent_cfg.get("mode", "agent"),
+                                           ",".join(_routed),
+                                           "" if agent_cfg.get("chain") else " (from llmcall)"))
 
     # Archiving is opt-out: when disabled, NOISE is still classified/labelled in the pool but the
     # message is never moved out of the INBOX -- the owner reviews every mail themselves. Logged

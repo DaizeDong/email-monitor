@@ -1,26 +1,10 @@
 #!/usr/bin/env python3
-"""email-monitor agent classifier — judge each new mail with a background LLM, cheapest first.
+"""Email classification through one llmcall judge request.
 
-Instead of scoring offline signals, we feed sender + subject + full body to a model and let it decide
-the response-obligation tier the way a person would. Providers are tried in a cost-ordered CHAIN and
-the first one that returns a parseable verdict wins:
-
-  1. codex   -- OpenAI Codex CLI (`codex exec`), our least-used quota -> effectively spare capacity
-  2. cc      -- Claude Code headless via a hosted gateway
-  3. claude  -- plain Claude Code headless (direct) -> last resort
-
-  priority : URGENT | ACTION | FYI | NOISE   (only URGENT/ACTION alert)
-  label    : short semantic tag
-
-Design:
-  - Prompt fed on STDIN (bodies are large; keeps argv clean, dodges Windows cmdline limits).
-  - Absolute binary paths (a scheduled task runs with a minimal PATH); `.cmd` launched via `cmd /c`.
-  - codex writes its final message with `-o <file>` (clean, no reasoning preamble); cc/claude use
-    `--output-format json` and we unwrap the `result` field.
-  - Never raises: any provider failure (missing binary, timeout, unparseable output) is skipped and
-    the next provider is tried; if all fail, returns None so the caller falls back to em_classify.
-Transport (the codex -> cc -> claude chain + headless footguns) is the shared `llmcall` package
-(pip dependency, see the repo requirements.txt); the domain logic here is stdlib.
+This module owns prompt construction, verdict extraction and normalization.
+Routing, model, effort and provider retries belong to llmcall. Explicit caller
+chains remain supported. A failed classification returns None for the existing
+deterministic fallback; it never launches a second model request here.
 """
 import json
 import re

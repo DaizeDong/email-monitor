@@ -119,15 +119,38 @@ def _egress_cmd():
     return None
 
 
-def send(message):
+def _notification_client():
+    import importlib.util
+    from pathlib import Path
+    path = Path(os.environ.get('SCHEDULE_NOTIFICATION_CLIENT') or
+                Path.home() / '.claude/skills/schedule-reminder/scripts/notification_client.py')
+    if not path.is_file():
+        raise RuntimeError('shared notification client missing; bind SCHEDULE_NOTIFICATION_CLIENT')
+    spec = importlib.util.spec_from_file_location('_owner_notification_client', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def send(message, *, run_id=None, phase='alert', condition='important',
+         retry_failed=False):
     cmd = _egress_cmd()
     if not cmd:
-        raise RuntimeError("no relay available (neither schedule-reminder relay.py nor %s)" % RELAY)
-    p = subprocess.run(cmd + [message],
-                       capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
-    if p.returncode != 0:
-        raise RuntimeError("relay failed: %s" % (p.stderr or p.stdout))
+        raise RuntimeError('no relay available; explicit notifier target unavailable')
+    client = _notification_client()
+    receipt = client.submit('email-monitor', run_id, phase, condition, 'mail', message,
+        language='preserve', retry_failed=retry_failed, **client.transport_options(cmd, 'mail'))
+    if receipt['state'] != 'sent':
+        raise RuntimeError(client.detail(receipt))
     return True
+
+
+def message_run_id(account, message_id):
+    """Use the mail's existing identity; absence cannot become an empty shared identity."""
+    import json
+    if not message_id:
+        raise ValueError('mail notification requires an existing message ID')
+    return 'email:' + json.dumps([account, str(message_id)], separators=(',', ':'))
 
 
 def main():
@@ -136,13 +159,14 @@ def main():
     ap.add_argument("--account", default="")
     ap.add_argument("--subject", default="")
     ap.add_argument("--message", default="", help="explicit already-redacted message (bypass build)")
+    ap.add_argument("--run-id", help="stable owner occurrence ID")
     ap.add_argument("--dry", action="store_true", help="print title, do not send")
     a = ap.parse_args()
     title = a.message if a.message else build_title(a.priority, a.account, a.subject)
     if a.dry:
         print(title)
         return 0
-    send(title)
+    send(title, run_id=a.run_id)
     print("sent: " + title)
     return 0
 
