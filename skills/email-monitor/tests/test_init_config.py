@@ -107,9 +107,9 @@ def test_running_generator_twice_is_idempotent_and_does_not_corrupt(tmp_path):
     assert json.loads(registry_after_second) == init_config.REGISTRY
 
 
-def test_verify_config_passes_on_a_freshly_generated_config(tmp_path, capsys):
-    """A generator whose own output cannot pass the doctor it ships alongside would be a
-    second, independent drift between the two scripts -- exercise that seam too."""
+def test_verify_config_rejects_unconfigured_generator_skeleton(tmp_path, capsys):
+    """Initialization leaves empty classification rules for the operator to fill.
+    The doctor must keep reporting NOT READY until those rules are configured."""
     out = tmp_path / "cfg"
     argv = sys.argv
     sys.argv = ["init_config.py", "--out", str(out)]
@@ -125,8 +125,10 @@ def test_verify_config_passes_on_a_freshly_generated_config(tmp_path, capsys):
     finally:
         sys.argv = argv
     out_text = capsys.readouterr().out
-    assert exit_code == 0, out_text
-    assert "READY" in out_text
+    assert exit_code == 1, out_text
+    assert "NOT READY" in out_text
+    assert "[FAIL] sender_map has at least one rule" in out_text
+    assert "[FAIL] every registered account has a labels.json entry" in out_text
 
 
 def test_verify_config_reports_missing_config_dir(tmp_path, capsys):

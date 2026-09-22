@@ -33,3 +33,15 @@ scanner cannot promise. Adding a case forces you to state which classifier path 
 to invent the message rather than borrow it.
 
 If a gate blocks you, the gate is right. Never `--no-verify`.
+
+## CI dependency access
+
+The offline suite installs the private `llmcall` dependency declared in
+`requirements.txt`. Set `LLMCALL_DEPLOY_KEY` to a dedicated SSH key registered
+as a read-only deploy key on that dependency repository. Each consumer needs
+its own key. The workflow loads it into a temporary SSH agent and trusts the
+GitHub host keys returned by the HTTPS metadata API.
+
+Fork pull requests do not receive this secret and cannot run the dependency
+check. After reviewing a contribution, a maintainer must test the exact changes
+on a trusted repository branch. A missing credential remains a failed check.
