@@ -33,6 +33,7 @@ jobs:
           python-version: '3.x'
 
       - name: Skill test suite (offline subset)
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           LLMCALL_DEPLOY_KEY: ${{ secrets.LLMCALL_DEPLOY_KEY }}
@@ -42,7 +43,7 @@ jobs:
           gh api meta --jq '.ssh_keys[] | "github.com " + .' >> "$HOME/.ssh/known_hosts"
           eval "$(ssh-agent -s)"
           trap 'ssh-agent -k' EXIT
-          ssh-add - <<< "$LLMCALL_DEPLOY_KEY"
+          printf '%s\n' "$LLMCALL_DEPLOY_KEY" | tr -d '\r' | ssh-add -
           export GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=yes'
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=url.ssh://git@github.com/DaizeDong/llmcall.git.insteadOf
