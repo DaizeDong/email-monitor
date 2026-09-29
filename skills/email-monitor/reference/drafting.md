@@ -17,13 +17,25 @@ in the same thread, then create.
 
 ## Hard draft rules (the draft is the compliance object)
 
-Plain ASCII only; no markdown (`# * \` [ ] > _`); no em-dash/en-dash; no curly/smart quotes; no emoji;
-signature **exactly** `Daize Dong` (no title/company/slogan). `em_draft_lint.py` enforces every rule by
-regex with a hard pass/fail, it never trusts the model's self-assessment. Run it on every draft before
-`create_draft`; any violation = rewrite.
+Select the companion's `registry.json` before drafting. Its `draft.signature` is required and must
+be the final nonempty line; never infer an identity from a message, machine profile or repository.
+The initializer's `Your Name` is an editable placeholder. Set the intended signature in the
+registry and update existing templates to match before drafting.
+
+Drafting is a review workflow performed by the calling session, not an automatic heartbeat step.
+That session's model transport determines where quoted mail content is processed. The heartbeat's
+`runtime.local_only` setting does not enforce locality on a separate drafting session. Check the
+selected session route before supplying mail content; any llmcall use follows its current routing
+policy and may use external providers. Save real scratch drafts and review records only as
+versioned DATA in a verified PRIVATE companion, never in this public tool.
+
+By default, use plain ASCII, no markdown (`# * \` [ ] > _`), no em-dash/en-dash, no curly quotes
+and no emoji. `draft.language` and `draft.style` can explicitly adjust language, markdown and
+length constraints; the signature and no-send rules remain enforced. `em_draft_lint.py` checks
+the finalized draft. Run it before `create_draft`; any violation means the draft needs revision.
 
 ```
-python em_draft_lint.py --file draft.txt --profile dealer --json
+python em_draft_lint.py --config <companion>/registry.json --file <companion>/data/draft.txt --profile dealer --json
 ```
 
 ## Four profiles (routed by classification; low confidence -> the most conservative, business)
@@ -42,4 +54,14 @@ cutting-edge transformative pivotal comprehensive ...`), metaphor nouns (`tapest
 beacon`), filler transitions (`furthermore moreover in conclusion it is worth noting`), opening
 throat-clearing (`I hope this finds you well`, `I wanted to reach out`), and banned shapes
 (negation-parallel `it's not X, it's Y`; not-just-but-also). Vary sentence length (at least one short
-clause). Templates with placeholders live in the config repo under `templates/<profile>.txt`.
+clause). Templates live in the PRIVATE companion under `templates/<profile>.txt`. The initializer
+fills their signature from the registry it selects and leaves `{name}` and `{body}` for drafting.
+Without `--force`, it preserves existing registry and template bytes, including custom prose;
+it rejects a missing or invalid draft configuration before writing any new templates. Editing
+the registry later does not rewrite existing templates, so keep their signatures in sync.
+
+Compatibility: the CLI now requires an explicit `--config`; it retains the existing exit codes
+and JSON fields (`clean`, `profile`, `violations`). The Python `lint` API requires `config=` with
+a draft object or registry. Missing or invalid settings raise `ValueError`, while valid settings
+still produce a list of violations. Calls that previously relied on an implicit signature must
+select a configuration.

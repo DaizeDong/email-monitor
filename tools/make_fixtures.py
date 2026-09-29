@@ -1,44 +1,15 @@
 #!/usr/bin/env python3
-"""make_fixtures -- the test fixtures are GENERATED, because a real record cannot be regenerated.
+"""Generate public fixtures from independently invented behavior cases.
 
-WHY THIS EXISTS
----------------
-The 2026-07 audit found the operator's real private data in this repo, and the vector was a test
-fixture: `golden_classify.jsonl` had been built by pasting REAL emails out of the inbox the skill was
-reading -- real senders, a real person's name, a real employer. It was scrubbed and the history was
-rewritten, but scrubbing is not a fix, because nothing stopped the next agent from doing it again.
+Every address, subject and runtime record must be synthetic. Keep the case table
+as the source of truth; never copy operational mail or reports into it. The data
+boundary check regenerates committed fixtures and compares their bytes, catching
+manual changes to generated output. Reviewing the generator's inputs remains
+necessary: reproducibility alone cannot establish that an input was invented.
 
-And the next agent WILL be tempted, because the temptation is structural, not careless. An agent
-writing a classifier test needs a realistic message; it is already holding a mailbox full of real
-ones; copy-paste is the cheapest move available. Every leak in the audit started exactly there.
-
-So the fixture is not allowed to be a file that a human (or an agent) edits. It is OUTPUT. The only
-input is the CASE TABLE below -- a list of behaviours the classifier must exhibit -- and every
-address, subject and flag in it is synthetic by construction.
-
-That is the entire trick, and it is worth stating plainly:
-
-    A REAL EMAIL CANNOT BE REGENERATED.
-
-`tools/data_boundary.py` re-runs this generator and requires the committed .jsonl to be byte-identical
-to what comes out. So if someone pastes a real message into the golden file, the file no longer
-matches its generator and the check fails LOUDLY, at commit time -- instead of the leak being noticed
-months later, in an audit, or never. A content scanner asks "does this look private?", which fails on
-anything it has not been taught. This asks "could this have been produced from the case table?",
-which a real record can never satisfy, no matter how innocuous it looks.
-
-WORKFLOW
---------
-    edit CASES below  ->  python tools/make_fixtures.py  ->  commit the .py and the .jsonl together
-
-You never hand-edit `skills/email-monitor/tests/golden_classify.jsonl`. If you want a new behaviour
-pinned, you add a CASE -- which forces you to say, in words, WHICH classifier path you are pinning and
-WHY, and forces the message itself to be invented rather than borrowed.
-
-    python tools/make_fixtures.py              regenerate in place
-    python tools/make_fixtures.py --out DIR    write to DIR (used by data_boundary.py)
-
-Stdlib only. Deterministic: no clock, no randomness, no environment. Same table -> same bytes.
+Edit a behavior case, run this generator, and commit source plus generated output.
+Use --out DIR to generate separately for verification. Output is deterministic:
+no clock, randomness, environment or real mailbox contributes to the case table.
 """
 import argparse
 import json
@@ -169,8 +140,7 @@ def render():
 
 TOPIC_FIXTURE = os.path.join("skills", "email-monitor", "tests", "topic_regression.jsonl")
 
-# Each case reproduces a SHAPE of failure observed in a real audit, using
-# invented senders. The shapes, not the messages, are what must not regress.
+# Invented cases isolate topic-evidence failure shapes without operational mail.
 TOPIC_CASES = [
     {
         "shape": "keyword-in-subject-is-not-the-topic",
@@ -225,6 +195,161 @@ def render_topic():
         for c in TOPIC_CASES)
 
 
+RELIABILITY_FIXTURE = os.path.join("skills", "email-monitor", "tests", "reliability.json")
+DRAFTING_FIXTURE = os.path.join("skills", "email-monitor", "tests", "drafting.json")
+ALERT_FIXTURE = os.path.join("skills", "email-monitor", "tests", "alert_disposition.json")
+
+
+def alert_disposition_cases():
+    """Synthetic helper responses for retry and duplicate-suppression boundaries."""
+    proof = {"status": "not_applied", "adapter": "alert",
+             "evidence": "Synthetic relay checked its ledger; delivery did not occur."}
+    delivered = {"status": "confirmed", "adapter": "alert",
+                 "receipt_id": "synthetic-alert-receipt-27"}
+    cases = [
+        {"response": proof, "returncode": code, "disposition": "not_applied"}
+        for code in (0, 27)
+    ]
+    cases += [
+        {"response": delivered, "returncode": code,
+         "disposition": "confirmed" if code == 0 else "uncertain"}
+        for code in (0, 27)
+    ]
+    for response in (None, [], {}, {**proof, "evidence": " "},
+                     {**proof, "evidence": 27}, {**proof, "adapter": "pool"},
+                     {**proof, "idempotency_key": "another-synthetic-action"},
+                     {**proof, "status": "unknown"}, {**delivered, "receipt_id": ""}):
+        for code in (0, 27):
+            cases.append({"response": response, "returncode": code, "disposition": "uncertain"})
+    cases.append({"raw_stdout": "synthetic non-JSON failure", "returncode": 27,
+                  "disposition": "uncertain"})
+    return {"key": "synthetic-alert-action-27", "message": "Synthetic alert for review",
+            "event_id": "synthetic-summary-event-27", "cases": cases}
+
+
+def drafting_cases():
+    """Invented identities and draft bodies for configuration and lint regressions."""
+    signature = "Avery Example"
+    greeting = "Hi Taylor,"
+    signoff = "Thanks,\n" + signature
+
+    def draft(body, hello="Hi,", spaced=False):
+        sep = "\n\n" if spaced else "\n"
+        return sep.join((hello, body, signoff))
+
+    return {
+        "config": {"signature": signature, "language": "en", "style": {}},
+        "alternate_config": {"signature": "Morgan Example", "language": "en", "style": {}},
+        "literal_config": {"signature": "Avery {Example}", "language": "en", "style": {}},
+        "recipient": "Taylor Example", "body": "Please confirm the appointment today.",
+        "greeting": greeting, "signature": signature,
+        "expanded_signature": signature + ", Inc", "signoff": signoff,
+        "clean_dealer": draft(
+            "I am looking to buy a 2026 Acme Auto Compact and I am ready to move this week.\n\n"
+            "Please send your best out-the-door price as one number: discounted selling price, "
+            "minus rebates, plus all fees. I have my own financing, so quote price only.\n\n"
+            "I am contacting a few dealers within 50 miles and will go with the cleanest quote. "
+            "If you send a written breakdown today, I can commit fast.", greeting, spaced=True),
+        "kill_list": draft("I wanted to reach out to leverage our synergy and delve into next steps.", spaced=True),
+        "long_lines": draft("\n".join("This is line number %d here." % i for i in range(15)), greeting, spaced=True),
+        "rule_of_three": draft("Our service is fast, reliable, and affordable.", greeting, spaced=True),
+        "two_item": draft("Please send the price and the fees in one number.", greeting, spaced=True),
+        "journey": draft("Let us start this journey together.", spaced=True),
+        "roadmap": draft("Here is our product roadmap for the year.", spaced=True),
+        "worth_noting": draft("It's worth noting that the offer expires Friday."),
+        "important_to_note": draft("It is important to note that the deposit is due Monday."),
+        "that_said": draft("That said, I can sign this week."),
+        "clean_ask": draft("Please send your best out the door price today.", greeting),
+        "noted": draft("I noted your point about the timing and agree."),
+        "transition_template": draft("%s I will send the documents this week."),
+        "additional": draft("I have additional questions about the timeline."),
+        "therefore": draft("We can therefore proceed once you confirm."),
+        "hedge_template": draft("%s"),
+        "concrete_event": draft("I look forward to the test drive on Saturday."),
+        "bare_ask": draft("Let me know which trim you have in stock."),
+        "custom_template": "Custom text kept exactly.\n{signature}\n",
+    }
+
+
+def reliability_cases():
+    """Invented inputs for durable dispatch, configuration and recovery tests."""
+    return {
+        "account": {"slug": "user1", "user": "user1@example.com"},
+        "message": {"uid": 11, "gm_msgid": "1011", "message_id": "<notice-11@example.com>",
+                    "thread_key": "thread-11", "from": "sender@example.com",
+                    "subject": "Please review the draft", "body": "Please review it.",
+                    "date": "2026-01-02", "list_unsubscribe": False},
+        "cursor": {"uidvalidity": 7, "last_uid": 11},
+        "verdict": {"priority": "ACTION", "label": "personal", "tier": "L0"},
+        "private_remote": "https://github.com/example-owner/email-monitor-config.git",
+        "visibility": {"example-owner/email-monitor-config": "PRIVATE"},
+        "private_proof": {
+            "now": "2030-06-15T12:00:00+00:00",
+            "fresh": "2030-06-14T12:00:00+00:00",
+            "stale": "2029-01-01T00:00:00+00:00",
+            "future": "2031-01-01T00:00:00+00:00",
+            "slug": "example-owner/email-monitor-config",
+            "alias": "synthetic-github",
+            "ssh_config": "Host synthetic-github\n    HostName github.com\n    User git\n",
+            "unsafe_ssh_rules": ["Match exec synthetic-command", "Include synthetic-config", "CanonicalizeHostname yes"],
+            "unrelated_https": "https://synthetic-github/example-owner/email-monitor-config.git",
+        },
+        "draft": {"signature": "Avery Example", "language": "zh",
+                  "style": {"max_lines": 8, "max_sentences": 5, "allow_markdown": False}},
+        "helper_contract": {"idempotency_key": "synthetic-action-11", "label": "Review",
+                            "evidence": "Synthetic helper verified that no write occurred.",
+                            "receipt_id": "synthetic-receipt-11",
+                            "selected_python": "selected runtime/python.exe",
+                            "unavailable_python": "unavailable/python.exe"},
+        "draft_text": "收到。我明天回复。\n\nAvery Example",
+        "model_policy": {
+            "taxonomy": "Use Review only for messages explicitly requesting a review.",
+            "topic_config": {"taxonomy": "Use Review only for an explicit review request.",
+                             "sender_map": {}, "allowed_labels": ["Review"], "type_labels": []},
+            "verdict": {"priority": "ACTION", "label": "review", "confidence": 0.8},
+            "legacy_api": [{"chain": ["synthetic-route"]},
+                           {"providers": {"synthetic-route": {"model": "synthetic-model"}}},
+                           {"timeout": 17}],
+            "legacy_cli": [["--chain", "synthetic-route"], ["--timeout", "17"],
+                           ["--codex-model", "synthetic-model"], ["--codex-reasoning", "synthetic-effort"],
+                           ["--claude-model", "synthetic-model"]],
+            "legacy_registry": [{"classifier": {"chain": ["synthetic-route"]}},
+                                {"classifier": {"providers": {}}},
+                                {"classifier": {"timeout_sec": 17}},
+                                {"topic_labeling": {"timeout_sec": 17}}],
+        },
+    }
+
+
+def doctor_cases():
+    """Invented config inputs for readiness checks; no mailbox or credentials."""
+    ignored = "secrets/*\n!secrets/README.md\n*.env\n*.cred\n"
+    return {
+        "account": {"slug": "user1", "user": "user1@example.com", "role": "primary"},
+        "draft": {"signature": "Avery Example", "language": "en", "style": {}},
+        "sender_map": {"version": 1, "by_address": {"sender@example.com": "Review"},
+                       "by_domain": {}, "by_list_id": {}},
+        "labels": ["Review"],
+        "profiles": ["business", "dealer", "support", "personal"],
+        "template": "Hello,\n\n{body}\n\n{signature}\n",
+        "git_head": "ref: refs/heads/main\n",
+        "git_config": "[core]\nrepositoryformatversion = 0\nbare = false\n",
+        "private_proof": {"repository": "example-owner/email-monitor-config", "proof": "synthetic"},
+        "valid_slugs": ["user1", "user.one+alerts@example.com", "user-2"],
+        "invalid_slugs": ["../outside", "nested/name", "nested\\name", ".", "..", "has space", 7, ["user1"],
+                          "CON", "nul.txt", "lpt1"],
+        "invalid_users": ["", "  ", 7, ["user1@example.com"]],
+        "ignore_variants": [
+            {"name": "normal", "text": ignored, "ready": True},
+            {"name": "whole_directory", "text": "secrets/\n*.env\n*.cred\n", "ready": True},
+            {"name": "commented", "text": "# secrets/\n# *.env\n# *.cred\n", "ready": False},
+            {"name": "reincluded_env", "text": ignored + "!*.env\n", "ready": False},
+            {"name": "reincluded_cred", "text": ignored + "!*.cred\n", "ready": False},
+            {"name": "reincluded_secrets", "text": ignored + "!secrets/*\n", "ready": False},
+        ],
+    }
+
+
 def repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -252,6 +377,15 @@ def main():
 
     _write(dest, render())
     _write(topic_dest, render_topic())
+    reliability_dest = os.path.join(a.out, os.path.basename(RELIABILITY_FIXTURE)) if a.out \
+        else os.path.join(root, RELIABILITY_FIXTURE)
+    _write(reliability_dest, json.dumps(reliability_cases(), ensure_ascii=False, indent=2) + "\n")
+    drafting_dest = os.path.join(a.out, os.path.basename(DRAFTING_FIXTURE)) if a.out \
+        else os.path.join(root, DRAFTING_FIXTURE)
+    _write(drafting_dest, json.dumps(drafting_cases(), ensure_ascii=False, indent=2) + "\n")
+    alert_dest = os.path.join(a.out, os.path.basename(ALERT_FIXTURE)) if a.out \
+        else os.path.join(root, ALERT_FIXTURE)
+    _write(alert_dest, json.dumps(alert_disposition_cases(), ensure_ascii=False, indent=2) + "\n")
     print("make_fixtures: wrote %d case(s) -> %s" % (len(CASES), dest))
     print("make_fixtures: wrote %d case(s) -> %s" % (len(TOPIC_CASES), topic_dest))
     return 0

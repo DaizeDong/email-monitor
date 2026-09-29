@@ -1,4 +1,4 @@
-<#
+﻿<#
 register-task.ps1 -- install the EmailMonitorTick heartbeat (idempotent).
 
 Pins an ABSOLUTE pythonw.exe + absolute em_tick.py + WorkingDirectory, because schtasks runs with a
@@ -7,7 +7,7 @@ PT5M, infinite, StartWhenAvailable, IgnoreNew, battery on. Re-run to update.
 
 Usage:
   ./register-task.ps1 -Config "C:\Users\<username>\.email-monitor-config\registry.json" `
-                      -Pythonw "C:\ProgramData\miniconda3\pythonw.exe" `
+                      -Pythonw "<selected-python.exe>" `
                       [-ResolveCred "C:\Users\<username>\.email-monitor-config\scripts\resolve-cred.ps1"] `
                       [-IntervalMinutes 5]
 
@@ -17,7 +17,7 @@ is unset. See CONFIG.md for the full resolution order.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Config,
-  [string]$Pythonw = "C:\ProgramData\miniconda3\pythonw.exe",
+  [string]$Pythonw = "",
   [string]$ResolveCred = "",
   [int]$IntervalMinutes = 5,
   [string]$TaskName = "EmailMonitorTick"
@@ -27,11 +27,26 @@ $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $tick = Join-Path $here "em_tick.py"
 
+if (-not (Test-Path -LiteralPath $Config)) { throw "config not found: $Config" }
+$Config = (Resolve-Path -LiteralPath $Config).Path
+$registry = Get-Content -LiteralPath $Config -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not $Pythonw) { $Pythonw = $registry.runtime.python }
+if (-not $Pythonw) { $Pythonw = (Get-Command python -ErrorAction Stop).Source }
+if ($Pythonw.StartsWith("~")) { $Pythonw = Join-Path $env:USERPROFILE $Pythonw.Substring(2) }
+if (-not [System.IO.Path]::IsPathRooted($Pythonw)) {
+  $Pythonw = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) $Pythonw
+}
+$doctor = Join-Path $here "../../../scripts/verify_config.py"
+$reportText = & $Pythonw $doctor --config-dir (Split-Path -Parent $Config) --python $Pythonw --json
+if ($LASTEXITCODE -ne 0) { throw "Configuration doctor failed; task not registered. $reportText" }
+$report = $reportText | ConvertFrom-Json
+if ($report.status -ne "ready") { throw "Configuration doctor is not ready; task not registered." }
+
 if (-not (Test-Path $Pythonw)) { throw "pythonw not found: $Pythonw" }
 if (-not (Test-Path $tick))    { throw "em_tick.py not found: $tick" }
 if (-not (Test-Path $Config))  { throw "config not found: $Config" }
 
-$args = "`"$tick`" --config `"$Config`""
+$args = "`"$tick`" --config `"$Config`" --python `"$Pythonw`""
 if ($ResolveCred) { $args += " --resolve-cred `"$ResolveCred`"" }
 
 $action  = New-ScheduledTaskAction -Execute $Pythonw -Argument $args -WorkingDirectory $here

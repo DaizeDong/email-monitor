@@ -25,6 +25,9 @@ SCRIPTS = os.path.join(os.path.dirname(HERE), "scripts")
 sys.path.insert(0, SCRIPTS)
 
 import em_draft_lint as dl   # noqa: E402
+
+with open(os.path.join(os.path.dirname(__file__), "drafting.json"), encoding="utf-8") as _fixture_file:
+    DRAFTS = json.load(_fixture_file)
 import em_classify as cls    # noqa: E402
 import em_duenorm as dn      # noqa: E402
 import em_watch as watch     # noqa: E402
@@ -40,49 +43,40 @@ RULES = {
     "thresholds": {},
 }
 
-CLEAN_DEALER = """Hi Sam,
-
-I am looking to buy a 2026 Honda Civic Sport and I am ready to move this week.
-
-Please send your best out-the-door price as one number: discounted selling price, minus rebates, plus all fees. I have my own financing, so quote price only.
-
-I am contacting a few dealers within 50 miles and will go with the cleanest quote. If you send a written breakdown today, I can commit fast.
-
-Thanks,
-Daize Dong"""
+CLEAN_DEALER = DRAFTS['clean_dealer']
 
 
 # ---------- signal #4: draft compliance ----------
 
 def test_clean_dealer_draft_passes():
-    assert dl.lint(CLEAN_DEALER, "dealer") == []
+    assert dl.lint(CLEAN_DEALER, "dealer", config=DRAFTS["config"]) == []
 
 
 @pytest.mark.parametrize("bad,frag", [
     (CLEAN_DEALER.replace("price only.", "price only — thanks."), "em-dash"),
     (CLEAN_DEALER.replace("one number", "“one number”"), "curly"),
-    (CLEAN_DEALER.replace("Hi Sam,", "# Hi Sam,"), "markdown"),
-    (CLEAN_DEALER.replace("Daize Dong", "Daize Dong, Inc"), "signature"),
+    (CLEAN_DEALER.replace(DRAFTS["greeting"], "# " + DRAFTS["greeting"]), "markdown"),
+    (CLEAN_DEALER.replace(DRAFTS["signature"], DRAFTS["expanded_signature"]), "signature"),
     (CLEAN_DEALER.replace("financing", "financing (café)"), "non-ascii"),
     (CLEAN_DEALER + "\nSent via smtplib.sendmail()", "send"),
 ])
 def test_dirty_drafts_rejected(bad, frag):
-    viol = dl.lint(bad, "dealer")
+    viol = dl.lint(bad, "dealer", config=DRAFTS["config"])
     assert viol, "expected violations for %s" % frag
 
 
 # ---------- signal #5: AI-flavor ----------
 
 def test_ai_flavor_killlist_caught():
-    txt = "Hi,\n\nI wanted to reach out to leverage our synergy and delve into next steps.\n\nThanks,\nDaize Dong"
-    viol = dl.lint(txt, "business")
+    txt = DRAFTS['kill_list']
+    viol = dl.lint(txt, "business", config=DRAFTS["config"])
     joined = " ".join(viol)
     assert "kill-list" in joined
 
 
 def test_dealer_line_cap_enforced():
-    long = "Hi Sam,\n\n" + "\n".join("This is line number %d here." % i for i in range(15)) + "\n\nThanks,\nDaize Dong"
-    viol = dl.lint(long, "dealer")
+    long = DRAFTS['long_lines']
+    viol = dl.lint(long, "dealer", config=DRAFTS["config"])
     assert any("line count" in v for v in viol)
 
 

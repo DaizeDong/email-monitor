@@ -23,6 +23,10 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "email-monitor" / "scripts"))
+from em_lint_rules import draft_config
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
 DEFAULT_DIR = "~/.email-monitor-config"
@@ -35,6 +39,11 @@ REGISTRY = {
     "spec": "email-monitor companion config (Mode B; secrets gitignored, real creds in DPAPI)",
     "mode": "B",
     "machine": "<hostname>",
+    "runtime": {"python": "<absolute-path-to-python>", "local_only": True},
+    "classifier": {"mode": "heuristic"},
+    "storage": {"state_dir": "data/state", "log": "data/email-monitor.log", "db": "data/pool.db"},
+    "draft": {"signature": "Your Name", "language": "en",
+              "style": {"max_lines": 8, "max_sentences": 5, "allow_markdown": False}},
     "accounts": [
         {
             "slug": "primary",
@@ -63,7 +72,7 @@ REGISTRY = {
 
 GITIGNORE = """\
 # email-monitor companion config -- secrets gate (config-spec E6 / Mode B).
-# Real values never enter git. Back them up out-of-band; real app passwords live in DPAPI
+# Credentials never enter git. Back them up out-of-band; real app passwords live in DPAPI
 # (~/.local/secrets/gmail-<slug>.cred), this repo keeps only pointers.
 secrets/*
 !secrets/README.md
@@ -76,18 +85,8 @@ secrets/*
 *.key
 *.pem
 .credentials.json
-# derived / personal layers (never committed)
-rules/merged.json
-rules/_personal_layer.json
-# topic labeling standard (config-spec, CONFIG.md): the operator's real taxonomy, sender
-# mappings and label counts are private data, never committed. init_config.py stamps the
-# skeleton below once; every edit after that stays local.
-rules/taxonomy.md
-rules/sender_map.json
-rules/labels.json
-state/*
-!state/SCHEMA.md
-!state/.gitkeep
+# Rules, templates and runtime DATA are versioned in this PRIVATE companion.
+# They must never be copied into the public skill repository.
 """
 
 SECRETS_README = """\
@@ -112,7 +111,8 @@ EM_PRIMARY_APP_PW=<gmail-app-password-or-leave-blank-and-use-DPAPI>
 
 CLASSIFICATION_YAML = """\
 # classification.yaml -- global L0/L1 classification defaults (committed, no PII).
-# Personal overrides go in _personal_layer.json (gitignored); apply.py merges -> merged.json.
+# Personal overrides go in _personal_layer.json; apply.py merges -> merged.json.
+# Version both files in the PRIVATE companion, never in the public skill repository.
 priorities: [URGENT, ACTION, FYI, NOISE]
 l0_rules:
   urgent_from: []          # exact senders that are always URGENT
@@ -144,18 +144,18 @@ I hope this email finds you well
 
 PERSONAL_LAYER_TEMPLATE = """\
 {
-  "_comment": "Copy to _personal_layer.json (gitignored). Holds VIP senders (PII) + personal overrides.",
+  "_comment": "Copy to _personal_layer.json in this PRIVATE companion and version it there. Holds VIP senders and personal overrides.",
   "vip_from": ["<vip@example.com>"],
   "l0_rules": {"urgent_from": [], "noise_from": []}
 }
 """
 
 # The three files topic_labeling.enabled: true reads (CONFIG.md, "Topic labeling"). All three
-# are GITIGNORED above: this is a skeleton to fill in, not a shipped taxonomy. Content is
+# are versioned in the PRIVATE companion: this is a skeleton to fill in. Content is
 # synthetic (example.com) on purpose -- the operator's real labels, senders and mailing lists
 # are private data and never belong in this public skill repo, only in the private companion.
 TAXONOMY_MD = """\
-# taxonomy.md -- the topic labeling standard (private; edit freely, never committed).
+# taxonomy.md -- the topic labeling standard (versioned in the PRIVATE companion).
 #
 # This is prose, fed VERBATIM to the model as the only standard it may reason from (CONFIG.md).
 # Write one short paragraph per label: what it means, and what it explicitly does NOT mean, so
@@ -180,22 +180,22 @@ SENDER_MAP_JSON = json.dumps(
     indent=2, ensure_ascii=False,
 ) + "\n"
 
-# Empty per-account mapping (private; edit freely, never committed): {"<slug>": ["<label>", ...]}.
+# Empty per-account mapping (versioned in the PRIVATE companion): {"<slug>": ["<label>", ...]}.
 # An account with no entry here is simply never asked to topic-label -- add-only, off by default,
 # same posture as topic_labeling.enabled in registry.json.
 LABELS_JSON = json.dumps({}, indent=2, ensure_ascii=False) + "\n"
 
 TEMPLATES = {
-    "business.txt": "Hi {name},\n\n{body}\n\nBest,\nDaize Dong\n",
-    "dealer.txt": "Hi {name},\n\n{body}\n\nThanks,\nDaize Dong\n",
-    "support.txt": "Hello,\n\n{body}\n\nRegards,\nDaize Dong\n",
-    "personal.txt": "Hi {name},\n\n{body}\n\nDaize Dong\n",
+    "business.txt": "Hi {name},\n\n{body}\n\nBest,\n{signature}\n",
+    "dealer.txt": "Hi {name},\n\n{body}\n\nThanks,\n{signature}\n",
+    "support.txt": "Hello,\n\n{body}\n\nRegards,\n{signature}\n",
+    "personal.txt": "Hi {name},\n\n{body}\n\n{signature}\n",
 }
 
 STATE_SCHEMA = """\
-# state/ -- runtime cursors & seen-set (ALL gitignored except this file).
+# state/ -- runtime cursors & seen-set (versioned in the PRIVATE companion).
 # Per account: last_uid + UIDVALIDITY watermark, and an X-GM-MSGID seen-set for dedupe.
-# These are machine/runtime state, never committed.
+# These are private runtime DATA; keep their history in the companion repository.
 """
 
 
@@ -225,6 +225,18 @@ def main():
 
     out = a.out or default_dir()
     out = os.path.abspath(os.path.expanduser(out))
+    registry_path = os.path.join(out, "registry.json")
+    try:
+        registry = REGISTRY
+        if os.path.exists(registry_path) and not a.force:
+            with open(registry_path, encoding="utf-8-sig") as handle:
+                registry = json.load(handle)
+        if not isinstance(registry, dict) or "draft" not in registry:
+            raise ValueError("registry must contain a draft configuration")
+        signature = draft_config(registry["draft"])["signature"]
+    except (OSError, ValueError) as error:
+        print("Cannot initialize draft templates: invalid configuration: " + str(error))
+        return 1
     print("Init email-monitor companion config (Mode B) at %s" % out)
     print("Discovery env var: %s  (fallback %s)" % (env_var(), default_dir()))
 
@@ -238,8 +250,10 @@ def main():
     write(os.path.join(out, "rules", "taxonomy.md"), TAXONOMY_MD, a.force)
     write(os.path.join(out, "rules", "sender_map.json"), SENDER_MAP_JSON, a.force)
     write(os.path.join(out, "rules", "labels.json"), LABELS_JSON, a.force)
+    # Keep configured braces literal when the remaining name/body fields are formatted.
+    template_signature = signature.replace("{", "{{").replace("}", "}}")
     for name, body in TEMPLATES.items():
-        write(os.path.join(out, "templates", name), body, a.force)
+        write(os.path.join(out, "templates", name), body.replace("{signature}", template_signature), a.force)
     write(os.path.join(out, "secrets", "README.md"), SECRETS_README, a.force)
     write(os.path.join(out, "secrets", "_accounts.env.template"), ACCOUNTS_ENV_TEMPLATE, a.force)
     write(os.path.join(out, "secrets", ".gitkeep"), "", a.force)
@@ -247,9 +261,11 @@ def main():
     write(os.path.join(out, "state", ".gitkeep"), "", a.force)
 
     print("\nNext:")
-    print("  1) Edit registry.json: set real account slug/user/role + cred_path per account.")
+    print("  1) Edit registry.json: set account slug/user/role, cred_path and draft.signature.")
+    print("     Your Name is a placeholder. Update template signatures to match after editing it.")
     print("  2) Capture each app password into DPAPI (config repo's capture-app-pw.ps1), Mode B.")
-    print("  3) Copy rules/_personal_layer.json.template -> _personal_layer.json (gitignored), fill VIPs.")
+    print("  3) Copy rules/_personal_layer.json.template -> _personal_layer.json, fill VIPs.")
+    print("     Version rules, templates and runtime DATA only in the PRIVATE companion.")
     print("  4) export %s=%s   (or use the default path)" % (env_var(), out))
     print("  5) python scripts/verify_config.py   # doctor: confirms the config is ready")
     print("  6) Optional, topic labeling: fill in rules/taxonomy.md, rules/sender_map.json and")

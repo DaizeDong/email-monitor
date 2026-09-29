@@ -1,44 +1,26 @@
 #!/usr/bin/env python3
-"""email-monitor agent classifier — judge each new mail with a background LLM, cheapest first.
+"""Judge response obligation from an email's sender, subject and bounded body.
 
-Instead of scoring offline signals, we feed sender + subject + full body to a model and let it decide
-the response-obligation tier the way a person would. Providers are tried in a cost-ordered CHAIN and
-the first one that returns a parseable verdict wins:
+Installed llmcall owns routing, model, timeout and fallback policy. This module
+uses its judge mode and validates the domain verdict. A failed transport returns
+None so the heartbeat can use its deterministic heuristic. Obsolete local model
+controls raise a migration error before a request is made.
 
-  1. codex   -- OpenAI Codex CLI (`codex exec`), our least-used quota -> effectively spare capacity
-  2. cc      -- Claude Code headless via a hosted gateway
-  3. claude  -- plain Claude Code headless (direct) -> last resort
-
-  priority : URGENT | ACTION | FYI | NOISE   (only URGENT/ACTION alert)
-  label    : short semantic tag
-
-Design:
-  - Prompt fed on STDIN (bodies are large; keeps argv clean, dodges Windows cmdline limits).
-  - Absolute binary paths (a scheduled task runs with a minimal PATH); `.cmd` launched via `cmd /c`.
-  - codex writes its final message with `-o <file>` (clean, no reasoning preamble); cc/claude use
-    `--output-format json` and we unwrap the `result` field.
-  - Never raises: any provider failure (missing binary, timeout, unparseable output) is skipped and
-    the next provider is tried; if all fail, returns None so the caller falls back to em_classify.
-Transport (the codex -> cc -> claude chain + headless footguns) is the shared `llmcall` package
-(pip dependency, see the repo requirements.txt); the domain logic here is stdlib.
+Priority is URGENT, ACTION, FYI or NOISE; only URGENT and ACTION alert.
 """
 import json
 import re
 import sys
 
+from em_runtime import reject_model_overrides
+
 VALID = ("URGENT", "ACTION", "FYI", "NOISE")
 BODY_CHARS = 12000            # trim body handed to the model (subject/sender stay full)
-# Kept for callers that still import it, but it is NOT the routing decision any more: llmcall owns
-# that (llmcall.active_chain, overridable fleet-wide with LLMCALL_CHAIN). A local copy of the ladder
-# is exactly how a provider that has been routed around keeps receiving traffic from one forgotten
-# corner, so nothing here may pass it as a default.
-DEFAULT_CHAIN = ["codex", "cc", "claude"]
-
-# Transport (the codex -> cc -> claude chain + every headless footgun: read-only codex, --ephemeral,
-# absolute-path fallback, MCP off, json-envelope unwrap, single model/effort source) now lives in the
-# shared `llmcall` package. This module keeps only the email-triage DOMAIN logic below: the prompt,
-# JSON extraction, and verdict normalization.
-from llmcall import call as _llmcall  # noqa: E402
+# Transport policy comes from the installed dependency.
+try:
+    from llmcall import call as _llmcall  # noqa: E402
+except ImportError:
+    _llmcall = None
 
 # Date extraction is a sibling, stdlib-only module (email-monitor's own half of the optional
 # dated-reminder co-op). Guard the import so a missing/odd em_dates can never break classification.
@@ -75,14 +57,14 @@ def build_prompt(msg, owner=""):
         "From: %s\nSubject: %s\nHas List-Unsubscribe header: %s\n\nBody:\n%s\n"
         "\nAlso write `summary_zh`: ONE short sentence in **Simplified Chinese** (<= 30 chars) that "
         "the owner reads on their phone instead of the subject line. Say WHAT it is and WHAT they "
-        "must do -- concrete and specific ('订阅账户支付方式未填完,下次扣款前要补'), never "
-        "vague ('有一封重要邮件'). Keep a real deadline or amount if there is one. For NOISE, one word "
-        "is enough ('推广'). NEVER put a verification code, password, token, API key or full URL in "
+        "must do, using a concrete action rather than a vague importance statement. "
+        "Keep a stated deadline or amount if there is one. For NOISE, one word "
+        "is enough. NEVER put a verification code, password, token, API key or full URL in "
         "it -- say '(见邮箱)' instead.\n"
         "\nAlso `due_at`: if the email states a SPECIFIC date/time the OWNER must personally keep -- a "
         "confirmed appointment, a bill or form due date, an interview time -- return it as ISO8601 "
         "(YYYY-MM-DDTHH:MM; add a timezone offset ONLY if the email itself gives one; a date with no "
-        "clock time is fine, e.g. 2026-08-03). Otherwise null. Extract ONLY the owner's own "
+        "clock time is fine). Otherwise null. Extract ONLY the owner's own "
         "appointment/deadline -- never a marketing 'sale ends' date or a date merely mentioned in "
         "passing.\n"
         "\nReturn ONLY a compact JSON object, no prose, no code fence:\n"
@@ -158,21 +140,20 @@ def _valid_verdict(text):
     return None
 
 
-def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
-    """Try providers in `chain` order via the shared llmcall transport; return the first parseable +
-    valid verdict, else None.
+def classify(msg, chain=None, providers=None, timeout=None, owner="", log=None):
+    """Judge one message using installed llmcall policy; return a verdict or None.
 
-    chain     : list of provider names, e.g. ["codex","cc","claude"] (cost-ordered).
-    providers : accepted for signature compatibility but IGNORED; model/effort now resolve from one
-                source (~/.codex/config.toml) inside llmcall.
-    log       : optional callable(str) for diagnostics (which provider answered / failed)."""
-    chain = chain or None      # None means "whatever llmcall is routing to right now"
+    Legacy policy arguments accept only None. Configure model policy in llmcall.
+    ``owner`` provides task context; ``log`` receives transport diagnostics.
+    """
+    reject_model_overrides(chain=chain, providers=providers, timeout=timeout)
+    if _llmcall is None:
+        if log:
+            log("llmcall dependency unavailable")
+        return None
     prompt = build_prompt(msg, owner)
-    # One llmcall pass with extract=_valid_verdict: a reply whose priority is out-of-vocab counts as a
-    # provider miss, so llmcall retries the SAME provider once (a self-correction the old loop lacked)
-    # and only then falls through to the next -- the loop's advance-on-domain-invalid, preserved and
-    # raised. log= reports each attempt; _normalize (domain coercion) still runs on the winning object.
-    r = _llmcall(prompt, chain=chain, extract=_valid_verdict, timeout=timeout, log=log)
+    # Invalid domain output is a transport miss; llmcall owns retry and fallback policy.
+    r = _llmcall(prompt, mode="judge", extract=_valid_verdict, log=log)
     if not r:
         return None
     verdict = _normalize(r.data, msg, tier=r.provider)
@@ -184,23 +165,17 @@ def classify(msg, chain=None, providers=None, timeout=180, owner="", log=None):
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    # Default None, not the ladder spelled out. A CLI default that names every provider is an
-    # EXPLICIT chain on every invocation, and an explicit chain outranks llmcall's routing, so this
-    # flag alone would have kept the tick calling a provider the fleet had deliberately stopped using.
-    ap.add_argument("--chain", default=None,
-                    help="comma-separated provider order (default: llmcall's active chain, "
-                         "which honours LLMCALL_CHAIN)")
-    ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--owner", default="")
-    ap.add_argument("--codex-model", default="gpt-5.6-sol")
-    ap.add_argument("--codex-reasoning", default="max")
-    ap.add_argument("--claude-model", default="claude-opus-4-8")
+    obsolete = ("chain", "timeout", "codex-model", "codex-reasoning", "claude-model")
+    for option in obsolete:
+        ap.add_argument("--" + option, help="obsolete; configure installed llmcall instead")
     a = ap.parse_args()
-    providers = {"codex": {"model": a.codex_model, "reasoning": a.codex_reasoning},
-                 "cc": {"model": a.claude_model}, "claude": {"model": a.claude_model}}
-    msg = json.loads(sys.stdin.read())
-    out = classify(msg, [c.strip() for c in a.chain.split(",") if c.strip()] if a.chain else None,
-                   providers, a.timeout, a.owner, log=lambda m: print(m, file=sys.stderr))
+    try:
+        reject_model_overrides(**{option: getattr(a, option.replace("-", "_")) for option in obsolete})
+    except ValueError as error:
+        ap.error(str(error))
+    msg = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", "replace"))
+    out = classify(msg, owner=a.owner, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(out, ensure_ascii=False))
     return 0 if out else 1
 

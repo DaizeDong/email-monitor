@@ -65,22 +65,58 @@ SEND_MARKERS = re.compile(
 
 def split_sentences(text):
     # crude but deterministic: split on . ! ? followed by space/eol
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    parts = re.split(r"(?<=[.!?])\s+|(?<=[。！？])\s*", text.strip())
     return [p for p in parts if p.strip()]
 
 
-def lint(text, profile):
+def draft_config(config=None):
+    """Validate selected draft constraints; missing identity raises ValueError.
+
+    Pass a draft object or a registry containing one. There is no implicit signature.
+    """
+    if config is None:
+        raise ValueError("draft.signature is required; select a draft configuration")
+    if not isinstance(config, dict):
+        raise ValueError("draft configuration must be an object")
+    if "draft" in config:
+        config = config["draft"]
+    if not isinstance(config, dict):
+        raise ValueError("draft configuration must be an object")
+    signature = config.get("signature")
+    language = config.get("language", "en")
+    style = config.get("style", {})
+    if not isinstance(signature, str) or not signature.strip() or "\n" in signature or "\r" in signature:
+        raise ValueError("draft.signature is required and must be a nonempty single line")
+    if language not in ("en", "zh", "any"):
+        raise ValueError("draft.language must be en, zh or any")
+    if not isinstance(style, dict):
+        raise ValueError("draft.style must be an object")
+    for key, value in style.items():
+        if key in ("max_lines", "max_sentences"):
+            if type(value) is not int or value < 1:
+                raise ValueError("draft.style." + key + " must be a positive integer")
+        elif key == "allow_markdown":
+            if type(value) is not bool:
+                raise ValueError("draft.style.allow_markdown must be a boolean")
+        else:
+            raise ValueError("unknown draft style constraint: " + key)
+    return {"signature": signature, "language": language, "style": style}
+
+
+def lint(text, profile, config=None):
     profile = profile if profile in LINE_CAPS else "business"
+    settings = draft_config(config)
+    style = settings["style"]
     viol = []
 
     # 1) ASCII only
     nonascii = [(i, ch) for i, ch in enumerate(text) if ord(ch) > 127]
-    if nonascii:
+    if nonascii and settings["language"] == "en":
         sample = ", ".join("U+%04X@%d" % (ord(c), i) for i, c in nonascii[:5])
         viol.append("non-ascii chars: %s" % sample)
 
     # 2) markdown
-    if MARKDOWN.search(text):
+    if MARKDOWN.search(text) and not style.get("allow_markdown", False):
         viol.append("markdown syntax present (# * ` [ ] > _)")
 
     # 3) em/en dash
@@ -88,32 +124,34 @@ def lint(text, profile):
         viol.append("em-dash / en-dash present (use plain hyphen or rewrite)")
 
     # 4) curly quotes
-    if CURLY.search(text):
+    if CURLY.search(text) and settings["language"] == "en":
         viol.append("curly/smart quotes present (use straight quotes)")
 
     # 5) send markers
     if SEND_MARKERS.search(text):
         viol.append("send/SMTP marker present (drafts must never auto-send)")
 
-    # 6) signature exactly "Daize Dong" as last non-empty line
+    # 6) The selected signature must be the last non-empty line.
     lines = [ln.rstrip() for ln in text.splitlines()]
     nonempty = [ln for ln in lines if ln.strip()]
-    if not nonempty or nonempty[-1].strip() != "Daize Dong":
+    if not nonempty or nonempty[-1].strip() != settings["signature"]:
         last = nonempty[-1].strip() if nonempty else "<empty>"
-        viol.append("signature must be exactly 'Daize Dong' (got: %r)" % last)
+        viol.append("signature must be exactly %r (got: %r)" % (settings["signature"], last))
 
     # 7) line cap
     body_lines = len([ln for ln in lines if ln.strip()])
-    if body_lines > LINE_CAPS[profile]:
+    line_cap = style.get("max_lines", LINE_CAPS[profile])
+    if body_lines > line_cap:
         viol.append("line count %d > cap %d for profile %s"
-                    % (body_lines, LINE_CAPS[profile], profile))
+                    % (body_lines, line_cap, profile))
 
     # 8) sentence cap (exclude signature line + greeting)
     body_for_sent = "\n".join(nonempty[:-1]) if len(nonempty) > 1 else ""
     n_sent = len(split_sentences(body_for_sent))
-    if n_sent > SENTENCE_CAPS[profile]:
+    sentence_cap = style.get("max_sentences", SENTENCE_CAPS[profile])
+    if n_sent > sentence_cap:
         viol.append("sentence count %d > cap %d for profile %s"
-                    % (n_sent, SENTENCE_CAPS[profile], profile))
+                    % (n_sent, sentence_cap, profile))
 
     low = text.lower()
     # 9) kill-list words

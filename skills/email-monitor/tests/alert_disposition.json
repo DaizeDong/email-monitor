@@ -1,0 +1,188 @@
+{
+  "key": "synthetic-alert-action-27",
+  "message": "Synthetic alert for review",
+  "event_id": "synthetic-summary-event-27",
+  "cases": [
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 0,
+      "disposition": "not_applied"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 27,
+      "disposition": "not_applied"
+    },
+    {
+      "response": {
+        "status": "confirmed",
+        "adapter": "alert",
+        "receipt_id": "synthetic-alert-receipt-27"
+      },
+      "returncode": 0,
+      "disposition": "confirmed"
+    },
+    {
+      "response": {
+        "status": "confirmed",
+        "adapter": "alert",
+        "receipt_id": "synthetic-alert-receipt-27"
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": null,
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": null,
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": [],
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": [],
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {},
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {},
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": " "
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": " "
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": 27
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": 27
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "pool",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "pool",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur.",
+        "idempotency_key": "another-synthetic-action"
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "not_applied",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur.",
+        "idempotency_key": "another-synthetic-action"
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "unknown",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "unknown",
+        "adapter": "alert",
+        "evidence": "Synthetic relay checked its ledger; delivery did not occur."
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "confirmed",
+        "adapter": "alert",
+        "receipt_id": ""
+      },
+      "returncode": 0,
+      "disposition": "uncertain"
+    },
+    {
+      "response": {
+        "status": "confirmed",
+        "adapter": "alert",
+        "receipt_id": ""
+      },
+      "returncode": 27,
+      "disposition": "uncertain"
+    },
+    {
+      "raw_stdout": "synthetic non-JSON failure",
+      "returncode": 27,
+      "disposition": "uncertain"
+    }
+  ]
+}

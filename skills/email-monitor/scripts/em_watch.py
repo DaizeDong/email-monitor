@@ -197,10 +197,14 @@ def load_state(path):
 def save_state(path, state):
     if not path:
         return
+    from em_runtime import prove_private
+    prove_private(path)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)
 
 
@@ -211,9 +215,9 @@ def _x_attr(item_bytes, name):
     return m.group(1).decode() if m else None
 
 
-def run_once(user, folder, cursor, max_batch=400):
+def run_once(user, folder, cursor, max_batch=400, app_pw=None):
     """Connect read-only, fetch new headers, return (records, new_cursor). Live side effects only."""
-    pw = os.environ.get("GMAIL_APP_PW")
+    pw = app_pw if app_pw is not None else os.environ.get("GMAIL_APP_PW")
     if not pw:
         raise RuntimeError("GMAIL_APP_PW not set (DPAPI-resolved at runtime; never on argv)")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -265,6 +269,8 @@ def main():
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
 
+    from em_runtime import prove_private
+    prove_private(a.state)
     state = load_state(a.state)
     key = "%s::%s" % (a.user, a.folder)
     cursor = state["cursors"].get(key, {"uidvalidity": None, "last_uid": 0})
@@ -286,7 +292,7 @@ def main():
     save_state(a.state, state)
 
     for r in fresh:
-        # redaction note: from/subject are local-only audit fields; never forwarded to web/Discord.
+        # This CLI emits local audit fields. The heartbeat separately chooses model and alert routing.
         print(json.dumps(r, ensure_ascii=False))
     if a.json:
         print(json.dumps({"new_count": len(fresh), "cursor": new_cursor}, ensure_ascii=False),

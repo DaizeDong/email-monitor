@@ -1,38 +1,18 @@
 #!/usr/bin/env python3
-"""Adversarial sample review of labels already applied. Reports; never writes.
+"""Adversarial sample review of applied labels. Reports; never writes.
 
-What this is for, and why it is not the daily watcher. `classification_review.py`
-reads the tick's own counters and answers "is the kernel running": how much it
-judged, refused, or failed. It cannot answer "is the kernel RIGHT", because a
-confidently wrong label and a correct one produce the same counter. Only reading
-the mail against the standard answers that, and the only way that has actually
-worked here is an independent reader told to REFUTE.
+Operational counters measure whether classification ran. This reviewer instead
+asks whether each sampled label violates the configured taxonomy. It requires a
+quoted clause before reporting a defect and defaults to no finding when the
+available headers support the label.
 
-Why refutation rather than review. On 2026-09-01 a reviewer run this way found
-47 genuinely wrong labels in a 154-message backfill, and in the same pass
-REFUSED to flag conference call-for-papers and marketing newsletters, because
-global rule 4 keeps a source label on a genuine sender whatever the content. A
-reviewer merely asked to "check the labels" flags those every time. The default
-verdict has to be "not a defect" or the report inflates until it is ignored, and
-an ignored report is worse than none: it costs the same and buys nothing.
+Review is manual and opt-in through quality_review.enabled. Findings can require
+a sender-map or taxonomy change; removing a label without correcting its rule can
+recreate the same error. Disabled review and a review with no findings are
+reported separately. Reports and sampled headers belong in the PRIVATE companion.
 
-Why monthly and manual-first. Labels drift slowly, sampling costs model calls,
-and a finding usually implies editing the sender map or the taxonomy, which is a
-judgement call the operator makes. A loop that runs hourly would produce the same
-list repeatedly and train the reader to skip it.
-
-Read-only against the mailbox, always. It proposes; it never strips a label.
-Today's session settled why: the 47 bad labels came from a WRONG SENDER MAP, and
-stripping them without fixing the map would have let the next backfill recreate
-every one. Auto-remediation here would loop forever against its own cause.
-
-Gated by `quality_review.enabled` in registry.json, off by default, exactly like
-topic_labeling. Off means this exits 0 having done nothing, and says so, because
-"disabled" and "found nothing" must never look the same.
-
-  python em_quality_review.py --account <slug> --user <addr>            # report
-  python em_quality_review.py --account <slug> --user <addr> --json out.json
-  python em_quality_review.py --account <slug> --user <addr> --labels "Work/Scholar,Accounts"
+  python em_quality_review.py --account <slug> --user <addr>
+  python em_quality_review.py --account <slug> --user <addr> --json <private-path>
 """
 from __future__ import annotations
 
@@ -47,6 +27,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_topic  # noqa: E402
+from em_runtime import reject_model_overrides  # noqa: E402
 
 try:
     import llmcall
@@ -136,16 +117,10 @@ def fetch_labelled(user, label, limit, app_pw, runner=None):
     Uses the existing label tool in --dry mode, which prints matched From/Subject
     and writes nothing. Read-only is not a promise here, it is the only mode used.
 
-    The owner's OWN sent mail is excluded, because this review audits the kernel
-    and the kernel never sees it: em_tick advances an INBOX cursor, so nothing it
-    judges is outgoing. The labels on sent mail came from thread-level operations
-    during the historical retriage, and on one account 144 of 249 sent messages
-    carry one. Sampling them made the reviewer judge decisions nobody made, which
-    is not a finding that anyone can act on -- and it crowded out real ones: 7 of
-    17 findings in one run were this, all quoting rules about mail the sender
-    received. Excluding is right rather than merely quieter, and note that
-    stripping those labels would NOT be: Gmail resolves `label:` to threads, so a
-    reply carrying its thread's label changes no search result either way.
+    Exclude messages from the account's own address: the review should sample
+    incoming messages judged by the kernel. Thread-level operations can attach
+    labels to sent replies, but those labels do not establish a kernel decision.
+    Exclusion changes the audit population; it does not remove mailbox labels.
     """
     args = [sys.executable, LABEL_TOOL, "--user", user,
             "--query", 'label:"%s" -from:%s' % (label, user), "--add", label, "--dry"]
@@ -193,10 +168,8 @@ def _allowed_block(allowed):
     """The labels this ACCOUNT actually has, which is not the same as the taxonomy's.
 
     A proposal outside this set is worse than no proposal: `em_topic.judge` drops a
-    mapped label that is not in the account's allowed set, so acting on it leaves the
-    message carrying nothing at all. Two of the three reviewer errors in the first
-    real run were this exact mistake, both proposing a bank sublabel to an account
-    that has none.
+    mapped label that is not in the account's allowed set. A repair must not remove
+    an existing label in favor of a replacement the account cannot use.
     """
     if not allowed:
         return ""
@@ -208,12 +181,12 @@ def _allowed_block(allowed):
     return "\n".join(parts) + "\n"
 
 
-def judge(items, taxonomy, allowed=None, call=None, timeout=300.0):
-    """Ask one reviewer to refute the whole batch. Returns [] when the call fails.
+def judge(items, taxonomy, allowed=None, call=None, timeout=None):
+    """Refute a batch; None means transport failure, [] means no findings.
 
-    Returning [] on failure rather than raising keeps an outage from being read as
-    a clean bill of health -- the caller distinguishes them and says which it was.
+    Model policy belongs to installed llmcall. A legacy timeout is an error.
     """
+    reject_model_overrides(timeout=timeout)
     if not items:
         return []
     listing = "\n".join(
@@ -225,7 +198,7 @@ def judge(items, taxonomy, allowed=None, call=None, timeout=300.0):
         return call(prompt)
     if llmcall is None:
         return None
-    r = llmcall.call(prompt, mode="judge", schema=VERDICT_SCHEMA, timeout=timeout)
+    r = llmcall.call(prompt, mode="judge", schema=VERDICT_SCHEMA)
     if not r:
         return None
     data = getattr(r, "data", None) or {}
@@ -312,9 +285,8 @@ def main(argv=None):
             print("  [%s] %s | %s" % (f["label"], f["from"][:32], f["subject"][:52]))
             print("      violates: %s" % f["clause"][:150])
             print("      should be: %s" % f["should_be"])
-        # The lesson from 2026-09-01: the instance is the symptom. A sender that
-        # appears repeatedly is a map defect, and fixing the map is what stops the
-        # next backfill from recreating every instance.
+        # Repeated sender findings can indicate a map defect. Check the rule
+        # before changing individual labels so later runs do not recreate them.
         repeat = [(s, n) for s, n in collections.Counter(
             f["from"] for f in all_findings).most_common() if n > 1]
         if repeat:

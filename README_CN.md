@@ -1,6 +1,6 @@
 # email-monitor
 
-全自动监控你的邮箱:分类、告警、归档、起草、摘要 -- 经过验证,而非仅仅生成。
+增量处理新邮件，记录处理状态，生成待审阅草稿。
 
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-orange?style=flat)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -15,8 +15,13 @@
 
 email-monitor 是一个**薄编排层 skill**。它不自建邮件存储、不自建调度、不自建推送,而是复用本机
 已有的三块基座 -- Gmail IMAP 工具链、schedule-reminder 事务池、Discord relay -- 只补上缺口:
-增量监控、分类/起草编排、归档/摘要钩子。两条红线绝对:**回复永不自动发送**(只产草稿,用户在
-Gmail 点 Send);**邮件正文永不离开本机模型**(Discord 只收脱敏标题,公开仓不存任何 PII)。
+增量监控、分类/起草编排、归档/摘要钩子。**回复只生成草稿，由你审阅后发送。**默认的 agent
+分类会把邮件内容（包括正文）放入提示词，交给已安装的 `llmcall` 按当前策略路由；它可能调用
+外部提供方，因此默认配置不能保证模型处理留在本机。Discord 提醒使用脱敏后的简短摘要。
+
+若要求模型处理只能在本地进行，在私有配置中设置 `runtime.local_only=true`、
+`classifier.mode="heuristic"` 和 `topic_labeling.enabled=false`。运行时会拒绝无法确认本地执行的
+agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各自的服务。
 
 📜 **[完整设计理念 -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
@@ -24,9 +29,9 @@ Gmail 点 Send);**邮件正文永不离开本机模型**(Discord 只收脱敏标
 
 ## 它是什么(不是什么)
 
-- **是:**无人值守的收件箱分诊回路 -- 增量收新邮件(UID 水位线,只读)、按重要性分类(规则 ->
-  廉价打分 -> 仅不确定少数走 LLM)、重要项推 Discord、垃圾归档、每个事项作为 task 写入
-  schedule-reminder 池、起草简洁纯 ASCII 回复供你审阅、每日摘要。
+- **是:**收件箱分诊回路：按 UID 水位线只读收取新邮件，默认用 agent 分类，也可选择启发式规则，
+  重要邮件推送提醒，噪音邮件按配置归档。可选的 schedule-reminder 基座提供事务池和每日摘要。
+  调用会话可以按配置中的签名和语言起草回复，交给你审阅。
 - **不是:**自动发信器(只起草)、第二个事务数据库(用 schedule-reminder)、批量收件箱清理器
   (那个直接用 `gmail-imap-label.py`)。
 
@@ -39,13 +44,17 @@ Gmail 点 Send);**邮件正文永不离开本机模型**(Discord 只收脱敏标
 或手动克隆:
 
 ```bash
-git clone https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
+git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
-还需一个私有配套仓 `email-monitor-config`,存账户拓扑/规则/模板/DPAPI 指针(secrets 已 gitignore)。
-详见 `reference/summary-and-deploy.md`。
+还需一个经过 PRIVATE 验证的 Git 伴生仓 `email-monitor-config`，存放账户、规则、模板、
+纳入版本管理的运行 DATA 和 DPAPI 指针，凭据单独保存。
+详见[摘要与部署说明](skills/email-monitor/reference/summary-and-deploy.md)。
 
 ## 快速开始
+
+先确认上面的模型路由方式，并配置好私有伴生仓。dry tick 只规划操作，不执行通知、归档等写入，
+但仍会读取邮件并按所选策略分类。先用可控的测试邮箱验证，再注册无人值守任务。
 
 ```bash
 python skills/email-monitor/scripts/em_tick.py --config <路径>/registry.json --dry
@@ -60,8 +69,9 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 
 - **挂载(发现顺序):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
   `~/.email-monitor-config/` → `~/.config/email-monitor-config/`,命中后读 `<dir>/registry.json`。
-  显式 `--config <registry.json>` 优先于发现;都没命中则 skill 明确提示并干净退出(不崩溃)。
-- **首次配置:**
+  显式 `--config <registry.json>` 优先。找不到配置时，程序输出结构化错误并以非零状态退出，不发提醒。
+- **首次配置:**先创建或克隆经过 PRIVATE 验证的 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，
+  再运行初始化。运行 DATA 留在这个私有仓内，纳入版本管理；无法验证的存储位置会被拒绝。
   ```bash
   python scripts/init_config.py    # 生成符合规范的骨架(确定性)
   export EMAIL_MONITOR_CONFIG=~/.email-monitor-config    # 或给 init 传 --out <dir>
@@ -89,13 +99,18 @@ email-monitor 还可以给新邮件附加主题标签 -- 判断邮件"是关于�
 
 ## 示例输出
 
-Discord 提醒 `【待办】个人:订阅支付方式未填,下次扣款前要补`（分类器自己给出的一句中文摘要，
-验证码/token/链接一律替换为 `(见邮箱)`）、对应的池事务、以及结尾恰为 `Daize Dong` 的纯净 Gmail 草稿。
+合成邮件和草稿示例由 `tools/make_fixtures.py` 生成，保存在
+`skills/email-monitor/tests/reliability.json`。提醒使用脱敏摘要，草稿的签名和语言由私有配置决定，
+发送前仍需你审阅。
 
 ## 局限
 
-v0.1:L2 LLM 分类与回复文案由调用会话产出(skill 提供确定性闸/模板/路由)。仅支持 Gmail IMAP。
-状态变更监控(已读/改标签/删除)列为 roadmap v0.4。
+离线测试使用合成邮件和被拦截的外部操作，只验证相应的程序行为，不能证明真实邮件分类质量、
+通知送达效果或无人值守任务已经可用。
+
+默认的重要性分类通过 llmcall 执行；启发式结果里的 `needs_l2` 不会触发额外的心跳模型调用。
+回复文案由调用会话起草，须单独确认该会话的模型路由。仅支持 Gmail IMAP，
+状态变更监控（已读、改标签、删除）仍在 roadmap v0.4 中。
 
 ## 语言
 

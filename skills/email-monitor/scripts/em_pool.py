@@ -50,8 +50,8 @@ class PoolError(RuntimeError):
         self.payload = payload or {}
 
 
-def _run(reminder, db, verb, args, retries=4):
-    cmd = [sys.executable, reminder]
+def _run(reminder, db, verb, args, retries=4, python=None):
+    cmd = [python or sys.executable, reminder]
     if db:
         cmd += ["--db", db]
     cmd += ["--actor", "email-monitor", verb] + args
@@ -78,17 +78,18 @@ def _run(reminder, db, verb, args, retries=4):
     raise last
 
 
-def find_thread(reminder, db, thread_key):
+def find_thread(reminder, db, thread_key, account=None, python=None):
     """Return existing item dict for a thread_key, or None. Scans email-monitor source only."""
     cursor = None
     while True:
         args = ["--source", "email-monitor", "--limit", "100"]
         if cursor:
             args += ["--cursor", cursor]
-        res = _run(reminder, db, "list", args)
+        res = _run(reminder, db, "list", args, python=python)
         for it in res.get("items", []):
             ext = it.get("ext") or {}
-            if ext.get("x_email_monitor_thread_key") == thread_key:
+            if ext.get("x_email_monitor_thread_key") == thread_key and (
+                    account is None or ext.get("x_email_monitor_account") == account):
                 return it
         cursor = res.get("next_cursor")
         if not cursor:
@@ -97,7 +98,7 @@ def find_thread(reminder, db, thread_key):
 
 def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None,
            description=None, priority=None, tags=None, project=None, ext_extra=None,
-           progress=None, draft_id=None):
+           progress=None, draft_id=None, idempotency_key=None, python=None):
     """Idempotent create/merge. thread_key match -> update existing; else add new.
 
     Gate 1 (Message-ID idempotency) is handled by the base UPSERT on idempotency_key.
@@ -107,16 +108,30 @@ def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None
         "x_email_monitor_message_id": message_id,
         "x_email_monitor_thread_key": thread_key,
     }
+    if idempotency_key:
+        ext["x_email_monitor_action_key"] = idempotency_key
     if draft_id:
         ext["x_email_monitor_draft_id"] = draft_id
     if ext_extra:
         ext.update({k if k.startswith("x_email_monitor_") else "x_email_monitor_" + k: v
                     for k, v in ext_extra.items()})
 
-    existing = find_thread(reminder, db, thread_key)
+    def acknowledged(item, action):
+        if idempotency_key is None:
+            return {"item": item, "action": action}
+        if isinstance(item, dict) and item.get("id") and (
+                item.get("ext") or {}).get("x_email_monitor_action_key") == idempotency_key:
+            return {"status": "confirmed", "idempotency_key": idempotency_key,
+                    "adapter": "pool", "receipt_id": str(item["id"])}
+        return {"status": "uncertain", "idempotency_key": idempotency_key, "adapter": "pool"}
+
+    account = (ext_extra or {}).get("account") if idempotency_key else None
+    existing = find_thread(reminder, db, thread_key, account=account, python=python)
     if existing:
         # advance same item: merge ext (deep, additive) + bump msg count
         prev = (existing.get("ext") or {})
+        if idempotency_key and prev.get("x_email_monitor_action_key") == idempotency_key:
+            return acknowledged(existing, "existing")
         n = int(prev.get("x_email_monitor_msg_count", 1) or 1) + 1
         ext["x_email_monitor_msg_count"] = n
         ext["x_email_monitor_last_seen_msg_id"] = message_id
@@ -125,13 +140,13 @@ def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None
             upd += ["--set", "progress=%d" % progress]
         if due_at:
             upd += ["--set", "due_at=%s" % due_at]
-        item = _run(reminder, db, "update", upd)["item"]
-        return {"item": item, "action": "merged"}
+        item = _run(reminder, db, "update", upd, python=python)["item"]
+        return acknowledged(item, "merged")
 
     # new item
     ext["x_email_monitor_msg_count"] = 1
     args = ["--title", title, "--kind", kind, "--source", "email-monitor",
-            "--idempotency-key", "email-monitor:%s" % message_id,
+            "--idempotency-key", idempotency_key or "email-monitor:%s" % message_id,
             "--ext", json.dumps(ext, ensure_ascii=False)]
     if due_at:
         args += ["--due-at", due_at]
@@ -145,8 +160,8 @@ def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None
         args += ["--tags", ",".join(tags)]
     if project:
         args += ["--project", project]
-    item = _run(reminder, db, "add", args)["item"]
-    return {"item": item, "action": "created"}
+    item = _run(reminder, db, "add", args, python=python)["item"]
+    return acknowledged(item, "created")
 
 
 def transition(reminder, db, item_id, to, reason=None, progress=None, expect=None):
