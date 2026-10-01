@@ -1,4 +1,4 @@
-<#
+﻿<#
 register-task.ps1 -- install the EmailMonitorTick heartbeat (idempotent).
 
 Pins an ABSOLUTE pythonw.exe + absolute em_tick.py + WorkingDirectory, because schtasks runs with a

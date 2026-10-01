@@ -36,6 +36,16 @@ description: Auto-monitor Gmail: classify new mail by importance, alert importan
 
 ## Workflow (thin, load the named reference shard only for the step you are on)
 
+Before creating a reminder, compare its actual obligation with existing records across sources.
+Use `em_pool.upsert` with the account and original message/thread identity; a retry must reuse them.
+Different email threads can describe one affair. After reviewing that relationship, retain source
+records and add a `duplicate_of` link to the current obligation. Cross-thread automatic matching
+requires an explicit `x_email_monitor_merge_rules` rule on that obligation: account, sender, exact
+subject, entity/period tokens in `contains`, and an `until` date. Keep those real rules in the private
+pool, never in public examples. Subject similarity alone must not merge separate bills or events.
+New messages update the current summary; manually consolidated summaries are preserved and their
+latest email update is shown separately. Finished obligations are not reopened by a mail retry.
+
 | # | Step | Load | Code |
 |---|------|------|------|
 | 1 | Incremental watch + classify each new mail | `reference/monitor-and-classify.md` | `em_watch.py`, `em_classify.py` |

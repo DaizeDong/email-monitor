@@ -167,7 +167,7 @@ def main():
     if a.rules:
         with open(a.rules, "r", encoding="utf-8") as f:
             rules = json.load(f)
-    msg = json.loads(sys.stdin.read())
+    msg = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", "replace"))
     out = classify(msg, rules)
     print(json.dumps(out, ensure_ascii=False) if a.json else out)
     return 0

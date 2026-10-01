@@ -71,7 +71,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
     ap.parse_args()
-    inp = json.loads(sys.stdin.read())
+    inp = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", "replace"))
     print(json.dumps(normalize(inp.get("phrase"), inp.get("base")), ensure_ascii=False))
     return 0
 

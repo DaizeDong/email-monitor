@@ -41,6 +41,12 @@ Never read the `.db`, build SQL, or import internals.
 
 ## Dual idempotency gate
 
+Historical information can be archived as `cancelled` with an explicit
+`x_email_monitor_notification_archive` marker. Preserve the original message and account identity.
+Only a new actionable message may promote such an archived `event` back to a pending `task` on
+the same ID. Exact-message replay, ordinary information, and completed or manually cancelled
+obligations do not reopen. Archive metadata is cleared after that promotion.
+
 Gate 1 = `idempotency_key = email-monitor:<Message-ID>` (base UPSERT, same mail -> same id). Gate 2 =
 `thread_key` semantic merge (advance within a thread, not a new item). Both are regression-tested
 (`test_message_id_idempotent_same_id`, `test_thread_merge_advances_not_duplicates`).

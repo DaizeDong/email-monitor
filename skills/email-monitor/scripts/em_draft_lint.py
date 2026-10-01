@@ -53,7 +53,7 @@ def main():
         with open(a.file, "r", encoding="utf-8") as f:
             text = f.read()
     else:
-        text = sys.stdin.read()
+        text = sys.stdin.buffer.read().decode("utf-8-sig", "replace")
     viol = lint(text, a.profile)
     if a.json:
         print(json.dumps({"clean": not viol, "profile": a.profile,
