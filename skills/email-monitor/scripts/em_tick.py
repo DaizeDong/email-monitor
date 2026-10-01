@@ -33,7 +33,8 @@ _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_classify        # noqa: E402
-import em_agent_classify  # noqa: E402
+import em_agent_classify
+from llmcall import active_chain as llmcall_active_chain  # noqa: E402
 import em_pool            # noqa: E402
 import em_alert           # noqa: E402
 import em_watch           # noqa: E402
@@ -391,20 +392,11 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         pr, label = cls["priority"], cls["label"]
         full_label = label_scheme.replace("{priority}", pr).replace("{semantic}", label)
 
-        if pr in push_levels and not dry:
-            try:
-                em_alert.send(em_alert.build_title(
-                    pr, slug, r["subject"],
-                    summary=cls.get("summary_zh", ""),
-                    account_label=acct.get("display_zh")))
-                n_alert += 1
-            except Exception as e:
-                log("ACCOUNT %s: alert failed: %s" % (slug, e))
-
         # pool upsert for actionable + FYI (NOISE is archived/kept silently). Gated on pool_enabled:
         # with schedule-reminder absent this whole block is skipped (alert-only mode). due_at -- when
         # the classifier extracted a concrete owner date -- makes it a DATED reminder, not an undated note.
-        if pool_enabled and pr in ("URGENT", "ACTION", "FYI"):
+        pool_result = None
+        if pool_enabled and not dry and pr in ("URGENT", "ACTION", "FYI"):
             try:
                 title = derive_title(pr, label, r["subject"], cls.get("summary_zh", ""))
                 # Resolve the date with the mail's own Date as base: absolute ISO already normalized in
@@ -412,16 +404,29 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                 # is resolved against this mail's date via em_duenorm. None -> undated item, as before.
                 due_at = cls.get("due_at") or em_dates.normalize_due_at(
                     cls.get("due_raw"), base=r.get("date"))
-                em_pool.upsert(reminder, db, r["message_id"], r["thread_key"], title,
+                pool_result = em_pool.upsert(reminder, db, r["message_id"], r["thread_key"], title,
                                kind="task" if pr in ("URGENT", "ACTION") else "event",
                                due_at=due_at,
                                priority=2 if pr == "URGENT" else (4 if pr == "ACTION" else 7),
                                tags=["acct:%s" % slug, label],
+                               match_text=r.get('body', ''),
                                ext_extra={"account": slug, "uid": r["uid"],
                                           "subject_raw": r["subject"], "from": r["from"],
                                           "label": full_label, "priority_tier": cls["tier"]})
             except Exception as e:
                 log("ACCOUNT %s: pool upsert failed: %s" % (slug, e))
+                # Keep the cursor unchanged. A retry reconciles source identities already saved.
+                return {'account': slug, 'error': 'pool_write_failed'}
+        replayed = pool_result and pool_result.get('action') == 'replayed'
+        closed = pool_result and pool_result.get('item', {}).get('state') in ('done', 'cancelled')
+        if pr in push_levels and not dry and not replayed and not closed:
+            try:
+                em_alert.send(em_alert.build_title(
+                    pr, slug, r["subject"], summary=cls.get("summary_zh", ""),
+                    account_label=acct.get("display_zh")))
+                n_alert += 1
+            except Exception as e:
+                log("ACCOUNT %s: alert failed: %s" % (slug, e))
         if pr == "NOISE" and archive_enabled:
             # rfc822msgid: matches the RFC822 Message-ID header, NOT gm_msgid (X-GM-MSGID)
             if archive(user, r.get("message_id"), full_label, dry, app_pw=pw):
@@ -440,7 +445,8 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
 
     state["cursors"][key] = new_cursor
     state["seen_gm_msgids"] = em_watch.bound_seen(seen, 50000)  # newest by msgid value
-    em_watch.save_state(state_path, state)
+    if not dry:
+        em_watch.save_state(state_path, state)
     log("ACCOUNT %s: new=%d alert=%d archived=%d kept_in_inbox=%d topic_labeled=%d cursor_uid=%d"
         % (slug, n_new, n_alert, n_archive, n_kept, n_topic, new_cursor["last_uid"]))
     return {"account": slug, "new": n_new, "alert": n_alert, "archived": n_archive,
@@ -502,8 +508,13 @@ def main():
         return 2
 
     agent_cfg = cfg.get("classifier", {}) or {}
-    log("classifier mode=%s chain=%s" % (agent_cfg.get("mode", "agent"),
-                                         ",".join(agent_cfg.get("chain") or em_agent_classify.DEFAULT_CHAIN)))
+    # Report the ladder that will actually be walked. A configured chain overrides routing;
+    # with none configured it is llmcall's live chain, NOT em_agent_classify.DEFAULT_CHAIN,
+    # which is a kept-for-import relic and would print a ladder nobody is using.
+    _routed = agent_cfg.get("chain") or list(llmcall_active_chain())
+    log("classifier mode=%s chain=%s%s" % (agent_cfg.get("mode", "agent"),
+                                           ",".join(_routed),
+                                           "" if agent_cfg.get("chain") else " (from llmcall)"))
 
     # Archiving is opt-out: when disabled, NOISE is still classified/labelled in the pool but the
     # message is never moved out of the INBOX -- the owner reviews every mail themselves. Logged
@@ -555,7 +566,7 @@ def main():
         log("daily-summary check failed: %s" % e)
 
     print(json.dumps({"results": results}, ensure_ascii=False))
-    return 0
+    return 1 if any(result.get('error') for result in results) else 0
 
 
 if __name__ == "__main__":

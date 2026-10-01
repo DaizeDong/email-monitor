@@ -7,8 +7,9 @@ stdout JSON. It NEVER reads the .db, builds SQL, or imports base internals (ARCH
 anti-patterns #1/#2).
 
 Guarantees enforced here:
-  - idempotency_key = "email-monitor:<Message-ID>"  (gate 1: same mail re-scan -> same item id)
-  - thread_key semantic merge (gate 2: later mail in a thread advances, never duplicates)
+  - source message replay returns the retained result without changing it
+  - account-scoped thread identity; cross-thread merges require reviewed, expiring rules
+  - consolidation aliases route subsequent messages to the retained obligation
   - ext namespace strictly x_email_monitor_*  (additive deep-merge, never overwrite blob)
   - state changes only via transition/done/block  (update on state -> ERR_USE_TRANSITION)
   - source always "email-monitor"
@@ -25,12 +26,17 @@ import os
 import subprocess
 import sys
 import time
+import hashlib
+import tempfile
+from contextlib import contextmanager
+from datetime import datetime, timezone, date
+from email.utils import parseaddr
 
 BASE_REL = ("schedule-reminder", "skills", "schedule-reminder", "scripts", "reminder.py")
 
 
 def default_reminder_path():
-    return os.path.expanduser(os.path.join("~", "CodesClaude", *BASE_REL))
+    return os.path.expanduser(os.environ.get('EMAIL_MONITOR_REMINDER_CLI') or os.path.join("~", "CodesClaude", *BASE_REL))
 
 
 def available(reminder=None):
@@ -51,13 +57,14 @@ class PoolError(RuntimeError):
 
 
 def _run(reminder, db, verb, args, retries=4):
-    cmd = [sys.executable, reminder]
+    cmd = [sys.executable, '-B', reminder]
     if db:
         cmd += ["--db", db]
     cmd += ["--actor", "email-monitor", verb] + args
     last = None
     for attempt in range(retries):
-        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=60,
+                           **({'creationflags': 0x08000000} if sys.platform == 'win32' else {}))
         out = (p.stdout or "").strip()
         err = (p.stderr or "").strip()
         if p.returncode == 0 and out:
@@ -78,31 +85,122 @@ def _run(reminder, db, verb, args, retries=4):
     raise last
 
 
-def find_thread(reminder, db, thread_key):
-    """Return existing item dict for a thread_key, or None. Scans email-monitor source only."""
+def _items(reminder, db):
+    """Read the owner contract, including manually maintained consolidation targets."""
+    rows = []
     cursor = None
     while True:
-        args = ["--source", "email-monitor", "--limit", "100"]
+        args = ["--limit", "5000"]
         if cursor:
             args += ["--cursor", cursor]
         res = _run(reminder, db, "list", args)
-        for it in res.get("items", []):
-            ext = it.get("ext") or {}
-            if ext.get("x_email_monitor_thread_key") == thread_key:
-                return it
+        rows.extend(res.get('items', []))
         cursor = res.get("next_cursor")
         if not cursor:
-            return None
+            return rows
+
+
+def _canonical(item, rows):
+    by_id = {row['id']: row for row in rows}
+    seen = set()
+    while True:
+        if item['id'] in seen:
+            raise PoolError('ERR_MERGE_LINK', 'Cyclic consolidation link')
+        seen.add(item['id'])
+        parent = (item.get('ext') or {}).get('x_console_consolidation', {}).get('duplicate_of')
+        if not parent:
+            return item
+        if parent not in by_id:
+            raise PoolError('ERR_MERGE_LINK', 'Consolidation target missing')
+        item = by_id[parent]
+
+
+def find_thread(reminder, db, thread_key, account=None):
+    rows = _items(reminder, db)
+    for item in rows:
+        ext = item.get('ext') or {}
+        if ext.get('x_email_monitor_account') == account and thread_key and thread_key in (
+                [ext.get('x_email_monitor_thread_key')] + ext.get('x_email_monitor_thread_keys', [])):
+            return _canonical(item, rows)
+    return None
+
+
+def _norm(value):
+    return ' '.join(str(value or '').split()).casefold()
+
+
+def _matches_reviewed(item, ext, text):
+    """Only explicit, time-bounded account/sender/subject/entity rules cross threads."""
+    for rule in (item.get('ext') or {}).get('x_email_monitor_merge_rules', []):
+        if not isinstance(rule, dict) or not all(isinstance(rule.get(k), str) and rule[k].strip()
+                                                  for k in ('account','sender','subject','until')):
+            raise PoolError('ERR_MERGE_RULE', 'Incomplete reviewed consolidation rule')
+        tokens = rule.get('contains', [])
+        if not isinstance(tokens, list) or any(not isinstance(token, str) or not token.strip() for token in tokens):
+            raise PoolError('ERR_MERGE_RULE', 'Consolidation entity tokens must be a list of nonempty strings')
+        try:
+            expired = date.fromisoformat(rule['until']) < datetime.now(timezone.utc).date()
+        except (TypeError, ValueError) as exc:
+            raise PoolError('ERR_MERGE_RULE', 'Invalid consolidation expiry') from exc
+        if not expired and rule['account'] == ext.get('x_email_monitor_account') and (
+                _norm(rule['sender']) == _norm(parseaddr(ext.get('x_email_monitor_from',''))[1])) and (
+                _norm(rule['subject']) == _norm(ext.get('x_email_monitor_subject_raw'))) and all(
+                _norm(token) in _norm(text) for token in tokens):
+            return True
+    return False
+
+
+def _seen(ext):
+    return {mid for mid in [ext.get('x_email_monitor_message_id'),ext.get('x_email_monitor_last_seen_msg_id'),
+                            *ext.get('x_email_monitor_message_ids', [])] if mid}
+
+
+@contextmanager
+def _pool_lock(db):
+    """Serialize the adapter's read/modify/write sequence across scheduler processes."""
+    # One adapter lane per OS user also covers callers that omit the owner's database path.
+    target = os.path.normcase(os.path.expanduser('~'))
+    path = os.path.join(tempfile.gettempdir(), 'email-pool-' + hashlib.sha256(target.encode()).hexdigest() + '.lock')
+    with open(path, 'a+b') as stream:
+        if not stream.tell():
+            stream.write(b'0'); stream.flush()
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                stream.seek(0)
+                if sys.platform == 'win32':
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise PoolError('ERR_BUSY', 'Timed out waiting for reminder adapter') from exc
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            stream.seek(0)
+            if sys.platform == 'win32':
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream, fcntl.LOCK_UN)
 
 
 def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None,
            description=None, priority=None, tags=None, project=None, ext_extra=None,
-           progress=None, draft_id=None):
-    """Idempotent create/merge. thread_key match -> update existing; else add new.
+           progress=None, draft_id=None, match_text=None):
+    with _pool_lock(db):
+        return _upsert(reminder, db, message_id, thread_key, title, kind, due_at, description,
+                       priority, tags, project, ext_extra, progress, draft_id, match_text)
 
-    Gate 1 (Message-ID idempotency) is handled by the base UPSERT on idempotency_key.
-    Gate 2 (thread merge) is handled here: an existing thread item is advanced, not duplicated.
-    """
+
+def _upsert(reminder, db, message_id, thread_key, title, kind, due_at, description,
+            priority, tags, project, ext_extra, progress, draft_id, match_text):
+    if not message_id:
+        raise PoolError('ERR_IDENTITY', 'A source message ID is required')
     ext = {
         "x_email_monitor_message_id": message_id,
         "x_email_monitor_thread_key": thread_key,
@@ -113,25 +211,67 @@ def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None
         ext.update({k if k.startswith("x_email_monitor_") else "x_email_monitor_" + k: v
                     for k, v in ext_extra.items()})
 
-    existing = find_thread(reminder, db, thread_key)
+    rows = _items(reminder, db)
+    account = ext.get('x_email_monitor_account')
+    # Check every retained source message before following a thread or merge alias.
+    for row in rows:
+        prev = row.get('ext') or {}
+        if prev.get('x_email_monitor_account') == account and message_id in _seen(prev):
+            return {'item': _canonical(row, rows), 'action': 'replayed'}
+    matches = {}
+    for row in rows:
+        prev = row.get('ext') or {}
+        same_thread = thread_key and thread_key != 'ref:unknown' and prev.get('x_email_monitor_account') == account and thread_key in (
+            [prev.get('x_email_monitor_thread_key')] + prev.get('x_email_monitor_thread_keys', []))
+        if same_thread or _matches_reviewed(row, ext, match_text or title + '\n' + (description or '')):
+            canonical = _canonical(row, rows)
+            matches[canonical['id']] = canonical
+    if len(matches) > 1:
+        raise PoolError('ERR_MERGE_AMBIGUOUS', 'Multiple reviewed targets; resolve before creating work')
+    existing = next(iter(matches.values()), None)
     if existing:
         # advance same item: merge ext (deep, additive) + bump msg count
         prev = (existing.get("ext") or {})
         n = int(prev.get("x_email_monitor_msg_count", 1) or 1) + 1
         ext["x_email_monitor_msg_count"] = n
         ext["x_email_monitor_last_seen_msg_id"] = message_id
+        ext['x_email_monitor_message_ids'] = sorted(_seen(prev) | {message_id})
+        ext['x_email_monitor_thread_keys'] = sorted({k for k in [prev.get('x_email_monitor_thread_key'), thread_key,
+                                                        *prev.get('x_email_monitor_thread_keys', [])] if k})
+        ext['x_email_monitor_latest_summary'] = title
+        archived_notice = (existing.get('source') == 'email-monitor' and
+                           existing.get('state') == 'cancelled' and
+                           existing.get('kind') == 'event' and
+                           isinstance(prev.get('x_email_monitor_notification_archive'), dict))
+        if archived_notice and kind == 'task':
+            # A new obligation in an archived information thread needs attention again.
+            # Completed obligations and exact-message replays never take this path.
+            existing = transition(reminder, db, existing['id'], 'pending', expect='cancelled',
+                                  reason='New actionable mail in an archived information thread')
+        if (kind == 'task' and existing.get('state') == 'pending' and
+                isinstance(prev.get('x_email_monitor_notification_archive'), dict)):
+            # Also finish marker cleanup if the earlier transition succeeded but update failed.
+            ext['x_email_monitor_notification_archive'] = None
         upd = ["--id", existing["id"], "--ext", json.dumps(ext, ensure_ascii=False)]
-        if progress is not None:
+        writable = existing.get('state') not in ('done','cancelled') and not prev.get('x_email_monitor_preserve_summary')
+        if writable:
+            upd += ['--set', 'title=' + title]
+            if kind == 'task' and existing.get('kind') == 'event':
+                upd += ['--set', 'kind=task']
+            if description is not None:
+                upd += ['--set', 'description=' + description]
+        if writable and progress is not None:
             upd += ["--set", "progress=%d" % progress]
-        if due_at:
+        if writable and due_at:
             upd += ["--set", "due_at=%s" % due_at]
         item = _run(reminder, db, "update", upd)["item"]
         return {"item": item, "action": "merged"}
 
-    # new item
+    # New threads use an account-scoped key; the adapter lock covers the owner write.
     ext["x_email_monitor_msg_count"] = 1
+    identity = json.dumps([account, thread_key if thread_key and thread_key != 'ref:unknown' else message_id])
     args = ["--title", title, "--kind", kind, "--source", "email-monitor",
-            "--idempotency-key", "email-monitor:%s" % message_id,
+            "--idempotency-key", "email-monitor:thread:" + hashlib.sha256(identity.encode()).hexdigest(),
             "--ext", json.dumps(ext, ensure_ascii=False)]
     if due_at:
         args += ["--due-at", due_at]
@@ -187,6 +327,7 @@ def _cli():
     u.add_argument("--message-id", required=True)
     u.add_argument("--thread-key", required=True)
     u.add_argument("--title", required=True)
+    u.add_argument("--account")
     u.add_argument("--kind", default="task")
     u.add_argument("--due-at")
     u.add_argument("--description")
@@ -199,6 +340,7 @@ def _cli():
 
     f = sub.add_parser("find-thread")
     f.add_argument("--thread-key", required=True)
+    f.add_argument("--account")
 
     t = sub.add_parser("transition")
     t.add_argument("--id", required=True)
@@ -219,10 +361,11 @@ def _cli():
             res = upsert(a.reminder, a.db, a.message_id, a.thread_key, a.title, a.kind,
                          a.due_at, a.description, a.priority,
                          a.tags.split(",") if a.tags else None, a.project,
+                         ext_extra={'account':a.account} if a.account else None,
                          progress=a.progress, draft_id=a.draft_id)
             print(json.dumps(res, ensure_ascii=False))
         elif a.cmd == "find-thread":
-            print(json.dumps(find_thread(a.reminder, a.db, a.thread_key), ensure_ascii=False))
+            print(json.dumps(find_thread(a.reminder, a.db, a.thread_key, account=a.account), ensure_ascii=False))
         elif a.cmd == "transition":
             print(json.dumps(transition(a.reminder, a.db, a.id, a.to, a.reason, a.progress),
                              ensure_ascii=False))

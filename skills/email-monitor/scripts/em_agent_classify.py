@@ -198,7 +198,7 @@ def main():
     a = ap.parse_args()
     providers = {"codex": {"model": a.codex_model, "reasoning": a.codex_reasoning},
                  "cc": {"model": a.claude_model}, "claude": {"model": a.claude_model}}
-    msg = json.loads(sys.stdin.read())
+    msg = json.loads(sys.stdin.buffer.read().decode("utf-8-sig", "replace"))
     out = classify(msg, [c.strip() for c in a.chain.split(",") if c.strip()] if a.chain else None,
                    providers, a.timeout, a.owner, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(out, ensure_ascii=False))

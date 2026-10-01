@@ -259,3 +259,34 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+def pool_merge_case():
+    """Synthetic two-account invoices and explicitly reviewed cross-thread identity."""
+    return {'id':'invoice-a','state':'pending','title':'Pay invoice A-41','description':'Keep receipt',
+            'source':'email-monitor','due_at':None,'ext':{
+                'x_email_monitor_account':'user1', 'x_email_monitor_message_id':'<first@example.com>',
+                'x_email_monitor_thread_key':'thread-a','x_email_monitor_msg_count':1,
+                'x_email_monitor_merge_rules':[{'account':'user1','sender':'billing@example.com',
+                    'subject':'payment reminder','contains':['invoice a-41'], 'until':'2099-12-31'}]}}
+
+def pool_tick_case():
+    return {'user':'user1@example.com','slug':'user1'}, {
+        'from':'billing@example.com','subject':'Payment reminder','uid':2,'gm_msgid':'2',
+        'message_id':'<next@example.com>','thread_key':'thread-a','body':'Invoice A-41 is overdue'}, {
+        'priority':'ACTION','label':'invoice','summary_zh':'Review synthetic invoice','tier':'fixture'}
+
+def initialized_config_rules():
+    return {'version':1,'by_address':{'billing@example.com':'Payments'},'by_domain':{},'by_list_id':{}}, {
+        'primary':['Payments','Scheduling']}
+
+def bytecode_probe(directory):
+    (directory/'synthetic_helper.py').write_text('value = 1\n',encoding='utf-8')
+    script=directory/'synthetic_owner.py'
+    script.write_text('import synthetic_helper\nprint(\'{"ok": true}\')\n',encoding='utf-8')
+    return script
+
+
+def archived_notification():
+    row = pool_merge_case()
+    row.update(kind='event', state='cancelled')
+    row['ext']['x_email_monitor_notification_archive'] = {'reason':'historical-information'}
+    return row
