@@ -22,16 +22,17 @@
 - **Decision it produced:** the only output is a Gmail draft (`create_draft`). The SMTP send path
   (`send-gmail.ps1`) is physically isolated and never imported into this loop. The user clicks Send.
 
-## P3, Privacy is a hard boundary, not a setting
+## P3, Keep private storage separate and model routing explicit
 
 - **Symptom patch:** "feed the email body to a web summarizer / push the subject to Discord / commit a
   record so it is backed up."
-- **Root cause:** mail bodies are PII with a large blast radius. The public skill repo and any external
-  API are the wrong custodians.
-- **Decision it produced:** bodies are processed only by the local session model; Discord gets a
-  one-line gist of the mail (owner-approved 2026-07-13) with every credential -- code, token,
-  tracking number, URL, email address -- stripped, never the raw body; the public repo stores no PII; app passwords live in DPAPI, never in git,
-  argv, or logs; the companion config repo is Mode B (secrets gitignored).
+- **Root cause:** mail can contain private information. A local orchestration process does not imply
+  that its model calls stay on the machine, and public source control cannot hold real mail history.
+- **Decision it produced:** real state belongs in a verified PRIVATE companion. Default agent
+  classification includes body content in prompts routed by installed `llmcall`, which may use
+  external providers. Enforced `runtime.local_only=true` requires heuristic classification and
+  disabled topic models; unverified agent/topic routes are rejected. Discord receives a redacted
+  gist. App passwords remain outside git, argv and logs; Mode B keeps secret files gitignored.
 
 ## P4, Programs judge, models do not self-grade
 

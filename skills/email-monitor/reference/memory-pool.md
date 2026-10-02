@@ -1,15 +1,17 @@
 # Step 3, Track the affair in the schedule-reminder pool
 
-email-monitor is the base's designated downstream #2. The personal-affairs memory pool **is** the
-schedule-reminder base. All access is `python reminder.py <verb> --json` via subprocess (`em_pool.py`).
-Never read the `.db`, build SQL, or import internals.
+The schedule-reminder pool is optional. The heartbeat uses it only when `em_pool.available()` finds
+the reminder script; without it, pool tracking and daily summaries are skipped. All access goes
+through `reminder.py <verb>` and its JSON responses via `em_pool.py`, never SQL or base internals.
+The database and action ledger are versioned DATA in a verified PRIVATE Git companion. Relative
+`storage.db` paths resolve from that companion, and unverified destinations fail before mail access.
 
 ## Mail affair -> base item (RFC 5545 VTODO-isomorphic)
 
 | base field | source |
 |---|---|
 | `kind` | needs my action (reply/do/promise) -> `task`; fait-accompli to attend/know (appointment/charge/invite) -> `event` |
-| `title` | derived Chinese one-liner from the classifier's `summary_zh` (e.g. `需回复:雇主要你确认上月工时`), never the raw body; credentials stripped |
+| `title` | Chinese one-liner from `summary_zh`, or redacted subject words; no full body, but ordinary names and dates may remain |
 | `description` | 0-3 lines context (who/what/constraint), minimal PII, never the full body |
 | `due_at` | normalized deadline (UTC RFC3339) from `em_duenorm.py` |
 | `state` | `pending`->`doing`(drafted)->`done`(replied/closed)->`blocked`(awaiting other)->`cancelled` |
@@ -26,30 +28,29 @@ Never read the `.db`, build SQL, or import internals.
 
 ## Pipeline per new mail
 
-1. Compute `thread_key`; **merge before create**, `em_pool.find_thread` hit -> advance the existing
-   item (merge ext, bump `msg_count`), never a new item (avoids affair explosion).
-2. Structured extraction (single-mail LLM -> strict JSON): `task_type / title (redacted imperative) /
-   description / due (em_duenorm) / priority / project (snapped to controlled vocab) / tags`.
-3. **Confidence gate**: high-confidence + clearly actionable -> `add` as pending. med/low -> a
-   `needs-confirm` suggestion (low priority) surfaced in the daily summary for one-tap user
-   confirmation. Never auto-do anything.
-4. Write: `em_pool.upsert(... idempotency_key=email-monitor:<Message-ID> ...)`; `ERR_BUSY` ->
-   exponential backoff.
-5. **State only via transition/done/block** (`update` on state -> `ERR_USE_TRANSITION`): drafted ->
-   update `progress=30` + `draft_id`; user clicks Send (Sent detected / draft gone) -> `done`;
-   awaiting other -> `block --reason`; their reply -> `blocked->doing`.
+1. The heartbeat plans a pool action for URGENT/ACTION/FYI mail. It derives title, kind, priority,
+   tags and due time from the classifier result; there is no separate pool-extraction model call
+   or implemented `needs-confirm` approval flow. Default agent classification includes body text
+   in llmcall prompts and may use external providers. For local-only processing, select heuristic
+   classification with topic models off, as described in `monitor-and-classify.md`.
+2. Persist the scoped action key and payload before dispatch. Mark the action uncertain before
+   calling `em_pool.upsert`; `--dry` only prints the plan and never calls the pool write adapter.
+3. Find an existing thread within the account. Reusing the same action key is a no-op; a new
+   message in that thread updates ext metadata and increments its message count. Otherwise add
+   a new item. `ERR_BUSY` uses bounded exponential backoff.
+4. Complete the pool action only when the returned item confirms the same action key. Ambiguous
+   results stay uncertain for reconciliation; a moved mail cursor cannot discard pending work.
+5. For later manual workflow changes, use transition/done/block instead of `update` on state.
+   The heartbeat does not detect a sent draft or automatically close its pool item. A caller
+   must verify the user's action before marking it done.
 
 ## Dual idempotency gate
 
-Historical information can be archived as `cancelled` with an explicit
-`x_email_monitor_notification_archive` marker. Preserve the original message and account identity.
-Only a new actionable message may promote such an archived `event` back to a pending `task` on
-the same ID. Exact-message replay, ordinary information, and completed or manually cancelled
-obligations do not reopen. Archive metadata is cleared after that promotion.
+The heartbeat's action key binds account, mailbox, UIDVALIDITY, Message-ID and action; the pool
+stores it as `x_email_monitor_action_key`. Legacy direct callers without that argument retain
+`email-monitor:<Message-ID>` as their base idempotency key. A second gate merges thread items;
+keyed heartbeat calls scope that lookup to the account. See `delivery-state.md` for retry rules.
 
-Gate 1 = `idempotency_key = email-monitor:<Message-ID>` (base UPSERT, same mail -> same id). Gate 2 =
-`thread_key` semantic merge (advance within a thread, not a new item). Both are regression-tested
-(`test_message_id_idempotent_same_id`, `test_thread_merge_advances_not_duplicates`).
-
-The base reminder tool owns its own local DB file (local NTFS only; never a sync drive, WAL +
-sync corrupts). Backup via `sqlite3 VACUUM INTO`, never a raw copy of `.db/-wal/-shm`.
+The base owns the database format. Keep its working database on local storage inside the PRIVATE
+companion and follow its consistent-snapshot procedure for backups; do not copy live WAL files
+piecemeal. Private version control is required for runtime DATA, not replaced by an ignored folder.

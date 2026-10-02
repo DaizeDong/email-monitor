@@ -14,12 +14,44 @@ Stdlib only. Never echoes secret values (only presence / structure).
 import argparse
 import json
 import os
+import subprocess
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "email-monitor" / "scripts"))
+import em_runtime
+from em_lint_rules import LINE_CAPS, draft_config
 
 PASS, FAIL = "PASS", "FAIL"
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
 ROLES = {"primary", "secondary", "academic"}
-ABS_MARKERS = ("C:\\", "C:/", "/home/", "/Users/", "/root/")
+
+
+def secret_ignore_ready(cfg):
+    """Check effective repository ignore rules without creating secret files."""
+    probes = ("secrets/__email_monitor_doctor_probe__", "__email_monitor_doctor_probe__.env",
+              "__email_monitor_doctor_probe__.cred")
+    try:
+        result = subprocess.run(
+            ["git", "-C", cfg, "-c", "core.excludesFile=" + os.devnull,
+             "check-ignore", "--no-index", "--verbose", "-z", "--stdin"],
+            input="\0".join(probes) + "\0", capture_output=True, text=True,
+            encoding="utf-8", timeout=10, env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+        if result.returncode != 0 or not result.stdout.endswith("\0"):
+            return False
+        fields = result.stdout[:-1].split("\0")
+        if len(fields) != 4 * len(probes):
+            return False
+        matched = set()
+        root = Path(cfg).resolve()
+        for source, line, pattern, path in zip(*[iter(fields)] * 4):
+            rule_file = (root / source).resolve()
+            if (not rule_file.is_relative_to(root) or rule_file.name != ".gitignore"
+                    or not line.isdigit() or not pattern or pattern.startswith("!")):
+                return False
+            matched.add(path)
+        return matched == set(probes)
+    except (OSError, UnicodeError, subprocess.SubprocessError):
+        return False
 
 
 def discover(override):
@@ -39,22 +71,17 @@ def discover(override):
 def main():
     ap = argparse.ArgumentParser(description="Validate the email-monitor companion config.")
     ap.add_argument("--config-dir", default=None)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--python", help="explicit selected interpreter override")
     a = ap.parse_args()
 
     cfg, how = discover(a.config_dir)
-    print("Config doctor for skill 'email-monitor'")
-    print("Discovery env var: %s (and %s_DIR)" % (ENV_VAR, ENV_VAR))
-    if not cfg:
-        print("  [%s] config located -> none found." % FAIL)
-        print("       Set %s=<dir> or run: python scripts/init_config.py" % ENV_VAR)
-        return 1
-    print("  resolved via %s -> %s" % (how, cfg))
-    print("-" * 60)
-
     results = []
-
     def check(name, ok, detail=""):
         results.append((name, bool(ok), detail))
+    if not cfg:
+        cfg = ""
+    check("config located", bool(cfg), "set EMAIL_MONITOR_CONFIG_DIR or pass --config-dir")
 
     check("config dir exists", os.path.isdir(cfg))
 
@@ -66,6 +93,9 @@ def main():
         try:
             with open(reg, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+                raise ValueError("registry.json must contain an object")
             check("registry.json valid JSON", True)
             check("schema_version == 1", data.get("schema_version") == 1,
                   "got %r" % data.get("schema_version"))
@@ -76,16 +106,23 @@ def main():
                   "type %s" % type(accts).__name__)
             if ok_list:
                 bad = []
+                slugs = set()
                 for i, ac in enumerate(accts):
-                    miss = [k for k in ("slug", "user", "role") if not ac.get(k)]
-                    if miss:
-                        bad.append("acct[%d] missing %s" % (i, miss))
-                    elif ac.get("role") not in ROLES:
-                        bad.append("acct[%d] role %r not in %s" % (i, ac.get("role"), sorted(ROLES)))
-                    cp = ac.get("cred_path", "")
-                    if cp and any(m in cp for m in ABS_MARKERS):
-                        bad.append("acct[%d] cred_path is absolute (use ~)" % i)
-                check("each account has slug/user/role(enum), cred_path portable", not bad,
+                    if not isinstance(ac, dict):
+                        bad.append("acct[%d] must be an object" % i)
+                        continue
+                    slug = ac.get("slug")
+                    if not em_runtime.valid_account_slug(slug):
+                        bad.append("acct[%d] has an invalid account slug" % i)
+                    elif slug.casefold() in slugs:
+                        bad.append("acct[%d] duplicates an account state filename" % i)
+                    else:
+                        slugs.add(slug.casefold())
+                    if not isinstance(ac.get("user"), str) or not ac["user"].strip():
+                        bad.append("acct[%d] user must be a nonempty string" % i)
+                    if not isinstance(ac.get("role"), str) or ac["role"] not in ROLES:
+                        bad.append("acct[%d] role must be one of %s" % (i, sorted(ROLES)))
+                check("each account has slug/user/role(enum)", not bad,
                       "; ".join(bad))
             check("daily_summary present", isinstance(data.get("daily_summary"), dict))
         except Exception as e:
@@ -93,6 +130,13 @@ def main():
 
     check("rules/ dir present", os.path.isdir(os.path.join(cfg, "rules")))
     check("templates/ dir present", os.path.isdir(os.path.join(cfg, "templates")))
+    for profile in LINE_CAPS:
+        try:
+            ready = bool((Path(cfg) / "templates" / (profile + ".txt")).read_text(
+                encoding="utf-8-sig").strip())
+        except (OSError, UnicodeError):
+            ready = False
+        check("templates/%s.txt readable and nonempty" % profile, ready)
 
     # rules/ contents. Until 2026-09-15 this script checked that rules/ EXISTS and never
     # looked inside: emptying rules/sender_map.json or rules/labels.json still printed
@@ -139,7 +183,8 @@ def main():
         # registry.json must have a labels entry. A hand-written list can be incomplete,
         # and those slugs are real account names that must never be committed here.
         missing = [ac.get("slug") for ac in data["accounts"]
-                   if ac.get("slug") and ac.get("slug") not in labels]
+                   if isinstance(ac, dict) and em_runtime.valid_account_slug(ac.get("slug"))
+                   and ac["slug"] not in labels]
         check("every registered account has a labels.json entry", not missing,
               "%d account(s) registered but unmapped" % len(missing))
         mapped = [k for k in labels if not k.startswith("_")]
@@ -160,36 +205,49 @@ def main():
     gi_ok = os.path.isfile(gi)
     check(".gitignore present", gi_ok)
     if gi_ok:
-        txt = open(gi, "r", encoding="utf-8", errors="replace").read()
-        check(".gitignore blocks secrets (secrets/* + *.env + *.cred)",
-              "secrets/" in txt and "*.env" in txt and "*.cred" in txt)
-        check(".gitignore blocks derived layers (merged.json + _personal_layer.json)",
-              "merged.json" in txt and "_personal_layer.json" in txt)
+        check(".gitignore blocks secret path probes (secrets/* + *.env + *.cred)",
+              secret_ignore_ready(cfg), "requires Git and effective, non-negated .gitignore rules")
+        # Nonsecret DATA is versioned in the PRIVATE companion. The enclosing
+        # repository and every runtime destination receive visibility checks below.
 
-    # self-contained check (E5): no absolute-path leakage in committed config files.
-    leak = []
-    for rel in ("registry.json", ".gitignore",
-                os.path.join("secrets", "README.md"),
-                os.path.join("rules", "classification.yaml")):
-        p = os.path.join(cfg, rel)
-        if os.path.isfile(p):
-            t = open(p, "r", encoding="utf-8", errors="replace").read()
-            if any(s in t for s in ABS_MARKERS):
-                leak.append(rel)
-    check("self-contained (no hardcoded absolute paths)", not leak, "leaks in %s" % leak)
+    try:
+        selected = em_runtime.runtime_config(data, cfg)
+        if a.python:
+            selected["python"] = em_runtime.resolve_path(a.python, cfg)
+        em_runtime.check_local_route(selected, data.get("classifier", {}),
+                                    bool(data.get("topic_labeling", {}).get("enabled", False)))
+        check("local-only route capability", True)
+        ready, detail = em_runtime.probe_interpreter(selected["python"])
+        check("selected interpreter runtime and llmcall import", ready, detail)
+    except Exception as error:
+        check("runtime configuration", False, str(error))
+    try:
+        draft_config(data.get("draft"))
+        check("draft signature, language and style", True)
+    except ValueError as error:
+        check("draft signature, language and style", False, str(error))
+    try:
+        proof = em_runtime.prove_private(cfg)
+        check("config PRIVATE companion", True, proof["repository"] + ' (' + proof['proof'] + ')')
+        _, proofs = em_runtime.storage_config(data, cfg)
+        for name, proof in proofs.items():
+            check("PRIVATE DATA destination " + name, True, proof["repository"] + ' (' + proof['proof'] + ')')
+    except Exception as error:
+        check("PRIVATE DATA destinations", False, str(error))
 
     n_fail = sum(1 for _, ok, _ in results if not ok)
-    for nm, ok, detail in results:
-        line = "  [%s] %s" % (PASS if ok else FAIL, nm)
-        if detail and not ok:
-            line += "  -> %s" % detail
-        print(line)
-    print("-" * 60)
-    if n_fail:
-        print("NOT READY: %d check(s) failed. Fix the above (or re-run init_config.py)." % n_fail)
-        return 1
-    print("READY: config at %s conforms. Fill in real accounts + DPAPI creds to go live." % cfg)
-    return 0
+    report = {"status": "not_ready" if n_fail else "ready",
+              "checks": [{"name": name, "ok": ok, "detail": detail} for name, ok, detail in results]}
+    summary = data.get("daily_summary")
+    report["daily_summary"] = {"enabled": bool(summary.get("enabled", False)) if isinstance(summary, dict) else False,
+                               "delivery": "not_measured", "reconciliation": "manual"}
+    if a.json:
+        print(json.dumps(report, ensure_ascii=False))
+    else:
+        for name, ok, detail in results:
+            print("[%s] %s%s" % (PASS if ok else FAIL, name, " -> " + detail if detail else ""))
+        print("NOT READY" if n_fail else "READY: configuration and runtime probes passed")
+    return 1 if n_fail else 0
 
 
 if __name__ == "__main__":
