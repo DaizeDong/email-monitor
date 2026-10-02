@@ -1,6 +1,6 @@
 # email-monitor
 
-Auto-monitor your inboxes: classify, alert, archive, draft, and summarize -- proven, not just generated.
+Incremental inbox triage with reviewable drafts and durable action tracking.
 
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-orange?style=flat)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -16,9 +16,15 @@ Auto-monitor your inboxes: classify, alert, archive, draft, and summarize -- pro
 email-monitor is a **thin orchestration skill**. It does not build a new mail store, a new scheduler,
 or a new notifier. It reuses three substrates already on the machine -- the Gmail IMAP toolchain, the
 schedule-reminder task pool, and the Discord relay -- and adds only the missing seam: an incremental
-watch, a classify/draft orchestrator, and archive/summary hooks. Two lines are absolute: **a reply is
-never auto-sent** (drafts only; the user clicks Send), and **mail bodies never leave the local model**
-(Discord gets a one-line gist with credentials stripped, never the raw body; the public repo stores no PII).
+watch, a classify/draft orchestrator, and archive/summary hooks. **Replies remain drafts for your
+review.** Default agent classification includes mail content, including the body, in prompts sent
+through the installed `llmcall` routing policy. That policy may use external providers; the default
+does not guarantee local model processing. Discord alerts contain a redacted one-line gist.
+
+For enforced local-only model processing, set `runtime.local_only=true`,
+`classifier.mode="heuristic"`, and `topic_labeling.enabled=false` in the private registry.
+The runtime rejects agent classification and topic models when their locality cannot be verified.
+Mail access and explicitly configured notifications still use their respective services.
 
 📜 **[Read the full design philosophy -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
@@ -26,10 +32,10 @@ never auto-sent** (drafts only; the user clicks Send), and **mail bodies never l
 
 ## What it is (and isn't)
 
-- **It is:** an unattended inbox triage loop -- watch new mail (UID-incremental, read-only), classify
-  by importance (rules -> cheap scoring -> LLM only for the uncertain few), alert important ones to
-  Discord, archive noise, track each affair as a task in the schedule-reminder pool, draft concise
-  ASCII replies for your review, and send a daily summary.
+- **It is:** an inbox triage loop: watch new mail with a read-only UID cursor, classify by importance
+  through the default agent route or a selected heuristic, alert important mail, and archive noise.
+  The optional schedule-reminder base adds pool tracking and daily summaries. The calling session
+  can draft replies using the configured signature and language for your review.
 - **It isn't:** an auto-sender (it only drafts), a second task database (it uses schedule-reminder),
   or a bulk inbox cleaner (use `gmail-imap-label.py` directly for that).
 
@@ -42,13 +48,18 @@ never auto-sent** (drafts only; the user clicks Send), and **mail bodies never l
 Or clone manually:
 
 ```bash
-git clone https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
+git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
 You also need a private companion config repo (`email-monitor-config`) holding account topology, rules,
-templates, and DPAPI pointers (secrets gitignored). See `reference/summary-and-deploy.md`.
+templates, versioned runtime DATA and DPAPI pointers (credentials kept separate). See
+[summary and deployment](skills/email-monitor/reference/summary-and-deploy.md).
 
 ## Quick start
+
+Review the model-routing choice above and configure a PRIVATE companion before processing mail.
+A dry tick plans actions without applying them; it still reads and classifies messages according to
+your configured routing policy. Test with a controlled mailbox before registering unattended work.
 
 ```bash
 # one dry tick (no alert / no archive), shows what it would do
@@ -65,9 +76,10 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 
 - **Mount (discovery order):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
   `~/.email-monitor-config/` → `~/.config/email-monitor-config/`, then `<dir>/registry.json`. An
-  explicit `--config <registry.json>` overrides discovery; if nothing resolves the skill says so and
-  exits cleanly (no crash).
-- **First time:**
+  explicit `--config <registry.json>` overrides discovery. Missing configuration produces structured
+  failure and a nonzero exit without sending an alert.
+- **First time:** create or clone a verified PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
+  at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
   ```bash
   python scripts/init_config.py    # stamp a conformant skeleton (deterministic)
   export EMAIL_MONITOR_CONFIG=~/.email-monitor-config    # or pass --out <dir> to init
@@ -99,15 +111,19 @@ config, never in this public repo.
 
 ## Example output
 
-A Discord ping `【待办】personal:payment method incomplete, fix before the next charge`
-(the classifier's own one-line gist, with any code/token/URL replaced by `(见邮箱)`), a matching pool
-task, and a clean Gmail draft ending exactly `Daize Dong`.
+Synthetic messages and draft examples are generated by `tools/make_fixtures.py` in
+`skills/email-monitor/tests/reliability.json`. Alerts use a redacted gist, and drafts use the
+signature and language selected in the private configuration. Review drafts before sending.
 
 ## Limitations
 
-v0.1: L2 LLM classification and reply prose are produced by the calling session (the skill provides the
-deterministic gate, templates, and routing). Gmail-only IMAP. State/status-change monitoring (read,
-relabel, delete) is roadmap v0.4.
+Offline tests verify these contracts using synthetic messages and intercepted effects. They do not
+establish live classification quality, successful delivery, or unattended scheduler readiness.
+
+Default importance classification runs through llmcall; the heuristic's `needs_l2` flag does not
+trigger a separate heartbeat model call. Reply prose is produced by the calling session, whose
+transport requires its own routing review. Gmail-only IMAP. State/status-change monitoring (read,
+relabel, delete) remains roadmap v0.4.
 
 ## Languages
 

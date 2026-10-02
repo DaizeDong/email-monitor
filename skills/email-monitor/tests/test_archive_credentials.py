@@ -49,7 +49,8 @@ def _capture(monkeypatch, rc=0):
 def test_archive_injects_app_pw_into_child_env(monkeypatch):
     """The label tool exits 2 without GMAIL_APP_PW -- it must be in the child's env."""
     seen = _capture(monkeypatch)
-    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False, app_pw=PW) is True
+    # The child still receives the password, but empty stdout cannot confirm delivery.
+    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False, app_pw=PW) is False
     assert seen["env"] is not None, "archive() must pass an explicit env to the child"
     assert seen["env"].get("GMAIL_APP_PW") == PW
 

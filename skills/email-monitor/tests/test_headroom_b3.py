@@ -32,6 +32,7 @@ self-evolve grader records XFAIL=0.0 (gap open) and XPASS=1.0 the instant a real
 fix lands (evaluate.py _parse_per_test). Eleven 0->1 flips give the A-tier
 e-process enough evidence to cross 1/alpha=20 (no-regression gate first).
 """
+import json
 import os
 import sys
 
@@ -42,6 +43,9 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import em_lint_rules as lr  # noqa: E402
 
+with open(os.path.join(os.path.dirname(__file__), "drafting.json"), encoding="utf-8") as _fixture_file:
+    DRAFTS = json.load(_fixture_file)
+
 _HEADROOM_REASON = ("sentence-initial transition-adverb AI tell (signal #5); "
                     "satisfiable by one BANNED_SHAPES line-start regex; headroom "
                     "for self-evolve A-tier 0->1.")
@@ -49,7 +53,7 @@ _HEADROOM_REASON = ("sentence-initial transition-adverb AI tell (signal #5); "
 
 def _flagged(text, profile="business"):
     """True iff lint flags an AI-flavor shape/phrase/word violation."""
-    viol = lr.lint(text, profile)
+    viol = lr.lint(text, profile, config=DRAFTS["config"])
     return any(
         ("banned sentence shape" in v) or ("AI kill-list" in v)
         for v in viol
@@ -58,10 +62,7 @@ def _flagged(text, profile="business"):
 
 def _draft(opener):
     """Minimal compliant draft whose 2nd line is the AI transition opener."""
-    return ("Hi,\n"
-            "%s I will send the documents this week.\n"
-            "Thanks,\n"
-            "Daize Dong" % opener)
+    return (DRAFTS['transition_template'] % opener)
 
 
 # ── headroom (currently FAIL; one line-start transition regex flips all of them) ──
@@ -113,24 +114,15 @@ def test_hr11_accordingly_opener_flagged():
 # ── regression guards (currently PASS; the fix must NOT break them) ──
 
 def test_g1_additional_midsentence_stays_clean():
-    txt = ("Hi,\n"
-           "I have additional questions about the timeline.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['additional'])
     assert not _flagged(txt), "'additional' mid-sentence is legitimate, not a transition opener"
 
 
 def test_g2_therefore_midsentence_stays_clean():
-    txt = ("Hi,\n"
-           "We can therefore proceed once you confirm.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['therefore'])
     assert not _flagged(txt), "mid-sentence 'therefore' is legitimate; only line-start+comma is a tell"
 
 
 def test_g3_clean_dealer_ask_stays_clean():
-    txt = ("Hi Sam,\n"
-           "Please send your best out the door price today.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['clean_ask'])
     assert not _flagged(txt), "a clean dealer ask must not trip the new transition rule"

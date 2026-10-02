@@ -1,0 +1,42 @@
+{
+  "config": {
+    "signature": "Avery Example",
+    "language": "en",
+    "style": {}
+  },
+  "alternate_config": {
+    "signature": "Morgan Example",
+    "language": "en",
+    "style": {}
+  },
+  "literal_config": {
+    "signature": "Avery {Example}",
+    "language": "en",
+    "style": {}
+  },
+  "recipient": "Taylor Example",
+  "body": "Please confirm the appointment today.",
+  "greeting": "Hi Taylor,",
+  "signature": "Avery Example",
+  "expanded_signature": "Avery Example, Inc",
+  "signoff": "Thanks,\nAvery Example",
+  "clean_dealer": "Hi Taylor,\n\nI am looking to buy a 2026 Acme Auto Compact and I am ready to move this week.\n\nPlease send your best out-the-door price as one number: discounted selling price, minus rebates, plus all fees. I have my own financing, so quote price only.\n\nI am contacting a few dealers within 50 miles and will go with the cleanest quote. If you send a written breakdown today, I can commit fast.\n\nThanks,\nAvery Example",
+  "kill_list": "Hi,\n\nI wanted to reach out to leverage our synergy and delve into next steps.\n\nThanks,\nAvery Example",
+  "long_lines": "Hi Taylor,\n\nThis is line number 0 here.\nThis is line number 1 here.\nThis is line number 2 here.\nThis is line number 3 here.\nThis is line number 4 here.\nThis is line number 5 here.\nThis is line number 6 here.\nThis is line number 7 here.\nThis is line number 8 here.\nThis is line number 9 here.\nThis is line number 10 here.\nThis is line number 11 here.\nThis is line number 12 here.\nThis is line number 13 here.\nThis is line number 14 here.\n\nThanks,\nAvery Example",
+  "rule_of_three": "Hi Taylor,\n\nOur service is fast, reliable, and affordable.\n\nThanks,\nAvery Example",
+  "two_item": "Hi Taylor,\n\nPlease send the price and the fees in one number.\n\nThanks,\nAvery Example",
+  "journey": "Hi,\n\nLet us start this journey together.\n\nThanks,\nAvery Example",
+  "roadmap": "Hi,\n\nHere is our product roadmap for the year.\n\nThanks,\nAvery Example",
+  "worth_noting": "Hi,\nIt's worth noting that the offer expires Friday.\nThanks,\nAvery Example",
+  "important_to_note": "Hi,\nIt is important to note that the deposit is due Monday.\nThanks,\nAvery Example",
+  "that_said": "Hi,\nThat said, I can sign this week.\nThanks,\nAvery Example",
+  "clean_ask": "Hi Taylor,\nPlease send your best out the door price today.\nThanks,\nAvery Example",
+  "noted": "Hi,\nI noted your point about the timing and agree.\nThanks,\nAvery Example",
+  "transition_template": "Hi,\n%s I will send the documents this week.\nThanks,\nAvery Example",
+  "additional": "Hi,\nI have additional questions about the timeline.\nThanks,\nAvery Example",
+  "therefore": "Hi,\nWe can therefore proceed once you confirm.\nThanks,\nAvery Example",
+  "hedge_template": "Hi,\n%s\nThanks,\nAvery Example",
+  "concrete_event": "Hi,\nI look forward to the test drive on Saturday.\nThanks,\nAvery Example",
+  "bare_ask": "Hi,\nLet me know which trim you have in stock.\nThanks,\nAvery Example",
+  "custom_template": "Custom text kept exactly.\n{signature}\n"
+}

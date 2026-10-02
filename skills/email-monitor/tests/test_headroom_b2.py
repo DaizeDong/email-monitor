@@ -29,6 +29,7 @@ that,"/"with that said," throat-clearing transition opener.
 
 Regression guards (G1/G2) ensure the fix does not over-match legitimate drafts.
 """
+import json
 import os
 import sys
 
@@ -38,6 +39,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import em_lint_rules as lr  # noqa: E402
+
+with open(os.path.join(os.path.dirname(__file__), "drafting.json"), encoding="utf-8") as _fixture_file:
+    DRAFTS = json.load(_fixture_file)
 
 # Run em-b2 (live, 3 rounds) reached DUAL_REVIEW every round but accepted 0:
 # R1/R3 STATIC_REJECT@REVIEW (both judges reject the proposal), R2 STATIC_REJECT@PATCH.
@@ -53,7 +57,7 @@ _HEADROOM_REASON = ("AI-flavor meta-commentary headroom (signal #5); satisfiable
 
 def _flagged(text, profile="business"):
     """True iff lint flags an AI-flavor shape/phrase/word violation."""
-    viol = lr.lint(text, profile)
+    viol = lr.lint(text, profile, config=DRAFTS["config"])
     return any(
         ("banned sentence shape" in v)
         or ("AI kill-list" in v)
@@ -65,44 +69,29 @@ def _flagged(text, profile="business"):
 
 @pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr1_worth_noting_contraction_is_flagged():
-    txt = ("Hi,\n"
-           "It's worth noting that the offer expires Friday.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['worth_noting'])
     assert _flagged(txt), "contraction 'it's worth noting' must be flagged like its full form"
 
 
 @pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr2_important_to_note_variant_is_flagged():
-    txt = ("Hi,\n"
-           "It is important to note that the deposit is due Monday.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['important_to_note'])
     assert _flagged(txt), "'it is important to note' is the same meta-commentary tell and must be flagged"
 
 
 @pytest.mark.xfail(reason=_HEADROOM_REASON, strict=False)
 def test_hr3_that_said_opener_is_flagged():
-    txt = ("Hi,\n"
-           "That said, I can sign this week.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['that_said'])
     assert _flagged(txt), "throat-clearing transition opener 'That said,' must be flagged"
 
 
 # ── regression guards (currently PASS; fix must NOT break them) ──
 
 def test_g1_clean_dealer_draft_stays_clean():
-    txt = ("Hi Sam,\n"
-           "Please send your best out the door price today.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['clean_ask'])
     assert not _flagged(txt), "a clean dealer ask must not trip the new shape rules"
 
 
 def test_g2_legit_note_verb_stays_clean():
-    txt = ("Hi,\n"
-           "I noted your point about the timing and agree.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['noted'])
     assert not _flagged(txt), "bare verb 'noted' is legitimate and must not be flagged"

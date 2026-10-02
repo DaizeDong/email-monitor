@@ -23,6 +23,13 @@ mailbox and never silent to the log: every dropped label carries its `drop_reaso
 `From`, `Subject`, `Date`, `List-Id`. **Never the body.** This bounds how wrong a verdict can be:
 whatever the kernel decides, a human can re-derive from the same two visible lines.
 
+When `topic_labeling.enabled` is true, the heartbeat passes these headers and the private taxonomy
+to `llmcall.call(..., mode="judge")`. The installed routing policy may use external providers.
+This header-only topic route is separate from default agent importance classification, which
+includes body text. `runtime.local_only=true` rejects enabled topic models before reading mail.
+A dry tick may still make the configured topic judgment call, but it does not apply labels or
+persist topic retries. Use heuristic classification with topics disabled to avoid model transport.
+
 ## Three-step narrowing (`em_topic.judge`)
 
 **1. Deterministic pre-gate (`pregate`).** Look the sender up in the map: `by_address`, then
@@ -75,8 +82,8 @@ config discipline:
   forever. Check the union, not the per-account set.
 - Renaming a label is the dangerous operation, because **neither order is safe**: rename the mailbox
   first and the next tick recreates the old name; rename the config first and the next tick builds a
-  second label under the new one. Pause topic labeling, confirm `topic_labeling=DISABLED` in the
-  tick's own log, change both sides, then re-enable.
+  second label under the new one. Disable `topic_labeling.enabled` in the selected registry,
+  confirm the active configuration before changing both sides, then re-enable.
 - A rename's read-back inside the same IMAP session proves nothing. Some accounts take **minutes**
   to converge, during which the paths and counts IMAP reports are not trustworthy and look exactly
   like a revert. Wait, then read back on a fresh connection.
@@ -84,102 +91,62 @@ config discipline:
 ## Gmail categories are not labels
 
 `CATEGORY_SOCIAL` / `CATEGORY_PROMOTIONS` / `CATEGORY_UPDATES` are inbox tabs, mutually exclusive,
-and **not writable over IMAP** at all. Six spellings were tried; the server answered OK to every one
-and none changed category membership, creating ordinary labels with those names instead. A `STORE`
-return code proves nothing here. Anything that belongs in a category is delivered by a Gmail filter,
-not by this kernel, and the kernel must not ship a label that duplicates one.
+and are not ordinary IMAP labels. Creating labels with those names does not establish
+category membership. Use Gmail filters for category assignment and verify the resulting
+membership separately; a successful STORE response is insufficient.
 
 ## Configuration lives elsewhere
 
 `rules/taxonomy.md` (the only judgement standard), `rules/sender_map.json`, and `rules/labels.json`
-are DATA and live only in the private companion config. `labels.json` is keyed by the **account slug
+are versioned DATA and live only in the verified PRIVATE companion config. Pending topic headers
+and delivery receipts belong in that companion's action state as well. `labels.json` is keyed by the **account slug
 from `registry.json`**, not by any shorter nickname: `load_config` does a plain lookup and returns
 `None` on a miss, which makes the whole capability inert while the flag still reads enabled. The
-tick logs that case explicitly, because the top-level `topic_labeling=` line cannot tell "off" from
-"on but unconfigured" on its own.
+tick records configuration failures; its result retains pending topic work until the settings can
+be loaded. A configured label still needs a matching delivery receipt before its action is complete.
 
-## Repairing a corpus in bulk: the two ways it lies to you
+## Verify bulk changes by message identity
 
-Fixing a bad map entry does not fix the mail it already mislabelled, so a rule change is normally
-followed by a bulk move through `gmail-imap-label.py`. Both times that was done on 2026-09-01 the
-tool reported success while doing less than it claimed.
+Correcting a sender-map entry affects future judgments. Existing labels need a separately
+reviewed repair plan. Save the intended changes and prior label sets in PRIVATE DATA before
+applying any change.
 
-**`matched 0` exits 0.** Every move in a 72-message batch returned rc=0 and 14 of them changed
-nothing; the count only surfaced because the residual was checked afterwards and came back higher
-than the verdicts predicted. `rc` answers "did the tool run", never "did it find anything". A caller
-that does not parse the `matched N` line cannot tell a completed move from a no-op, which is the
-same clean-versus-never-looked confusion the exit codes elsewhere in this skill exist to prevent.
+A helper can exit zero after matching no messages. Inspect its matched count and verify the
+resulting label set for every intended message. Use stable message identifiers: subjects can
+be truncated, tokenize differently in search, or match several messages. Do not infer a
+completed mutation from process exit or a search phrase alone.
 
-**The listing truncates the subject at ~54 characters, mid-word.** So a query built from that
-listing asks Gmail for `subject:"...and Course Assign"`, phrase search tokenizes, and `Assign` never
-matches `Assignments`. Drop the trailing partial token before querying. This is also why a subject
-query is a poor message identifier in general: it is not unique either, and duplicates in the same
-batch will move together on the first query and report `matched 0` on the second, which looks
-identical to the truncation failure and is harmless. Distinguish them by the residual count, not by
-the per-move output.
+After the batch, compare the remaining source-label count with the planned keep count. A
+higher count can reveal missed changes; a lower count can reveal unintended changes. Counts
+are a cross-check, not a substitute for checking the identities and final label sets.
 
-The check that catches both: after the batch, count what still carries the old label and compare it
-to the number of verdicts that said "keep". Equal means every intended move landed and nothing was
-swept in by accident. That number disagreeing in EITHER direction is a real defect -- lower means a
-query over-matched and moved mail nobody judged, higher means moves silently did nothing.
+## Mixed senders need per-message judgment
 
-## Re-judging a mixed sender is not the same as retargeting it
+An organization-wide list or individual sender can discuss several topics. When a sender
+does not reliably identify one topic, remove the unconditional map entry and let messages
+reach the evidence gate individually.
 
-Some addresses are not a topic. One department list (`announce@example.edu`) carried HR onboarding
-forms, seminar invitations, job ads, free t-shirt notices and visa paperwork through a single
-address, and re-judging all 84 of its messages moved 74 of them to six different labels. No entry in the sender map could have been right, so the
-entry was removed and the mail falls through to per-message judgement, which the map's own note
-already names as the safe direction for anything the audit cannot settle. Two shapes to recognise:
-a list that serves a whole organisation, and any individual human, who by definition writes about
-more than one thing.
+Require the repair plan's completeness threshold before writing anything. If too few
+verdicts are valid, stop and retry smaller batches. Record unresolved messages explicitly
+so a later run can distinguish incomplete planning from completed application.
 
-When re-judging a corpus, require a quorum of parseable verdicts before writing anything. The first
-attempt got 6 valid verdicts out of 26 and aborted on a 90% bar rather than applying a quarter of a
-plan; smaller batches with a retry then returned 26 of 26. A partial apply here is worse than no
-apply, because the next run cannot tell which messages it already handled.
+## Review both source and destination labels
 
-## One review pass is not enough, and the reason is structural
+Sampling can hide less frequent errors behind a dominant sender. After correcting a rule,
+review the affected source labels again and inspect the labels that received moved messages.
+A new set of findings needs its own evidence; do not assume it has the same cause as the
+previous sample. A clean source sample alone does not validate the destination.
 
-After the first round of map fixes, two labels that had sampled 7 wrong out of 20 came back at 0,
-and the corpus the mail moved into sampled clean. The fix held. But the label with the worst rate
-came back at the SAME rate, with entirely different senders behind it.
+## Audit the decisions the kernel made
 
-That is not the fix failing. It is what a sample does: the loudest sender crowds the sample, and
-only once it is gone do the next ones become visible. So a label that is still red after a fix has
-to be read as new evidence, not as a failed repair, and the senders behind it have to be listed
-again rather than assumed to be the ones already dealt with. A single pass would have left the
-second set in place and reported the label as unfixable.
+Exclude self-sent messages from this review. Thread-level operations can attach topic labels
+to outgoing replies, so the presence of a label does not establish that the incoming-mail
+kernel assigned it. Keep the audit population aligned with the component being evaluated.
+Changing the sample does not authorize removing labels from the excluded messages.
 
-Re-run the review on exactly the labels touched, plus the labels the mail moved INTO. The second is
-easy to skip and is the one that catches a bad move: a corpus that was clean before a bulk insert
-and is dirty after it was polluted by that insert.
+## Resolve taxonomy ambiguity before moving mail
 
-## Audit only what the kernel decided
-
-The kernel advances an INBOX cursor, so it never judges outgoing mail. But sent mail does carry
-topic labels: thread-level operations during a historical retriage put them there, and on one
-account 144 of 249 sent messages had one. Sampling those made the reviewer grade decisions nobody
-made, and it was not a small effect -- 7 of 17 findings in one round, every one quoting a rule
-about mail the sender received. Those crowd out findings that can actually be acted on.
-
-The review therefore excludes the account's own address. Excluding is the right verb rather than
-merely the quieter one: **stripping the labels would change nothing anyway**, because Gmail resolves
-`label:` to threads, so a reply carrying its thread's label alters no search result in either
-direction. There is nothing to fix in the mailbox, only something to stop grading.
-
-The general form: an audit's population must be the population its subject actually decided. Any
-message that reached its label some other way is noise at best, and at worst it is noise that looks
-exactly like signal and gets acted on.
-
-## When the reviewer and the standard disagree, the standard wins
-
-A review flagged a whole employment thread as belonging to a different label, quoting a generic
-tie-break rule ("prefer the single closest label") rather than a definition. The definition of the
-label it was sitting under named that exact case. The finding was rejected and the DEFINITION was
-sharpened instead, so the next run stops rediscovering the same ambiguity.
-
-Worth separating two things a finding can mean. When it quotes a definition, it is evidence about
-the message. When it quotes a tie-break, a priority rule, or a general principle, it is evidence
-about the standard being underspecified, and the repair belongs in `taxonomy.md`, not in the
-mailbox. Moving mail on the second kind is how a taxonomy gap turns into a recurring migration that
-reverses itself.
+A finding supported by a specific label definition is evidence about the message. A finding
+supported only by a general tie-break rule can instead reveal an underspecified taxonomy.
+Resolve that ambiguity in the PRIVATE taxonomy before applying changes; otherwise successive
+repairs can move the same messages back and forth.

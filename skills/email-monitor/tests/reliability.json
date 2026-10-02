@@ -1,0 +1,142 @@
+{
+  "account": {
+    "slug": "user1",
+    "user": "user1@example.com"
+  },
+  "message": {
+    "uid": 11,
+    "gm_msgid": "1011",
+    "message_id": "<notice-11@example.com>",
+    "thread_key": "thread-11",
+    "from": "sender@example.com",
+    "subject": "Please review the draft",
+    "body": "Please review it.",
+    "date": "2026-01-02",
+    "list_unsubscribe": false
+  },
+  "cursor": {
+    "uidvalidity": 7,
+    "last_uid": 11
+  },
+  "verdict": {
+    "priority": "ACTION",
+    "label": "personal",
+    "tier": "L0"
+  },
+  "private_remote": "https://github.com/example-owner/email-monitor-config.git",
+  "visibility": {
+    "example-owner/email-monitor-config": "PRIVATE"
+  },
+  "private_proof": {
+    "now": "2030-06-15T12:00:00+00:00",
+    "fresh": "2030-06-14T12:00:00+00:00",
+    "stale": "2029-01-01T00:00:00+00:00",
+    "future": "2031-01-01T00:00:00+00:00",
+    "slug": "example-owner/email-monitor-config",
+    "alias": "synthetic-github",
+    "ssh_config": "Host synthetic-github\n    HostName github.com\n    User git\n",
+    "unsafe_ssh_rules": [
+      "Match exec synthetic-command",
+      "Include synthetic-config",
+      "CanonicalizeHostname yes"
+    ],
+    "unrelated_https": "https://synthetic-github/example-owner/email-monitor-config.git"
+  },
+  "draft": {
+    "signature": "Avery Example",
+    "language": "zh",
+    "style": {
+      "max_lines": 8,
+      "max_sentences": 5,
+      "allow_markdown": false
+    }
+  },
+  "helper_contract": {
+    "idempotency_key": "synthetic-action-11",
+    "label": "Review",
+    "evidence": "Synthetic helper verified that no write occurred.",
+    "receipt_id": "synthetic-receipt-11",
+    "selected_python": "selected runtime/python.exe",
+    "unavailable_python": "unavailable/python.exe"
+  },
+  "draft_text": "收到。我明天回复。\n\nAvery Example",
+  "model_policy": {
+    "taxonomy": "Use Review only for messages explicitly requesting a review.",
+    "topic_config": {
+      "taxonomy": "Use Review only for an explicit review request.",
+      "sender_map": {},
+      "allowed_labels": [
+        "Review"
+      ],
+      "type_labels": []
+    },
+    "verdict": {
+      "priority": "ACTION",
+      "label": "review",
+      "confidence": 0.8
+    },
+    "legacy_api": [
+      {
+        "chain": [
+          "synthetic-route"
+        ]
+      },
+      {
+        "providers": {
+          "synthetic-route": {
+            "model": "synthetic-model"
+          }
+        }
+      },
+      {
+        "timeout": 17
+      }
+    ],
+    "legacy_cli": [
+      [
+        "--chain",
+        "synthetic-route"
+      ],
+      [
+        "--timeout",
+        "17"
+      ],
+      [
+        "--codex-model",
+        "synthetic-model"
+      ],
+      [
+        "--codex-reasoning",
+        "synthetic-effort"
+      ],
+      [
+        "--claude-model",
+        "synthetic-model"
+      ]
+    ],
+    "legacy_registry": [
+      {
+        "classifier": {
+          "chain": [
+            "synthetic-route"
+          ]
+        }
+      },
+      {
+        "classifier": {
+          "providers": {}
+        }
+      },
+      {
+        "classifier": {
+          "timeout_sec": 17
+        }
+      },
+      {
+        "topic_labeling": {
+          "timeout_sec": 17
+        }
+      }
+    ]
+  }
+}

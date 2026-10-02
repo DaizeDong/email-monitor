@@ -89,9 +89,9 @@ def test_archive_returns_false_on_subprocess_failure(monkeypatch):
     assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False) is False
 
 
-def test_archive_returns_true_on_subprocess_success(monkeypatch):
+def test_archive_empty_success_output_is_unconfirmed(monkeypatch):
     monkeypatch.setattr(tick.subprocess, "run", lambda *a, **k: _FakeProc(0))
-    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False) is True
+    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False) is False
 
 
 def test_archive_noop_without_msgid(monkeypatch):

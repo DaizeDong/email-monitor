@@ -1,44 +1,15 @@
 #!/usr/bin/env python3
-"""make_fixtures -- the test fixtures are GENERATED, because a real record cannot be regenerated.
+"""Generate public fixtures from independently invented behavior cases.
 
-WHY THIS EXISTS
----------------
-The 2026-07 audit found the operator's real private data in this repo, and the vector was a test
-fixture: `golden_classify.jsonl` had been built by pasting REAL emails out of the inbox the skill was
-reading -- real senders, a real person's name, a real employer. It was scrubbed and the history was
-rewritten, but scrubbing is not a fix, because nothing stopped the next agent from doing it again.
+Every address, subject and runtime record must be synthetic. Keep the case table
+as the source of truth; never copy operational mail or reports into it. The data
+boundary check regenerates committed fixtures and compares their bytes, catching
+manual changes to generated output. Reviewing the generator's inputs remains
+necessary: reproducibility alone cannot establish that an input was invented.
 
-And the next agent WILL be tempted, because the temptation is structural, not careless. An agent
-writing a classifier test needs a realistic message; it is already holding a mailbox full of real
-ones; copy-paste is the cheapest move available. Every leak in the audit started exactly there.
-
-So the fixture is not allowed to be a file that a human (or an agent) edits. It is OUTPUT. The only
-input is the CASE TABLE below -- a list of behaviours the classifier must exhibit -- and every
-address, subject and flag in it is synthetic by construction.
-
-That is the entire trick, and it is worth stating plainly:
-
-    A REAL EMAIL CANNOT BE REGENERATED.
-
-`tools/data_boundary.py` re-runs this generator and requires the committed .jsonl to be byte-identical
-to what comes out. So if someone pastes a real message into the golden file, the file no longer
-matches its generator and the check fails LOUDLY, at commit time -- instead of the leak being noticed
-months later, in an audit, or never. A content scanner asks "does this look private?", which fails on
-anything it has not been taught. This asks "could this have been produced from the case table?",
-which a real record can never satisfy, no matter how innocuous it looks.
-
-WORKFLOW
---------
-    edit CASES below  ->  python tools/make_fixtures.py  ->  commit the .py and the .jsonl together
-
-You never hand-edit `skills/email-monitor/tests/golden_classify.jsonl`. If you want a new behaviour
-pinned, you add a CASE -- which forces you to say, in words, WHICH classifier path you are pinning and
-WHY, and forces the message itself to be invented rather than borrowed.
-
-    python tools/make_fixtures.py              regenerate in place
-    python tools/make_fixtures.py --out DIR    write to DIR (used by data_boundary.py)
-
-Stdlib only. Deterministic: no clock, no randomness, no environment. Same table -> same bytes.
+Edit a behavior case, run this generator, and commit source plus generated output.
+Use --out DIR to generate separately for verification. Output is deterministic:
+no clock, randomness, environment or real mailbox contributes to the case table.
 """
 import argparse
 import json
@@ -169,8 +140,7 @@ def render():
 
 TOPIC_FIXTURE = os.path.join("skills", "email-monitor", "tests", "topic_regression.jsonl")
 
-# Each case reproduces a SHAPE of failure observed in a real audit, using
-# invented senders. The shapes, not the messages, are what must not regress.
+# Invented cases isolate topic-evidence failure shapes without operational mail.
 TOPIC_CASES = [
     {
         "shape": "keyword-in-subject-is-not-the-topic",
@@ -225,6 +195,859 @@ def render_topic():
         for c in TOPIC_CASES)
 
 
+RELIABILITY_FIXTURE = os.path.join("skills", "email-monitor", "tests", "reliability.json")
+DRAFTING_FIXTURE = os.path.join("skills", "email-monitor", "tests", "drafting.json")
+ALERT_FIXTURE = os.path.join("skills", "email-monitor", "tests", "alert_disposition.json")
+
+
+def alert_disposition_cases():
+    """Synthetic helper responses for retry and duplicate-suppression boundaries."""
+    proof = {"status": "not_applied", "adapter": "alert",
+             "evidence": "Synthetic relay checked its ledger; delivery did not occur."}
+    delivered = {"status": "confirmed", "adapter": "alert",
+                 "receipt_id": "synthetic-alert-receipt-27"}
+    cases = [
+        {"response": proof, "returncode": code, "disposition": "not_applied"}
+        for code in (0, 27)
+    ]
+    cases += [
+        {"response": delivered, "returncode": code,
+         "disposition": "confirmed" if code == 0 else "uncertain"}
+        for code in (0, 27)
+    ]
+    for response in (None, [], {}, {**proof, "evidence": " "},
+                     {**proof, "evidence": 27}, {**proof, "adapter": "pool"},
+                     {**proof, "idempotency_key": "another-synthetic-action"},
+                     {**proof, "status": "unknown"}, {**delivered, "receipt_id": ""}):
+        for code in (0, 27):
+            cases.append({"response": response, "returncode": code, "disposition": "uncertain"})
+    cases.append({"raw_stdout": "synthetic non-JSON failure", "returncode": 27,
+                  "disposition": "uncertain"})
+    return {"key": "synthetic-alert-action-27", "message": "Synthetic alert for review",
+            "event_id": "synthetic-summary-event-27", "cases": cases}
+
+
+def drafting_cases():
+    """Invented identities and draft bodies for configuration and lint regressions."""
+    signature = "Avery Example"
+    greeting = "Hi Taylor,"
+    signoff = "Thanks,\n" + signature
+
+    def draft(body, hello="Hi,", spaced=False):
+        sep = "\n\n" if spaced else "\n"
+        return sep.join((hello, body, signoff))
+
+    return {
+        "config": {"signature": signature, "language": "en", "style": {}},
+        "alternate_config": {"signature": "Morgan Example", "language": "en", "style": {}},
+        "literal_config": {"signature": "Avery {Example}", "language": "en", "style": {}},
+        "recipient": "Taylor Example", "body": "Please confirm the appointment today.",
+        "greeting": greeting, "signature": signature,
+        "expanded_signature": signature + ", Inc", "signoff": signoff,
+        "clean_dealer": draft(
+            "I am looking to buy a 2026 Acme Auto Compact and I am ready to move this week.\n\n"
+            "Please send your best out-the-door price as one number: discounted selling price, "
+            "minus rebates, plus all fees. I have my own financing, so quote price only.\n\n"
+            "I am contacting a few dealers within 50 miles and will go with the cleanest quote. "
+            "If you send a written breakdown today, I can commit fast.", greeting, spaced=True),
+        "kill_list": draft("I wanted to reach out to leverage our synergy and delve into next steps.", spaced=True),
+        "long_lines": draft("\n".join("This is line number %d here." % i for i in range(15)), greeting, spaced=True),
+        "rule_of_three": draft("Our service is fast, reliable, and affordable.", greeting, spaced=True),
+        "two_item": draft("Please send the price and the fees in one number.", greeting, spaced=True),
+        "journey": draft("Let us start this journey together.", spaced=True),
+        "roadmap": draft("Here is our product roadmap for the year.", spaced=True),
+        "worth_noting": draft("It's worth noting that the offer expires Friday."),
+        "important_to_note": draft("It is important to note that the deposit is due Monday."),
+        "that_said": draft("That said, I can sign this week."),
+        "clean_ask": draft("Please send your best out the door price today.", greeting),
+        "noted": draft("I noted your point about the timing and agree."),
+        "transition_template": draft("%s I will send the documents this week."),
+        "additional": draft("I have additional questions about the timeline."),
+        "therefore": draft("We can therefore proceed once you confirm."),
+        "hedge_template": draft("%s"),
+        "concrete_event": draft("I look forward to the test drive on Saturday."),
+        "bare_ask": draft("Let me know which trim you have in stock."),
+        "custom_template": "Custom text kept exactly.\n{signature}\n",
+    }
+
+
+def lint_closure_cases():
+    """Generate required repairs, spelling variants and ordinary-prose checks."""
+    drafts = drafting_cases()
+
+    def case(name, body, diagnostic=None):
+        row = {
+            "id": name,
+            "text": "Hi,\n" + body + "\n" + drafts["signoff"],
+            "profile": "business",
+        }
+        if diagnostic is not None:
+            row["diagnostic"] = diagnostic
+        return row
+
+    required = []
+    for name, diagnostic in (
+        ("rule_of_three", "rule-of-three"),
+        ("journey", "AI kill-list words: journey"),
+        ("roadmap", "AI kill-list words: roadmap"),
+        ("worth_noting", "meta-commentary"),
+        ("important_to_note", "meta-commentary"),
+        ("that_said", "throat-clearing"),
+    ):
+        required.append({"id": name, "text": drafts[name],
+                         "profile": "business", "diagnostic": diagnostic})
+
+    variants = [
+        case("hyphenated_predicate", "The design is easy-to-use, quick, and compact.", "rule-of-three"),
+        case("uppercase_predicate", "The reply WAS CLEAR, DIRECT, AND BRIEF.", "rule-of-three"),
+        case("wrapped_predicate", "The service will be fast,\nreliable,\nand affordable.", "rule-of-three"),
+        case("question_predicate", "Can the reply be clear, direct, and brief?", "rule-of-three"),
+        case("worth_mentioning_contraction", "It's worth mentioning that the quote expires Friday.", "meta-commentary"),
+        case("worth_mentioning_full", "It is worth mentioning that the quote expires Friday.", "meta-commentary"),
+        case("important_note_contraction", "It's important to note that the quote expires Friday.", "meta-commentary"),
+        case("important_mention_full", "It is important to mention that the quote expires Friday.", "meta-commentary"),
+        case("curly_contraction", "It’s worth mentioning that the quote expires Friday.", "meta-commentary"),
+        case("wrapped_meta_commentary", "It\nis worth\nmentioning that the quote expires Friday.", "meta-commentary"),
+        case("having_said_that", "Having said that, I can sign today.", "throat-clearing"),
+        case("with_that_said", "With that said, I can sign today.", "throat-clearing"),
+        case("indented_opener", "  that said, I can sign today.", "throat-clearing"),
+        case("later_line_opener", "The quote is ready.\nThat said, I can sign today.", "throat-clearing"),
+    ]
+    ordinary = [
+        {"id": "clean_dealer", "text": drafts["clean_dealer"], "profile": "dealer"},
+        {"id": "two_item", "text": drafts["two_item"], "profile": "business"},
+        {"id": "noted", "text": drafts["noted"], "profile": "business"},
+        {"id": "concrete_event", "text": drafts["concrete_event"], "profile": "business"},
+        case("two_predicates", "The reply is clear and brief."),
+        case("object_list", "Please send the quote, receipt, and form."),
+        case("numeric_list", "The totals are 10, 20, and 30."),
+        case("noun_phrase_list", "The files are a receipt, a quote, and a form."),
+        case("worth_considering", "The replacement is worth considering."),
+        case("quoted_said", "The note that said, 'bring a receipt' was removed."),
+        case("important_action", "It is important to vote by Friday."),
+    ]
+    return {"config": drafts["config"], "required": required,
+            "variants": variants, "ordinary": ordinary}
+
+
+def reliability_cases():
+    """Invented inputs for durable dispatch, configuration and recovery tests."""
+    return {
+        "account": {"slug": "user1", "user": "user1@example.com"},
+        "message": {"uid": 11, "gm_msgid": "1011", "message_id": "<notice-11@example.com>",
+                    "thread_key": "thread-11", "from": "sender@example.com",
+                    "subject": "Please review the draft", "body": "Please review it.",
+                    "date": "2026-01-02", "list_unsubscribe": False},
+        "cursor": {"uidvalidity": 7, "last_uid": 11},
+        "verdict": {"priority": "ACTION", "label": "personal", "tier": "L0"},
+        "private_remote": "https://github.com/example-owner/email-monitor-config.git",
+        "visibility": {"example-owner/email-monitor-config": "PRIVATE"},
+        "private_proof": {
+            "now": "2030-06-15T12:00:00+00:00",
+            "fresh": "2030-06-14T12:00:00+00:00",
+            "stale": "2029-01-01T00:00:00+00:00",
+            "future": "2031-01-01T00:00:00+00:00",
+            "slug": "example-owner/email-monitor-config",
+            "alias": "synthetic-github",
+            "ssh_config": "Host synthetic-github\n    HostName github.com\n    User git\n",
+            "unsafe_ssh_rules": ["Match exec synthetic-command", "Include synthetic-config", "CanonicalizeHostname yes"],
+            "unrelated_https": "https://synthetic-github/example-owner/email-monitor-config.git",
+        },
+        "draft": {"signature": "Avery Example", "language": "zh",
+                  "style": {"max_lines": 8, "max_sentences": 5, "allow_markdown": False}},
+        "helper_contract": {"idempotency_key": "synthetic-action-11", "label": "Review",
+                            "evidence": "Synthetic helper verified that no write occurred.",
+                            "receipt_id": "synthetic-receipt-11",
+                            "selected_python": "selected runtime/python.exe",
+                            "unavailable_python": "unavailable/python.exe"},
+        "draft_text": "收到。我明天回复。\n\nAvery Example",
+        "model_policy": {
+            "taxonomy": "Use Review only for messages explicitly requesting a review.",
+            "topic_config": {"taxonomy": "Use Review only for an explicit review request.",
+                             "sender_map": {}, "allowed_labels": ["Review"], "type_labels": []},
+            "verdict": {"priority": "ACTION", "label": "review", "confidence": 0.8},
+            "legacy_api": [{"chain": ["synthetic-route"]},
+                           {"providers": {"synthetic-route": {"model": "synthetic-model"}}},
+                           {"timeout": 17}],
+            "legacy_cli": [["--chain", "synthetic-route"], ["--timeout", "17"],
+                           ["--codex-model", "synthetic-model"], ["--codex-reasoning", "synthetic-effort"],
+                           ["--claude-model", "synthetic-model"]],
+            "legacy_registry": [{"classifier": {"chain": ["synthetic-route"]}},
+                                {"classifier": {"providers": {}}},
+                                {"classifier": {"timeout_sec": 17}},
+                                {"topic_labeling": {"timeout_sec": 17}}],
+        },
+    }
+
+
+def doctor_cases():
+    """Invented config inputs for readiness checks; no mailbox or credentials."""
+    ignored = "secrets/*\n!secrets/README.md\n*.env\n*.cred\n"
+    return {
+        "account": {"slug": "user1", "user": "user1@example.com", "role": "primary"},
+        "draft": {"signature": "Avery Example", "language": "en", "style": {}},
+        "sender_map": {"version": 1, "by_address": {"sender@example.com": "Review"},
+                       "by_domain": {}, "by_list_id": {}},
+        "labels": ["Review"],
+        "profiles": ["business", "dealer", "support", "personal"],
+        "template": "Hello,\n\n{body}\n\n{signature}\n",
+        "git_head": "ref: refs/heads/main\n",
+        "git_config": "[core]\nrepositoryformatversion = 0\nbare = false\n",
+        "private_proof": {"repository": "example-owner/email-monitor-config", "proof": "synthetic"},
+        "valid_slugs": ["user1", "user.one+alerts@example.com", "user-2"],
+        "invalid_slugs": ["../outside", "nested/name", "nested\\name", ".", "..", "has space", 7, ["user1"],
+                          "CON", "nul.txt", "lpt1"],
+        "invalid_users": ["", "  ", 7, ["user1@example.com"]],
+        "ignore_variants": [
+            {"name": "normal", "text": ignored, "ready": True},
+            {"name": "whole_directory", "text": "secrets/\n*.env\n*.cred\n", "ready": True},
+            {"name": "commented", "text": "# secrets/\n# *.env\n# *.cred\n", "ready": False},
+            {"name": "reincluded_env", "text": ignored + "!*.env\n", "ready": False},
+            {"name": "reincluded_cred", "text": ignored + "!*.cred\n", "ready": False},
+            {"name": "reincluded_secrets", "text": ignored + "!secrets/*\n", "ready": False},
+        ],
+    }
+
+
+
+PARSER_TEST = "skills/email-monitor/tests/test_response_json_boundary.py"
+
+RESPONSE_CASES_JSON = r'''{
+  "malformed": [
+    {
+      "id": "truncated_object-urgent-plain",
+      "text": "{\"example\":{\"priority\":\"URGENT\"}"
+    },
+    {
+      "id": "truncated_object-urgent-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"URGENT\"}\n```"
+    },
+    {
+      "id": "truncated_object-urgent-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"URGENT\"} End of answer."
+    },
+    {
+      "id": "truncated_array-urgent-plain",
+      "text": "[{\"priority\":\"URGENT\"}"
+    },
+    {
+      "id": "truncated_array-urgent-fenced",
+      "text": "```json\n[{\"priority\":\"URGENT\"}\n```"
+    },
+    {
+      "id": "truncated_array-urgent-prose",
+      "text": "Synthetic model answer: [{\"priority\":\"URGENT\"} End of answer."
+    },
+    {
+      "id": "truncated_deep-urgent-plain",
+      "text": "{\"examples\":[{\"priority\":\"URGENT\"}]"
+    },
+    {
+      "id": "truncated_deep-urgent-fenced",
+      "text": "```json\n{\"examples\":[{\"priority\":\"URGENT\"}]\n```"
+    },
+    {
+      "id": "truncated_deep-urgent-prose",
+      "text": "Synthetic model answer: {\"examples\":[{\"priority\":\"URGENT\"}] End of answer."
+    },
+    {
+      "id": "invalid_outer-urgent-plain",
+      "text": "{\"example\":{\"priority\":\"URGENT\"},\"priority\":}"
+    },
+    {
+      "id": "invalid_outer-urgent-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"URGENT\"},\"priority\":}\n```"
+    },
+    {
+      "id": "invalid_outer-urgent-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"URGENT\"},\"priority\":} End of answer."
+    },
+    {
+      "id": "truncated_object-action-plain",
+      "text": "{\"example\":{\"priority\":\"ACTION\"}"
+    },
+    {
+      "id": "truncated_object-action-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"ACTION\"}\n```"
+    },
+    {
+      "id": "truncated_object-action-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"ACTION\"} End of answer."
+    },
+    {
+      "id": "truncated_array-action-plain",
+      "text": "[{\"priority\":\"ACTION\"}"
+    },
+    {
+      "id": "truncated_array-action-fenced",
+      "text": "```json\n[{\"priority\":\"ACTION\"}\n```"
+    },
+    {
+      "id": "truncated_array-action-prose",
+      "text": "Synthetic model answer: [{\"priority\":\"ACTION\"} End of answer."
+    },
+    {
+      "id": "truncated_deep-action-plain",
+      "text": "{\"examples\":[{\"priority\":\"ACTION\"}]"
+    },
+    {
+      "id": "truncated_deep-action-fenced",
+      "text": "```json\n{\"examples\":[{\"priority\":\"ACTION\"}]\n```"
+    },
+    {
+      "id": "truncated_deep-action-prose",
+      "text": "Synthetic model answer: {\"examples\":[{\"priority\":\"ACTION\"}] End of answer."
+    },
+    {
+      "id": "invalid_outer-action-plain",
+      "text": "{\"example\":{\"priority\":\"ACTION\"},\"priority\":}"
+    },
+    {
+      "id": "invalid_outer-action-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"ACTION\"},\"priority\":}\n```"
+    },
+    {
+      "id": "invalid_outer-action-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"ACTION\"},\"priority\":} End of answer."
+    },
+    {
+      "id": "truncated_object-fyi-plain",
+      "text": "{\"example\":{\"priority\":\"FYI\"}"
+    },
+    {
+      "id": "truncated_object-fyi-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"FYI\"}\n```"
+    },
+    {
+      "id": "truncated_object-fyi-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"FYI\"} End of answer."
+    },
+    {
+      "id": "truncated_array-fyi-plain",
+      "text": "[{\"priority\":\"FYI\"}"
+    },
+    {
+      "id": "truncated_array-fyi-fenced",
+      "text": "```json\n[{\"priority\":\"FYI\"}\n```"
+    },
+    {
+      "id": "truncated_array-fyi-prose",
+      "text": "Synthetic model answer: [{\"priority\":\"FYI\"} End of answer."
+    },
+    {
+      "id": "truncated_deep-fyi-plain",
+      "text": "{\"examples\":[{\"priority\":\"FYI\"}]"
+    },
+    {
+      "id": "truncated_deep-fyi-fenced",
+      "text": "```json\n{\"examples\":[{\"priority\":\"FYI\"}]\n```"
+    },
+    {
+      "id": "truncated_deep-fyi-prose",
+      "text": "Synthetic model answer: {\"examples\":[{\"priority\":\"FYI\"}] End of answer."
+    },
+    {
+      "id": "invalid_outer-fyi-plain",
+      "text": "{\"example\":{\"priority\":\"FYI\"},\"priority\":}"
+    },
+    {
+      "id": "invalid_outer-fyi-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"FYI\"},\"priority\":}\n```"
+    },
+    {
+      "id": "invalid_outer-fyi-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"FYI\"},\"priority\":} End of answer."
+    },
+    {
+      "id": "truncated_object-noise-plain",
+      "text": "{\"example\":{\"priority\":\"NOISE\"}"
+    },
+    {
+      "id": "truncated_object-noise-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"NOISE\"}\n```"
+    },
+    {
+      "id": "truncated_object-noise-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"NOISE\"} End of answer."
+    },
+    {
+      "id": "truncated_array-noise-plain",
+      "text": "[{\"priority\":\"NOISE\"}"
+    },
+    {
+      "id": "truncated_array-noise-fenced",
+      "text": "```json\n[{\"priority\":\"NOISE\"}\n```"
+    },
+    {
+      "id": "truncated_array-noise-prose",
+      "text": "Synthetic model answer: [{\"priority\":\"NOISE\"} End of answer."
+    },
+    {
+      "id": "truncated_deep-noise-plain",
+      "text": "{\"examples\":[{\"priority\":\"NOISE\"}]"
+    },
+    {
+      "id": "truncated_deep-noise-fenced",
+      "text": "```json\n{\"examples\":[{\"priority\":\"NOISE\"}]\n```"
+    },
+    {
+      "id": "truncated_deep-noise-prose",
+      "text": "Synthetic model answer: {\"examples\":[{\"priority\":\"NOISE\"}] End of answer."
+    },
+    {
+      "id": "invalid_outer-noise-plain",
+      "text": "{\"example\":{\"priority\":\"NOISE\"},\"priority\":}"
+    },
+    {
+      "id": "invalid_outer-noise-fenced",
+      "text": "```json\n{\"example\":{\"priority\":\"NOISE\"},\"priority\":}\n```"
+    },
+    {
+      "id": "invalid_outer-noise-prose",
+      "text": "Synthetic model answer: {\"example\":{\"priority\":\"NOISE\"},\"priority\":} End of answer."
+    }
+  ],
+  "valid": [
+    {
+      "id": "valid-outer-urgent-plain",
+      "text": "{\"priority\":\"URGENT\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}",
+      "expected": {
+        "priority": "URGENT",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-urgent-fenced",
+      "text": "```json\n{\"priority\":\"URGENT\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}\n```",
+      "expected": {
+        "priority": "URGENT",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-urgent-prose",
+      "text": "Synthetic model answer: {\"priority\":\"URGENT\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}} End of answer.",
+      "expected": {
+        "priority": "URGENT",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-action-plain",
+      "text": "{\"priority\":\"ACTION\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}",
+      "expected": {
+        "priority": "ACTION",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-action-fenced",
+      "text": "```json\n{\"priority\":\"ACTION\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}\n```",
+      "expected": {
+        "priority": "ACTION",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-action-prose",
+      "text": "Synthetic model answer: {\"priority\":\"ACTION\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}} End of answer.",
+      "expected": {
+        "priority": "ACTION",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-fyi-plain",
+      "text": "{\"priority\":\"FYI\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}",
+      "expected": {
+        "priority": "FYI",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-fyi-fenced",
+      "text": "```json\n{\"priority\":\"FYI\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}}\n```",
+      "expected": {
+        "priority": "FYI",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-fyi-prose",
+      "text": "Synthetic model answer: {\"priority\":\"FYI\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"NOISE\"}} End of answer.",
+      "expected": {
+        "priority": "FYI",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "NOISE"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-noise-plain",
+      "text": "{\"priority\":\"NOISE\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"URGENT\"}}",
+      "expected": {
+        "priority": "NOISE",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "URGENT"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-noise-fenced",
+      "text": "```json\n{\"priority\":\"NOISE\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"URGENT\"}}\n```",
+      "expected": {
+        "priority": "NOISE",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "URGENT"
+        }
+      }
+    },
+    {
+      "id": "valid-outer-noise-prose",
+      "text": "Synthetic model answer: {\"priority\":\"NOISE\",\"label\":\"synthetic-result\",\"reason\":\"Acme note contains a literal } brace.\",\"example\":{\"priority\":\"URGENT\"}} End of answer.",
+      "expected": {
+        "priority": "NOISE",
+        "label": "synthetic-result",
+        "reason": "Acme note contains a literal } brace.",
+        "example": {
+          "priority": "URGENT"
+        }
+      }
+    },
+    {
+      "id": "valid-depth-plain",
+      "text": "{\"priority\":\"ACTION\",\"label\":\"synthetic-depth\",\"reason\":\"Acme bounded nested example.\",\"value\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+      "expected": {
+        "priority": "ACTION",
+        "label": "synthetic-depth",
+        "reason": "Acme bounded nested example.",
+        "value": [
+          [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        0
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": "valid-depth-prose",
+      "text": "Synthetic model answer: {\"priority\":\"ACTION\",\"label\":\"synthetic-depth\",\"reason\":\"Acme bounded nested example.\",\"value\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]} End of answer.",
+      "expected": {
+        "priority": "ACTION",
+        "label": "synthetic-depth",
+        "reason": "Acme bounded nested example.",
+        "value": [
+          [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        0
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "nonverdict": [
+    {
+      "id": "array-of-example",
+      "text": "[{\"priority\":\"URGENT\"}]"
+    },
+    {
+      "id": "empty-array",
+      "text": "[]"
+    },
+    {
+      "id": "plain-json-string",
+      "text": "\"synthetic text\""
+    },
+    {
+      "id": "boolean",
+      "text": "true"
+    }
+  ],
+  "limits": [
+    {
+      "id": "integer-limit-plain",
+      "text": "{\"priority\":\"ACTION\",\"value\":99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+    },
+    {
+      "id": "integer-limit-prose",
+      "text": "Synthetic model answer: {\"priority\":\"ACTION\",\"value\":99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999} End of answer."
+    }
+  ],
+  "controlled_errors": [
+    {
+      "id": "loads-ValueError",
+      "site": "loads",
+      "error": "ValueError"
+    },
+    {
+      "id": "loads-RecursionError",
+      "site": "loads",
+      "error": "RecursionError"
+    },
+    {
+      "id": "raw_decode-ValueError",
+      "site": "raw_decode",
+      "error": "ValueError"
+    },
+    {
+      "id": "raw_decode-RecursionError",
+      "site": "raw_decode",
+      "error": "RecursionError"
+    }
+  ]
+}'''
+
+PARSER_TEST_SOURCE = r'''"""Generated response-boundary cases; source of truth is tools/make_fixtures.py."""
+import importlib.util
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "skills" / "email-monitor" / "scripts"))
+import em_agent_classify as classifier
+
+_spec = importlib.util.spec_from_file_location(
+    "email_response_parser_fixtures", ROOT / "tools" / "make_fixtures.py")
+_generator = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_generator)
+CASES = _generator.response_parser_cases()
+
+
+def classify_reply(monkeypatch, text):
+    requests = []
+    def transport(prompt, **options):
+        requests.append((prompt, options))
+        assert options["mode"] == "judge"
+        assert options["extract"] is classifier._valid_verdict
+        data = options["extract"](text)
+        return None if data is None else SimpleNamespace(data=data, provider="synthetic")
+    monkeypatch.setattr(classifier, "_llmcall", transport)
+    result = classifier.classify({
+        "from": "user1@example.com", "subject": "Synthetic review request",
+        "body": "Please review the AcmeCorp example."})
+    assert len(requests) == 1
+    return result
+
+
+@pytest.mark.parametrize("case", CASES["malformed"], ids=lambda case: case["id"])
+def test_malformed_outer_never_becomes_an_example_verdict(monkeypatch, case):
+    assert classifier._extract_json(case["text"]) is None
+    assert classifier._valid_verdict(case["text"]) is None
+    assert classify_reply(monkeypatch, case["text"]) is None
+
+
+@pytest.mark.parametrize("case", CASES["valid"], ids=lambda case: case["id"])
+def test_valid_outer_reply_preserves_its_actual_priority(monkeypatch, case):
+    assert classifier._extract_json(case["text"]) == case["expected"]
+    assert classifier._valid_verdict(case["text"]) == case["expected"]
+    result = classify_reply(monkeypatch, case["text"])
+    assert result["priority"] == case["expected"]["priority"]
+    assert result["label"] == case["expected"]["label"]
+    assert result["reason"] == case["expected"]["reason"]
+
+
+@pytest.mark.parametrize("case", CASES["nonverdict"], ids=lambda case: case["id"])
+def test_nonobject_json_is_not_an_accepted_verdict(monkeypatch, case):
+    assert classifier._valid_verdict(case["text"]) is None
+    assert classify_reply(monkeypatch, case["text"]) is None
+
+
+@pytest.mark.parametrize("case", CASES["limits"], ids=lambda case: case["id"])
+def test_decoder_input_limits_remain_invalid_responses(monkeypatch, case):
+    assert classifier._extract_json(case["text"]) is None
+    assert classifier._valid_verdict(case["text"]) is None
+    assert classify_reply(monkeypatch, case["text"]) is None
+
+
+@pytest.mark.parametrize("case", CASES["controlled_errors"], ids=lambda case: case["id"])
+def test_decoder_input_errors_stay_within_the_extract_contract(monkeypatch, case):
+    real_json = classifier.json
+    error = {"ValueError": ValueError, "RecursionError": RecursionError}[case["error"]]
+
+    def rejected_decode(*args):
+        raise error("synthetic decoder input limit")
+
+    def loads(text):
+        if case["site"] == "loads":
+            return rejected_decode(text)
+        return real_json.loads(text)
+
+    facade = SimpleNamespace(
+        loads=loads, JSONDecoder=lambda: SimpleNamespace(raw_decode=rejected_decode))
+    monkeypatch.setattr(classifier, "json", facade)
+    text = '{"priority":"ACTION"}'
+    if case["site"] == "raw_decode":
+        text = "Synthetic model answer: " + text
+    assert classifier._extract_json(text) is None
+    assert classifier._valid_verdict(text) is None
+    assert classify_reply(monkeypatch, text) is None
+'''
+
+
+def response_parser_cases():
+    """Invented complete and malformed model replies, with no live model or mail input."""
+    return json.loads(RESPONSE_CASES_JSON)
+
+
 def repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -252,6 +1075,18 @@ def main():
 
     _write(dest, render())
     _write(topic_dest, render_topic())
+    reliability_dest = os.path.join(a.out, os.path.basename(RELIABILITY_FIXTURE)) if a.out \
+        else os.path.join(root, RELIABILITY_FIXTURE)
+    _write(reliability_dest, json.dumps(reliability_cases(), ensure_ascii=False, indent=2) + "\n")
+    drafting_dest = os.path.join(a.out, os.path.basename(DRAFTING_FIXTURE)) if a.out \
+        else os.path.join(root, DRAFTING_FIXTURE)
+    _write(drafting_dest, json.dumps(drafting_cases(), ensure_ascii=False, indent=2) + "\n")
+    alert_dest = os.path.join(a.out, os.path.basename(ALERT_FIXTURE)) if a.out \
+        else os.path.join(root, ALERT_FIXTURE)
+    _write(alert_dest, json.dumps(alert_disposition_cases(), ensure_ascii=False, indent=2) + "\n")
+    parser_test_dest = os.path.join(a.out, os.path.basename(PARSER_TEST)) if a.out \
+        else os.path.join(root, PARSER_TEST)
+    _write(parser_test_dest, PARSER_TEST_SOURCE)
     print("make_fixtures: wrote %d case(s) -> %s" % (len(CASES), dest))
     print("make_fixtures: wrote %d case(s) -> %s" % (len(TOPIC_CASES), topic_dest))
     return 0
@@ -259,34 +1094,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-def pool_merge_case():
-    """Synthetic two-account invoices and explicitly reviewed cross-thread identity."""
-    return {'id':'invoice-a','state':'pending','title':'Pay invoice A-41','description':'Keep receipt',
-            'source':'email-monitor','due_at':None,'ext':{
-                'x_email_monitor_account':'user1', 'x_email_monitor_message_id':'<first@example.com>',
-                'x_email_monitor_thread_key':'thread-a','x_email_monitor_msg_count':1,
-                'x_email_monitor_merge_rules':[{'account':'user1','sender':'billing@example.com',
-                    'subject':'payment reminder','contains':['invoice a-41'], 'until':'2099-12-31'}]}}
-
-def pool_tick_case():
-    return {'user':'user1@example.com','slug':'user1'}, {
-        'from':'billing@example.com','subject':'Payment reminder','uid':2,'gm_msgid':'2',
-        'message_id':'<next@example.com>','thread_key':'thread-a','body':'Invoice A-41 is overdue'}, {
-        'priority':'ACTION','label':'invoice','summary_zh':'Review synthetic invoice','tier':'fixture'}
-
-def initialized_config_rules():
-    return {'version':1,'by_address':{'billing@example.com':'Payments'},'by_domain':{},'by_list_id':{}}, {
-        'primary':['Payments','Scheduling']}
-
-def bytecode_probe(directory):
-    (directory/'synthetic_helper.py').write_text('value = 1\n',encoding='utf-8')
-    script=directory/'synthetic_owner.py'
-    script.write_text('import synthetic_helper\nprint(\'{"ok": true}\')\n',encoding='utf-8')
-    return script
-
-
-def archived_notification():
-    row = pool_merge_case()
-    row.update(kind='event', state='cancelled')
-    row['ext']['x_email_monitor_notification_archive'] = {'reason':'historical-information'}
-    return row

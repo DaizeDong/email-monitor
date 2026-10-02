@@ -1,7 +1,7 @@
 # Design Brief, email-monitor
 
-> Produced by skill-smith Step 0 (research-first). Rationale is auditable. Full architecture:
-> CodesResearch/_skill-builds/02-email-monitor/ARCHITECTURE.md (7-thread parallel recon synthesis).
+> Design rationale for the public workflow. Current behavior and verification boundaries
+> are documented in README.md and the workflow reference shards.
 
 ## Best references (match-or-beat)
 - Google Priority Inbox / EACL 2026 industry track: importance = behavioral probability (will it be
@@ -19,9 +19,10 @@
 - Second store / read base .db / SEARCH SINCE / UID-as-affair-key / per-mail item explosion /
   bare IDLE daemon / BODY[] writable select / All-Mail anchor / tick carrying summary body /
   naive +24h re-arm / PATH-resolved python in schtasks / repeated create_draft / SMTP in the loop /
-  committing plaintext app pw or PII / base DB on a sync drive / pushing body/PII to Discord.
+  committing runtime DATA publicly / base DB on a sync drive / forwarding full bodies to Discord.
+  Alert gists use bounded pattern redaction; names, dates, amounts and pure digit runs can remain.
 
-## Proof bar (tested-real)
+## Original offline acceptance targets
 - 27-test program-judged suite: classification >=0.85 + L0/L1 determinism; deadline tz 0 errors;
   base round-trip (idempotency/state machine/ext preserve/use-transition); draft compliance + AI-flavor
   0 hits; dedup (Message-ID + thread merge) 0 duplicates; IMAP watermark math.

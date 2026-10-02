@@ -11,11 +11,9 @@ side effect of a routine pass.
 TODO: the IMAP layer (locate messages by X-GM-MSGID, write a rollback
 snapshot before any mutation, STORE grouped by label in batches under 1000,
 and read back every touched message to assert its label set equals the
-expected set) is deliberately not implemented here. It is ported from a
-validated batch run that lives outside this repo against real mailbox data,
-and pulling it in risks dragging real senders into a public repo. The CLI
-entry point (--account, --since, --dry/--commit) depends on that layer and
-is deferred along with it.
+expected set) is not implemented here. The CLI entry point (--account, --since,
+--dry/--commit) depends on that layer and is deferred along with it. Pure planning
+tests do not establish live IMAP behavior.
 """
 
 SYSTEM_LABELS = {"\\Inbox", "\\Sent", "\\Draft", "\\Drafts", "\\Important",

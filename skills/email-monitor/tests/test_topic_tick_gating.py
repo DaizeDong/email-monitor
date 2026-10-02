@@ -50,7 +50,7 @@ def test_transport_closure_maps_a_dead_chain_to_failed(monkeypatch):
 
     import em_tick
     monkeypatch.setattr(em_tick.llmcall, "call", lambda *a, **k: DeadResult())
-    call = em_tick._make_transport(5)
+    call = em_tick._make_transport()
     assert call(prompt="anything") is None
 
 
@@ -88,7 +88,7 @@ def test_topic_verdicts_are_counted_not_just_successes(monkeypatch, capsys):
     assert "judged=3" in out, out
     assert "decided=1" in out and "unsure=1" in out and "failed=1" in out, out
     assert "labels_added=1" in out, out
-    assert n == 1 and added == ["Alpha"]
+    assert n == 1 and added == [], "dry plans labels without calling the writer"
 
 
 def test_verdict_counter_stays_silent_when_there_is_nothing_to_judge():

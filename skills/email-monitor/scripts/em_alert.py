@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
-"""email-monitor Discord alert (redacted) -> wraps a local notifier script (the Discord relay).
+"""Build a Chinese alert title and send it through a configured notifier.
 
-Privacy red line: only a REDACTED title is pushed. NEVER the body, the raw subject, or any PII
-(ARCHITECTURE §2.3, anti-pattern #17). Immediate "new important mail" pings go here; recurring
-due/overdue reminders go through the base `tick` instead (no double-notify).
+The title contains the configured account label and a bounded classifier gist,
+or coarse subject words when no gist exists. Gist redaction removes recognized
+addresses, URLs and token patterns; ordinary names, dates and amounts can remain.
+It is not a guarantee that all personal information or credentials are removed.
+Title construction does not include the email body. The account label is retained.
 
-The redacted title is an ASCII imperative line: "[URGENT] <account> <short-subject-token>".
-Subject is reduced to a coarse keyword hint (first <=6 ASCII words) with these stripped:
-digits/number runs, order/case/ticket/invoice IDs, **email addresses**, **URLs/domains**, and
-**any alphanumeric token containing a digit** (secrets/tokens/tracking/confirmation codes) plus
-over-long blobs. This is a best-effort hint — the body and raw subject are NEVER egressed; residual
-generic words / proper nouns may remain (they reach only the user's own private Discord).
-
-Usage:
-  python em_alert.py --priority URGENT --account user1 --subject "Payment failed on order 12345"
-  python em_alert.py --message "@file.txt"   # pass-through to relay (already-redacted summary)
-Stdlib only (calls relay via subprocess so the bot token never enters this process).
+``send`` and CLI ``--message`` pass their message through unchanged: their callers
+must prepare the alert text. Recurring reminders use the base tick separately.
+The notifier subprocess owns relay credentials.
 """
 import argparse
+import json
 import os
 import re
 import subprocess
 import sys
+
+import em_actions
 
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 RELAY = os.path.expanduser(os.environ.get("EMAIL_MONITOR_NOTIFIER", "~/.local/notifier.py"))
@@ -36,7 +33,7 @@ _MAX_TOKEN = 18  # tokens longer than this are treated as opaque ids/blobs and d
 CJK_RE = re.compile(r"[㐀-䶿一-鿿぀-ヿ]")
 PUNCT_RE = re.compile(r"[^A-Za-z0-9 㐀-䶿一-鿿぀-ヿ]+")
 # a run of >=6 alphanumerics containing BOTH a letter and a digit = code / token / tracking number.
-# Pure digits (2026, 400) and pure letters (COBRA) are kept, they carry the meaning.
+# Pure digit and pure letter runs are retained for readability.
 CODE_RE = re.compile(r"\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}\b")
 BLOB_RE = re.compile(r"[A-Za-z0-9]{19,}")
 
@@ -47,10 +44,10 @@ PRIORITY_ZH = {"URGENT": "紧急", "ACTION": "待办", "FYI": "知悉", "NOISE":
 
 
 def redact_subject(subject, max_words=6):
-    """Coarse, best-effort keyword hint — never the body/raw subject. Strips emails, URLs/domains,
+    """Coarse, best-effort keyword hint from a subject. Strips recognized emails, URLs/domains,
     order/number IDs, and any alphanumeric token containing a digit (secrets/tokens/tracking/
     confirmation codes) or over-long blob. CJK is preserved (see CJK_RE). Residual pure-alpha words
-    (incl. proper nouns) may remain; they reach only the user's own private Discord.
+    (including proper nouns) may remain. A short subject may survive unchanged.
 
     This is now the FALLBACK path: when the classifier returns a `summary_zh`, `build_title` pushes
     that instead (far more useful). This still runs whenever the agent produced no summary.
@@ -78,12 +75,10 @@ def redact_subject(subject, max_words=6):
 
 
 def redact_push(text, limit=60):
-    """Strip secrets from the classifier's Chinese gist before it leaves the machine.
+    """Remove recognized address, URL and token patterns from a bounded gist.
 
-    The owner explicitly opted in (2026-07-13) to having the *gist* pushed, because a redacted
-    keyword fragment was unreadable and real tasks were being missed. So names, dates and amounts
-    deliberately survive — they are the point. What must never ride along is a credential: an email
-    address, a URL, or a code/token/tracking number (a >=6 char run mixing letters and digits).
+    Names, dates, amounts and pure digit runs can remain. Pattern matching does
+    not guarantee removal of every credential or personal detail.
     """
     s = text or ""
     s = EMAIL_RE.sub(" ", s)
@@ -119,15 +114,35 @@ def _egress_cmd():
     return None
 
 
-def send(message):
+def send(message, idempotency_key=None, python=None):
     cmd = _egress_cmd()
     if not cmd:
         raise RuntimeError("no relay available (neither schedule-reminder relay.py nor %s)" % RELAY)
-    p = subprocess.run(cmd + [message],
+    if python:
+        cmd[0] = python
+    args = cmd + [message]
+    if idempotency_key:
+        args += ["--idempotency-key", idempotency_key, "--json"]
+    p = subprocess.run(args,
                        capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
+    receipt = None
+    if idempotency_key is not None:
+        try:
+            receipt = json.loads((p.stdout or "").strip())
+        except (ValueError, TypeError):
+            pass
+        # A helper can fail while proving it did not deliver. Preserve that
+        # matching proof so callers can retry; a nonzero delivery claim cannot
+        # establish success.
+        if em_actions.receipt_status(receipt, idempotency_key, "alert") == "not_applied":
+            return receipt
     if p.returncode != 0:
         raise RuntimeError("relay failed: %s" % (p.stderr or p.stdout))
-    return True
+    if idempotency_key is None:
+        return True
+    # Only the downstream service can supply a verifiable delivery receipt.
+    # In particular, rc=0 from a legacy relay does not establish completion.
+    return receipt
 
 
 def main():

@@ -37,6 +37,7 @@ self-evolve grader records XFAIL=0.0 (gap open) and XPASS=1.0 the instant a real
 fix lands (evaluate.py _parse_per_test). Eleven 0->1 flips give the A-tier
 e-process enough evidence to cross 1/alpha=20 (no-regression gate first).
 """
+import json
 import os
 import sys
 
@@ -47,6 +48,9 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import em_lint_rules as lr  # noqa: E402
 
+with open(os.path.join(os.path.dirname(__file__), "drafting.json"), encoding="utf-8") as _fixture_file:
+    DRAFTS = json.load(_fixture_file)
+
 _HEADROOM_REASON = ("closing/opening boilerplate-hedge AI tell (signal #5); "
                     "satisfiable by KILL_PHRASES + specific BANNED_SHAPES "
                     "regexes; headroom for self-evolve A-tier 0->1.")
@@ -54,7 +58,7 @@ _HEADROOM_REASON = ("closing/opening boilerplate-hedge AI tell (signal #5); "
 
 def _flagged(text, profile="business"):
     """True iff lint flags an AI-flavor shape/phrase/word violation."""
-    viol = lr.lint(text, profile)
+    viol = lr.lint(text, profile, config=DRAFTS["config"])
     return any(
         ("banned sentence shape" in v) or ("AI kill-list" in v)
         for v in viol
@@ -63,10 +67,7 @@ def _flagged(text, profile="business"):
 
 def _draft(body):
     """Minimal compliant draft whose 2nd line carries the boilerplate hedge."""
-    return ("Hi,\n"
-            "%s\n"
-            "Thanks,\n"
-            "Daize Dong" % body)
+    return (DRAFTS['hedge_template'] % body)
 
 
 # ── headroom (currently FAIL; the boilerplate-hedge fix flips all of them) ──
@@ -129,25 +130,16 @@ def test_hr11_please_let_me_know_if_questions_flagged():
 # ── regression guards (currently PASS; the fix must NOT break them) ──
 
 def test_g1_clean_dealer_ask_stays_clean():
-    txt = ("Hi Sam,\n"
-           "Please send your best out the door price today.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['clean_ask'])
     assert not _flagged(txt), "a clean dealer ask must not trip the new hedge rules"
 
 
 def test_g2_concrete_look_forward_stays_clean():
-    txt = ("Hi,\n"
-           "I look forward to the test drive on Saturday.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['concrete_event'])
     assert not _flagged(txt), \
         "concrete 'look forward to <event>' is legitimate; only your-response/reply/hearing is a tell"
 
 
 def test_g3_bare_let_me_know_stays_clean():
-    txt = ("Hi,\n"
-           "Let me know which trim you have in stock.\n"
-           "Thanks,\n"
-           "Daize Dong")
+    txt = (DRAFTS['bare_ask'])
     assert not _flagged(txt), "bare 'let me know' is a legitimate CTA, not a hedge"

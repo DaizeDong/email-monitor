@@ -21,15 +21,10 @@ Iteration is driven by `self-evolve` against the signals in `tests/test_acceptan
 edit the CASE TABLE in tools/make_fixtures.py  ->  python tools/make_fixtures.py  ->  commit both
 ```
 
-The reason is not tidiness. This skill reads a real inbox, and the 2026-07 audit found that the
-golden file had been built by pasting real emails out of it, real senders, a real person, a real
-employer. That is not carelessness, it is the path of least resistance: anyone writing a classifier
-test needs a realistic message, and a real one is always within reach.
-
-So the fixture is required to be byte-identical to what `make_fixtures.py` emits, and
-`data_boundary.py` checks it at commit time. **A real email cannot be regenerated.** Paste one in and
-the gate fails immediately, even if it looks completely innocuous, which is precisely what a content
-scanner cannot promise. Adding a case forces you to state which classifier path you are pinning and
-to invent the message rather than borrow it.
+Every case must be independently invented. The fixture must be byte-identical to
+`make_fixtures.py` output, which `data_boundary.py` checks at commit time. This detects
+manual edits to generated output; review the case table as well to ensure its inputs
+contain no operational records. Name the behavior each case tests and use only synthetic
+addresses and content.
 
 If a gate blocks you, the gate is right. Never `--no-verify`.

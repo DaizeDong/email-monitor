@@ -1081,7 +1081,9 @@ shouldArchive, making the retired keyword-and-hide rule shape unrepresentable."
 - Consumes: `em_topic.judge`, `em_topic.load_config`
 - Produces: `plan_changes(messages, verdicts) -> dict`, `assert_complete(messages, verdicts) -> None` (raises `IncompleteRun`), and a CLI `em_relabel.py --account <slug> [--since <date>] --dry|--commit`.
 
-The IMAP mechanics (msgid location, grouped STORE, rollback snapshot, read back verification) are ported from the validated 2026-08 batch run. Tests cover the pure planning functions; the IMAP layer is exercised by the dry run against a live account, which is a manual verification step, not a unit test.
+The IMAP plan must preserve message identity, group STORE operations, save rollback
+snapshots and verify final labels. Pure planning tests do not establish live IMAP behavior;
+any mailbox acceptance requires separate authorization and evidence.
 
 - [ ] **Step 1: Write the failing test**
 

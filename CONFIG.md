@@ -7,8 +7,8 @@ here. This file is the authoritative config contract (config-spec E1).
 
 Operating mode: **Mode B**, the companion repo commits a zero-secret `registry.json`; real Gmail
 app passwords are stored machine-bound in DPAPI at `~/.local/secrets/gmail-<slug>.cred`, and the repo
-keeps only the `cred_path` pointer. `secrets/*`, `rules/merged.json`, `rules/_personal_layer.json`
-and `state/*` are gitignored.
+keeps only the `cred_path` pointer. Credentials under `secrets/*` are gitignored. Rules, templates
+and runtime DATA belong under version control in the PRIVATE companion, never in the public tool.
 
 ## Discovery convention (how the skill finds your config), E2
 
@@ -22,8 +22,8 @@ The skill resolves its config **dir** in this order; the first that exists wins,
 
 You may always override discovery with an explicit `--config <dir>/registry.json` on the runtime
 scripts (`em_tick.py`, `em_summary.py`); the explicit path wins over the env order. If nothing
-resolves, the skill does not crash, it prints how to set `$EMAIL_MONITOR_CONFIG` / run
-`init_config.py` and exits cleanly (graceful degradation).
+resolves, the heartbeat prints a structured configuration failure and exits nonzero without
+sending an alert. Create or clone a verified PRIVATE companion before running `init_config.py`.
 
 ## Schema, `registry.json` (E1)
 
@@ -57,16 +57,35 @@ Committed, **zero secrets**. Fields:
     "tz": "America/New_York"           //   str — IANA tz for DST-correct re-arm
   },
   "topic_labeling": {                  // OPTIONAL obj — add-only topic labels, off by default
-    "enabled": false,                  //   bool — REQUIRED false default; an uninitialised
-                                        //   machine must stay inert
-    "timeout_sec": 120                 //   OPTIONAL int — per-call model transport timeout
+    "enabled": false                   //   bool — REQUIRED false default; an uninitialised
+                                       //   machine must stay inert
   }
 }
 ```
 
+### Model policy and migration
+
+Classification, topic labeling and quality review use installed `llmcall` in judge mode.
+Routing, model, timeout and fallback are configured there. `classifier.mode="agent"`
+retains its existing name for model-based text classification; it does not enable tool use.
+`classifier.owner` supplies task context and `classifier.max_parallel` bounds concurrency.
+
+Remove legacy `chain`, `providers`, `timeout`, `timeout_sec`, `model`, `reasoning_effort`,
+`codex_model`, `codex_reasoning`, `claude_model` and `fallback` settings from classifier,
+topic-labeling and quality-review blocks. The configuration doctor and heartbeat reject
+these keys before operational setup, even if their feature is disabled.
+
+The direct classification API accepts only omitted or `None` legacy `chain`, `providers`
+and `timeout` arguments. Topic and review timeout arguments follow the same rule.
+Classifier CLI switches `--chain`, `--timeout`, `--codex-model`, `--codex-reasoning` and
+`--claude-model` report a migration error instead of silently choosing or ignoring a model.
+Nonmodel subprocess deadlines remain bounded independently.
+
 ### Topic labeling, `rules/taxonomy.md` + `rules/sender_map.json` + `rules/labels.json`
 
-These three files are what `topic_labeling.enabled: true` reads. They are DATA, not code: this
+These three files are what `topic_labeling.enabled: true` reads. Enabled topic judgments pass headers
+and taxonomy to llmcall's current routing policy, which may use external providers; local-only mode
+requires this capability disabled. They are DATA, not code: this
 public skill repo ships the labeling method (evidence-gated, add-only, never de-inboxes); the
 operator's own taxonomy, sender mappings, and label counts never appear here, only in the private
 companion config. Nothing is written unless all three files are present and valid; a missing or
@@ -74,12 +93,12 @@ malformed set is treated as "not configured", not an error.
 
 ```
 rules/
-  taxonomy.md            # GITIGNORED (private) — prose standard describing what each label means,
+  taxonomy.md            # PRIVATE, versioned: prose standard describing what each label means,
                           #   fed verbatim to the model as the only standard it may reason from
-  sender_map.json         # GITIGNORED (private) — deterministic pre-gate, checked before any model
+  sender_map.json         # PRIVATE, versioned: deterministic pre-gate, checked before any model
                           #   call: {"by_address": {...}, "by_domain": {...}, "by_list_id": {...}},
                           #   each value a label name; address beats domain beats list identity
-  labels.json              # GITIGNORED (private) — {"<account_slug>": ["<label>", ...]}, the closed
+  labels.json              # PRIVATE, versioned: {"<account_slug>": ["<label>", ...]}, the closed
                           #   set of labels that account may be judged against; a model reply
                           #   naming anything outside this set is discarded, not coerced.
                           #   The pre-gate's own sender-map hits are checked against this same
@@ -107,11 +126,11 @@ rules/
   classification.yaml         # committed — global L0/L1 defaults
   project_vocab.yaml          # committed — controlled semantic vocabulary
   kill_list.txt               # committed — AI-flavor words the draft linter strips
-  _personal_layer.json        # GITIGNORED — VIP senders (PII) + personal overrides
-  merged.json                 # GITIGNORED — apply.py-derived (global + personal)
-  taxonomy.md                 # GITIGNORED (private) -- see "Topic labeling" above; init_config.py
-  sender_map.json              # GITIGNORED (private)    stamps a synthetic skeleton for all three
-  labels.json                   # GITIGNORED (private)    so `topic_labeling.enabled: true` has
+  _personal_layer.json        # PRIVATE, versioned: VIP senders + personal overrides
+  merged.json                 # PRIVATE, versioned: apply.py-derived (global + personal)
+  taxonomy.md                 # PRIVATE, versioned: see "Topic labeling" above; init_config.py
+  sender_map.json              # PRIVATE, versioned: stamps a synthetic skeleton for all three
+  labels.json                   # PRIVATE, versioned: so `topic_labeling.enabled: true` has
                                  #   somewhere real to read once you fill them in
 templates/
   business.txt dealer.txt support.txt personal.txt   # committed draft profiles
@@ -119,9 +138,10 @@ secrets/
   _accounts.env.template      # committed template (placeholders only)
   README.md                   # committed — declares Mode B
   *.env / *.cred              # GITIGNORED — real values never enter git
-state/
-  SCHEMA.md                   # committed — describes cursors/seen-set
-  *                           # GITIGNORED — UID/UIDVALIDITY watermark + X-GM-MSGID seen-set
+data/
+  state/                     # PRIVATE, versioned: cursors, scoped observations, action and summary ledgers
+  email-monitor.log          # PRIVATE, versioned: runtime diagnostics
+  pool.db                    # PRIVATE, versioned: optional reminder pool
 ```
 
 ## Secrets, Mode B (E6)
@@ -132,7 +152,7 @@ machine-bound and does not travel: re-capture per machine. This public skill rep
 ignores `registry.json`, `*.cred`, `rules/merged.json` etc. defensively so a local test config never
 leaks. Neither repo ever echoes a secret.
 
-## First-time setup (E3), succeeds on the first try
+## First-time setup (E3)
 
 ```bash
 # 1. Stamp a conformant, zero-secret companion skeleton (deterministic — E4):
@@ -148,14 +168,66 @@ python scripts/verify_config.py      # doctor: PASS/FAIL per check, names gaps
 
 ## Switching between two configs (hot-swap), E5
 
-A config dir is **self-contained**, `cred_path` uses `~`, no hardcoded absolute paths. Keep as many
-as you like and switch by repointing the env var; nothing else changes:
+Storage is relative to the selected PRIVATE companion. Interpreter, credential-reference and
+helper paths may be absolute resources outside Git. Keep separate PRIVATE companions and switch
+the configuration environment variable when needed:
 
 ```bash
 export EMAIL_MONITOR_CONFIG=~/configs/work        # config A
 export EMAIL_MONITOR_CONFIG=~/configs/personal    # config B — same skill, different state
 ```
 
-Verify the swap: `init_config.py --out ~/configs/work` and `--out ~/configs/personal`, run
-`verify_config.py` against each, then flip `$EMAIL_MONITOR_CONFIG` between them, both must report
-READY.
+Run `verify_config.py --config-dir <companion> --json` for each configuration. A newly stamped
+skeleton is not ready: select a working interpreter with llmcall installed, populate the account
+and rules, and establish a PRIVATE Git companion before the doctor can report ready.
+
+## Runtime and delivery state
+
+Schema version remains 1. `runtime.python` selects the actual interpreter; the doctor runs a
+bounded Python/llmcall import probe. Missing runtime settings use the invoking interpreter for
+compatibility. `register-task.ps1` consumes the same selection and requires a ready doctor result
+before registration. Absolute interpreter, credential-reference and helper resource paths are
+valid; output paths still require PRIVATE Git proof.
+
+`storage.state_dir`, `storage.log` and `storage.db` default to `data/state`,
+`data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. These are
+versioned runtime DATA. CLI `--state-dir` and `--db` overrides receive the same checks. The
+Git establishes the actual enclosing worktree, including linked worktrees, before `gh` queries
+that repository's current visibility. A failed live query may use an existing visibility cache
+only when its timezone-aware `_refreshed` timestamp is at most 30 days old and not in the future.
+A current PUBLIC, unknown or malformed response is never overruled by the cache. The doctor
+reports whether proof came from the live query or a recent cache and does not create either
+cache or DATA files. Authenticate `gh`, or refresh the existing visibility cache, when proof
+is unavailable. Source-tree and unversioned outputs fail before mail access.
+
+Ordinary SSH `Host`/`HostName` aliases are read locally without executing SSH commands. Dynamic
+`Match`, `Include` and hostname canonicalization rules are unsupported by this verifier; use a
+literal GitHub origin or ordinary alias when those rules prevent verification. HTTPS origins
+never consult SSH configuration. There is no public-tree fallback.
+
+`runtime.local_only=true` permits heuristic classification with topic models disabled. A provider
+name or chain label does not establish locality. The current llmcall interface offers no
+enforceable local-transport proof, so agent and topic model modes fail before credentials, mail
+or model calls under that policy. The bundled summary is deterministic and uses no model. A
+custom summary worker cannot be verified under local_only.
+
+`draft.signature` is required and must be a nonempty single line; `draft.language` is `en`, `zh` or `any`.
+`draft.style` supports positive `max_lines` and `max_sentences` integers plus boolean
+`allow_markdown`. Malformed constraints fail visibly. Run the draft linter with the registry
+via `--config`; existing `--profile` and `--json` flags remain available. There is no implicit
+signature: the CLI reports invalid configuration when `--config` or `draft.signature` is missing,
+and the Python `lint(..., config=...)` API raises `ValueError` for missing or invalid settings.
+This intentionally changes callers that depended on a built-in identity. Valid configurations
+retain the same violation list and CLI JSON fields.
+
+The initializer stamps `Your Name` as a placeholder and renders new templates from the selected
+registry's signature. Set the intended `draft.signature` and keep template signatures in sync.
+Re-running without `--force` preserves existing registry and template bytes and fills only missing
+files; malformed or missing draft settings refuse before template creation. `--force` resets the
+skeleton, including custom registry and template content, so use it only for an intentional reset.
+Existing companions also retain their `.gitignore` on a normal rerun. Review any older DATA ignore
+rules and version those records in the PRIVATE companion; credential exclusions must remain.
+
+Read [delivery-state.md](skills/email-monitor/reference/delivery-state.md) before recovery or
+rollout. Doctor readiness covers configuration and runtime probes. Controlled-account delivery,
+external adapter receipts, scheduled-task XML and heartbeat require separate live measurements.

@@ -17,8 +17,6 @@ import json
 import os
 import subprocess
 import sys
-import pytest
-from tools.make_fixtures import initialized_config_rules
 
 TESTS_DIR = os.path.dirname(__file__)
 SCRIPTS = os.path.abspath(os.path.join(TESTS_DIR, "..", "..", "..", "scripts"))
@@ -109,9 +107,8 @@ def test_running_generator_twice_is_idempotent_and_does_not_corrupt(tmp_path):
     assert json.loads(registry_after_second) == init_config.REGISTRY
 
 
-@pytest.mark.parametrize('configured', [False, True])
-def test_verify_config_distinguishes_uninitialized_and_configured_rules(tmp_path, capsys, configured):
-    """An empty template must not claim readiness; populated synthetic rules must pass."""
+def test_fresh_uninitialized_config_is_not_runtime_ready(tmp_path, capsys):
+    """A skeleton has no proven PRIVATE remote or selected-runtime measurement."""
     out = tmp_path / "cfg"
     argv = sys.argv
     sys.argv = ["init_config.py", "--out", str(out)]
@@ -120,11 +117,6 @@ def test_verify_config_distinguishes_uninitialized_and_configured_rules(tmp_path
     finally:
         sys.argv = argv
 
-    if configured:
-        sender_map,labels=initialized_config_rules()
-        (out/'rules/sender_map.json').write_text(json.dumps(sender_map),encoding='utf-8')
-        (out/'rules/labels.json').write_text(json.dumps(labels),encoding='utf-8')
-
     argv = sys.argv
     sys.argv = ["verify_config.py", "--config-dir", str(out)]
     try:
@@ -132,8 +124,9 @@ def test_verify_config_distinguishes_uninitialized_and_configured_rules(tmp_path
     finally:
         sys.argv = argv
     out_text = capsys.readouterr().out
-    assert exit_code == (0 if configured else 1), out_text
-    assert ('READY: config' if configured else 'NOT READY:') in out_text
+    assert exit_code == 1, out_text
+    assert "NOT READY" in out_text
+    assert "PRIVATE" in out_text
 
 
 def test_verify_config_reports_missing_config_dir(tmp_path, capsys):

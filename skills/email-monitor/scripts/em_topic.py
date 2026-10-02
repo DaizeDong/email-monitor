@@ -289,7 +289,7 @@ def _resolve_config_dir():
         return None
 
 
-def load_config(account_slug, log=None):
+def load_config(account_slug, log=None, config_dir=None):
     """Return the topic config for one account, or None if this machine has not
     been initialised for topic labeling. Never raises, never falls back.
 
@@ -301,7 +301,7 @@ def load_config(account_slug, log=None):
     it and the model is never asked the type question -- so this is logged
     rather than left to fail silently the way it did before R8.
     """
-    config_dir = _resolve_config_dir()
+    config_dir = config_dir or _resolve_config_dir()
     if not config_dir:
         return None
     base = os.path.join(config_dir, "rules")

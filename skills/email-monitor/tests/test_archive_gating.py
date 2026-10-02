@@ -71,9 +71,9 @@ def test_matched_zero_is_a_failure_not_a_phantom_success(monkeypatch):
     assert tick.archive("u@example.com", GM_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is False
 
 
-def test_matched_one_is_a_real_success(monkeypatch):
+def test_text_match_count_is_not_a_verifiable_archive_receipt(monkeypatch):
     _capture(monkeypatch, rc=0, stdout="matched 1 messages for query: x")
-    assert tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is True
+    assert tick.archive("u@example.com", RFC_MSGID, "EM/NOISE/x", dry=False, app_pw="p") is False
 
 
 # ---------- 1b. _label_add must not count the same phantom archive() already guards against ----------
@@ -88,9 +88,9 @@ def test_label_add_matched_zero_is_not_counted_as_a_write(monkeypatch):
     assert tick._label_add("u@example.com", GM_MSGID, "Receipt", dry=False, app_pw="p") is False
 
 
-def test_label_add_matched_one_is_a_real_write(monkeypatch):
+def test_text_match_count_is_not_a_verifiable_label_receipt(monkeypatch):
     _capture(monkeypatch, rc=0, stdout="matched 1 messages for query: x")
-    assert tick._label_add("u@example.com", RFC_MSGID, "Receipt", dry=False, app_pw="p") is True
+    assert tick._label_add("u@example.com", RFC_MSGID, "Receipt", dry=False, app_pw="p") is False
 
 
 # ---------- 2. the archive switch ----------
