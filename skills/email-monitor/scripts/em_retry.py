@@ -26,9 +26,10 @@ needed to write the label later, so a retry judges precisely what the live tick
 would have judged. Bodies are never stored because the kernel never reads them.
 
 Where it lives. In the per-account runtime state file under
-EMAIL_MONITOR_STATE_DIR, alongside the cursors -- outside both the public skill
-repo and the private config repo. Entries contain real senders and subjects, so
-they are DATA: they must never be written anywhere a repo could pick them up.
+EMAIL_MONITOR_STATE_DIR, alongside the cursors in the verified PRIVATE companion.
+Entries contain real senders and subjects, so they are versioned DATA in that
+private repository. The public skill tree must never contain them; a missing
+PRIVATE destination is a write error, with no source-tree fallback.
 
 Two bounds, both deliberate. `MAX_ATTEMPTS` stops a message that fails for a
 reason retrying cannot fix from being retried forever; on the last attempt it is

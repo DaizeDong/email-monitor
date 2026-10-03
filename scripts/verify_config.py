@@ -178,6 +178,20 @@ def main():
         check("sender_map.version present", smap.get("version") is not None)
 
     labels = _load_rule("labels.json")
+    if labels is not None:
+        from em_topic import TYPE_LABELS
+        types = labels.get('_type_labels', list(TYPE_LABELS))
+        valid_types = isinstance(types, list) and all(isinstance(x, str) and x.strip() for x in types)
+        check("labels.json TYPE labels are a list of nonempty names", valid_types)
+        if valid_types and smap is not None:
+            type_names = {label.casefold() for label in types}
+            source_only = all(isinstance(label, str) and bool(label.strip())
+                              and label.casefold() not in type_names
+                              for bucket in ('by_address', 'by_domain', 'by_list_id')
+                              if isinstance(smap.get(bucket), dict)
+                              for label in smap[bucket].values())
+            check("sender_map contains SOURCE labels only", source_only,
+                  "TYPE labels require judgment of each message")
     if labels is not None and isinstance(data.get("accounts"), list):
         # Cross-check instead of a hand-written key list: every account registered in
         # registry.json must have a labels entry. A hand-written list can be incomplete,

@@ -1,27 +1,9 @@
 #!/usr/bin/env python3
-"""Guards for the Chinese push line (v0.1.9).
+"""Synthetic checks for Chinese push-message formatting.
 
-The owner reads ONE line on their phone. It used to be a redacted English keyword fragment:
-
-    [ACTION] user1: Getting ready for your upcoming session
-
-which reads like a harmless reminder -- while the body actually said the payment method was
-incomplete and would block the next charge. Real tasks were missed for days. It is now the classifier's
-own Chinese gist (the classifier already reads the full body):
-
-    【待办】个人:订阅支付方式未填,下次扣款前要补
-
-That is a deliberate, owner-approved (2026-07-13) relaxation of the "never egress content" rule --
-so the guards below pin down exactly HOW MUCH may leave the machine:
-
-  * a credential must NEVER ride along (code / token / tracking number / URL / email address),
-  * but a date or an amount MUST survive -- stripping those is what made the old line useless,
-  * Chinese must survive redaction at all (the old ASCII-only filter deleted a Chinese subject
-    entirely, so every Chinese mail pushed the literal string "new mail"),
-  * and this public repo must never hardcode a real mailbox name (that label is PII and comes from
-    the private companion config).
-
-Run: pytest -q
+These cases verify that summaries stay readable and preserve the intended
+message content when English input is rendered for a Chinese-language channel.
+Use generated synthetic fixtures when extending these tests.
 """
 import os
 import re

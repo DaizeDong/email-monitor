@@ -41,7 +41,9 @@ def verify_labels(proposed, msg):
     kept, dropped = [], []
     for item in proposed or []:
         ev = item.get("evidence")
-        if evidence_holds(ev, msg):
+        list_mapping = (item.get("source") == "map" and item.get("evidence_header") == "list_id"
+                        and bool(normalize_span(ev)) and normalize_span(ev) == normalize_span(_list_identity(msg)))
+        if evidence_holds(ev, msg) or list_mapping:
             kept.append(dict(item))
         else:
             d = dict(item)
@@ -92,7 +94,7 @@ def pregate(msg, sender_map):
     if lid:
         label = (sender_map.get("by_list_id") or {}).get(lid)
         if label:
-            return [{"label": label, "evidence": lid, "source": "map"}]
+            return [{"label": label, "evidence": lid, "source": "map", "evidence_header": "list_id"}]
     return None
 
 
@@ -167,11 +169,16 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
     """
     mapped = pregate(msg, sender_map)
     source_kept, dropped = ([], [])
+    type_names = {label.casefold() for label in type_labels}
     if mapped:
         allowed_set = set(allowed_labels)
         in_taxonomy, out_of_taxonomy = [], []
         for item in mapped:
-            if item["label"] in allowed_set:
+            if item["label"].casefold() in type_names:
+                d = dict(item)
+                d["drop_reason"] = "TYPE labels require message judgment, not a sender rule"
+                out_of_taxonomy.append(d)
+            elif item["label"] in allowed_set:
                 in_taxonomy.append(item)
             else:
                 d = dict(item)
@@ -181,7 +188,7 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
         dropped = out_of_taxonomy + ev_dropped
 
     known = source_kept[0]["label"] if source_kept else None
-    askable = [l for l in allowed_labels if l in type_labels] if known else list(allowed_labels)
+    askable = [l for l in allowed_labels if l.casefold() in type_names] if known else list(allowed_labels)
 
     # Nothing left for the model to decide: the source is settled and this account
     # has no type labels enabled.
@@ -272,7 +279,7 @@ def _resolve_config_dir():
             "cannot import datadir from %s, so the companion resolver never ran. The guards "
             "submodule is not checked out: run `git submodule update --init`. This is not the "
             "same as having no config, and must not be read as one." % tools) from e
-    for var in ("EMAIL_MONITOR_CONFIG_DIR", "EMAIL_MONITOR_CONFIG"):
+    for var in ("EMAIL_MONITOR_CONFIG", "EMAIL_MONITOR_CONFIG_DIR"):
         override = os.environ.get(var)
         if override:
             p = os.path.expanduser(override)

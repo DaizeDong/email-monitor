@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import pytest
+from private_storage_helpers import make_repository, make_linked_worktree, write_visibility
 sys.path.insert(0, str(Path(__file__).parent.parent / 'scripts'))
 import em_tick as tick
 import em_draft_lint
@@ -18,12 +19,8 @@ def ack(key, adapter='alert', status='confirmed'):
 @pytest.fixture
 def harness(tmp_path, monkeypatch):
     companion = tmp_path / 'companion'
-    (companion / '.git').mkdir(parents=True)
-    (companion / '.git' / 'config').write_text(
-        '[remote "origin"]\nurl = ' + FIX['private_remote'], encoding='utf-8')
-    visibility = tmp_path / '.pii-guard' / 'visibility.json'
-    visibility.parent.mkdir()
-    visibility.write_text(json.dumps(FIX['visibility']), encoding='utf-8')
+    make_repository(companion)
+    write_visibility(tmp_path)
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
     monkeypatch.setattr(tick, 'LOG', str(companion / 'log.txt'))
@@ -131,15 +128,7 @@ def test_private_normal_and_linked_storage_proof(harness, tmp_path, linked):
     import em_runtime
     root = harness.companion
     if linked:
-        common = tmp_path/'common'
-        common.mkdir()
-        (common/'config').write_bytes((root/'.git'/'config').read_bytes())
-        (root/'.git'/'config').unlink()
-        (root/'.git').rmdir()
-        metadata = common/'worktrees'/'candidate'
-        metadata.mkdir(parents=True)
-        (metadata/'commondir').write_text('../..')
-        (root/'.git').write_text('gitdir: '+str(metadata))
+        make_linked_worktree(root, tmp_path / 'common')
     proof = em_runtime.prove_private(root/'data'/'state')
     assert proof['visibility'] == 'PRIVATE'
 
@@ -250,7 +239,8 @@ def _configured_registry(harness, monkeypatch):
     cfg['storage'] = {'state_dir': 'data/state', 'db': 'data/pool.db', 'log': 'data/log.txt'}
     (root/'registry.json').write_text(json.dumps(cfg))
     (root/'rules'/'sender_map.json').write_text(json.dumps(
-        {'version': 1, 'by_address': {FIX['message']['from']: ['Review']}, 'by_domain': {}, 'by_list_id': {}}))
+        {'version': 1, 'by_address': {FIX['message']['from']: FIX['model_policy']['topic_config']['allowed_labels'][0]},
+         'by_domain': {}, 'by_list_id': {}}))
     (root/'rules'/'labels.json').write_text(json.dumps({'user1': ['Review']}))
     return cfg
 
@@ -324,11 +314,11 @@ def test_summary_uncertain_alert_never_marks_done_or_resends(harness, monkeypatc
     import em_summary
     _configured_registry(harness, monkeypatch)
     calls = []
-    monkeypatch.setattr(em_summary, 'assemble', lambda *a: FIX['draft_text'])
-    monkeypatch.setattr(em_summary.em_pool, 'due', lambda *a: {'items': [
+    monkeypatch.setattr(em_summary, 'assemble', lambda *a, **k: FIX['draft_text'])
+    monkeypatch.setattr(em_summary.em_pool, 'due', lambda *a, **k: {'items': [
         {'id': 'summary-event', 'ext': {'x_email_monitor_kind': 'daily-summary'}}]})
     monkeypatch.setattr(em_summary.em_alert, 'send', lambda *a, **k: calls.append('alert'))
-    monkeypatch.setattr(em_summary.em_pool, 'mark_done', lambda *a: pytest.fail('unconfirmed summary marked done'))
+    monkeypatch.setattr(em_summary.em_pool, 'mark_done', lambda *a, **k: pytest.fail('unconfirmed summary marked done'))
     monkeypatch.setattr(sys, 'argv', ['em_summary.py', '--config', str(harness.companion/'registry.json')])
     assert em_summary.main() != 0
     assert json.loads(capsys.readouterr().out.splitlines()[-1])['status'] == 'incomplete'
@@ -342,7 +332,10 @@ def test_main_summary_timeout_is_not_success(harness, monkeypatch, capsys):
     monkeypatch.setattr(tick, 'preflight', lambda *a: [])
     monkeypatch.setattr(tick.em_pool, 'available', lambda *a: True)
     monkeypatch.setattr(tick.em_pool, 'upsert', lambda *a, **k: ack(k['idempotency_key'], 'pool'))
-    def timeout(*a, **k):
+    real_run = tick.subprocess.run
+    def timeout(args, **kwargs):
+        if args and Path(args[0]).stem.lower() == 'git':
+            return real_run(args, **kwargs)
         raise tick.subprocess.TimeoutExpired('summary worker', 1)
     monkeypatch.setattr(tick.subprocess, 'run', timeout)
     monkeypatch.setattr(sys, 'argv', ['em_tick.py', '--config', str(harness.companion/'registry.json')])

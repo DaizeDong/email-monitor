@@ -51,6 +51,29 @@ Or clone manually:
 git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
+Use Python 3.11 or later. Install dependencies in the interpreter selected for the heartbeat:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The declared llmcall Git source requires authorized repository access through your host's existing
+credential or SSH setup. An anonymous checkout can return "Repository not found". The package named
+`llmcall` on PyPI is a different project; do not substitute it for this dependency.
+
+If your host supplies an approved llmcall wheel, use this alternate path instead of the requirements
+command above. Replace the example wheel path with the actual file supplied by your host:
+
+```bash
+python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
+python -m pip install "tzdata; sys_platform == 'win32'"
+python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"
+```
+
+The requirements command still fetches its declared Git source even after a wheel is installed.
+The configuration doctor checks the selected interpreter. Routing, credentials, timeouts and
+fallback remain owned by the installed host package; installing Email Monitor does not configure them.
+
 You also need a private companion config repo (`email-monitor-config`) holding account topology, rules,
 templates, versioned runtime DATA and DPAPI pointers (credentials kept separate). See
 [summary and deployment](skills/email-monitor/reference/summary-and-deploy.md).
@@ -81,8 +104,8 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 - **First time:** create or clone a verified PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
   at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
   ```bash
+  export EMAIL_MONITOR_CONFIG=~/.email-monitor-config
   python scripts/init_config.py    # stamp a conformant skeleton (deterministic)
-  export EMAIL_MONITOR_CONFIG=~/.email-monitor-config    # or pass --out <dir> to init
   # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
   python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
   ```

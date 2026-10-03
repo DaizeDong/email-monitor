@@ -6,10 +6,44 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import em_topic  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def isolate_primary_config_override(monkeypatch):
+    monkeypatch.delenv("EMAIL_MONITOR_CONFIG", raising=False)
+
+
+@pytest.mark.parametrize("selection", ["primary", "alias", "both", "missing-primary"])
+def test_config_override_priority_is_authoritative(tmp_path, monkeypatch, selection):
+    fixture = json.loads(Path(__file__).with_name("reliability.json").read_text(encoding="utf-8"))
+    case, account = fixture["type_map"], fixture["account"]["slug"]
+    primary, alias = tmp_path / "primary", tmp_path / "alias"
+    for directory, label in [(primary, case["source"]), (alias, case["types"][1])]:
+        rules = directory / "rules"
+        rules.mkdir(parents=True)
+        (rules / "taxonomy.md").write_text(case["taxonomy"], encoding="utf-8")
+        (rules / "sender_map.json").write_text(json.dumps({"by_address": {case["buckets"]["by_address"]: label}}), encoding="utf-8")
+        (rules / "labels.json").write_text(json.dumps({account: [label], "_type_labels": case["types"]}), encoding="utf-8")
+    monkeypatch.delenv("EMAIL_MONITOR_CONFIG_DIR", raising=False)
+    if selection in {"primary", "both", "missing-primary"}:
+        selected = tmp_path / "missing" if selection == "missing-primary" else primary
+        monkeypatch.setenv("EMAIL_MONITOR_CONFIG", str(selected))
+    if selection in {"alias", "both", "missing-primary"}:
+        monkeypatch.setenv("EMAIL_MONITOR_CONFIG_DIR", str(alias))
+    config = em_topic.load_config(account)
+    if selection == "missing-primary":
+        assert config is None
+    else:
+        expected = case["types"][1] if selection == "alias" else case["source"]
+        assert config["allowed_labels"] == [expected]
+        assert config["sender_map"]["by_address"][case["buckets"]["by_address"]] == expected
 
 
 def test_missing_config_returns_none_not_raises(tmp_path, monkeypatch):

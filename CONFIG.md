@@ -118,6 +118,14 @@ From or Subject; a label whose evidence does not occur in the input is dropped b
 reaches Gmail. A message with no clear evidence for any label gets no label -- omission over
 commission, the same posture as the rest of this skill's classification.
 
+Sender maps may contain SOURCE labels only. The doctor rejects TYPE labels in any of the
+address, domain or list-ID buckets, including spelling that differs only in case. Runtime
+judgment also drops such map hits, so model abstention or an outage cannot apply a TYPE label.
+
+Filter exports report broader domain rules as uncompiled when they conflict with a narrower
+address or domain mapping. Gmail applies every matching filter, so exporting both positives
+would apply two labels even though the runtime chooses the more specific sender rule.
+
 ### Companion-repo layout
 
 ```
@@ -191,19 +199,24 @@ valid; output paths still require PRIVATE Git proof.
 
 `storage.state_dir`, `storage.log` and `storage.db` default to `data/state`,
 `data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. These are
-versioned runtime DATA. CLI `--state-dir` and `--db` overrides receive the same checks. The
-Git establishes the actual enclosing worktree, including linked worktrees, before `gh` queries
-that repository's current visibility. A failed live query may use an existing visibility cache
-only when its timezone-aware `_refreshed` timestamp is at most 30 days old and not in the future.
-A current PUBLIC, unknown or malformed response is never overruled by the cache. The doctor
-reports whether proof came from the live query or a recent cache and does not create either
-cache or DATA files. Authenticate `gh`, or refresh the existing visibility cache, when proof
-is unavailable. Source-tree and unversioned outputs fail before mail access.
+versioned runtime DATA. CLI `--state-dir` and `--db` overrides receive the same checks.
+The pinned Guards companion API establishes the nearest worktree, including linked worktrees,
+and checks every physical and effective fetch/push destination and configured remote selector.
+All destinations need a local PRIVATE visibility receipt refreshed within the last 30 days.
+Missing, malformed, stale, future or nonprivate receipts fail closed. The doctor reports the
+proven repository names and does not refresh receipts or create DATA. Refresh the visibility
+receipt separately when proof is unavailable.
 
-Ordinary SSH `Host`/`HostName` aliases are read locally without executing SSH commands. Dynamic
-`Match`, `Include` and hostname canonicalization rules are unsupported by this verifier; use a
-literal GitHub origin or ordinary alias when those rules prevent verification. HTTPS origins
-never consult SSH configuration. There is no public-tree fallback.
+The companion must have a committed HEAD, and runtime outputs must remain eligible for its
+version history. Source-tree, nested-repository, ignored and unversioned outputs fail before
+mail access. Filesystem aliases and hardlinked output files are rejected before resolution.
+State, report and filter exports use exclusive temporary files and repeat the PRIVATE proof
+before writing and publishing. Git configuration changes during publication abort the write.
+
+SSH aliases and HTTPS routing/trust follow the shared Guards policy, read locally without
+executing SSH or network commands. Every plausible SSH configuration chain must establish
+the same GitHub destination; ambiguous routing, proxy commands and weakened trust fail closed.
+There is no public-tree fallback.
 
 `runtime.local_only=true` permits heuristic classification with topic models disabled. A provider
 name or chain label does not establish locality. The current llmcall interface offers no

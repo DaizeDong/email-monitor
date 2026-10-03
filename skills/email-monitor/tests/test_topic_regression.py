@@ -21,6 +21,8 @@ kernel that scores perfectly."""
 import json
 import os
 import sys
+import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -29,11 +31,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import em_topic  # noqa: E402
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "topic_regression.jsonl")
-TAXONOMY = ("Receipt: proof that money already left the account. An order "
-            "confirmation without an amount, a declined transaction, a password "
-            "mail, or an acknowledgement that documents were received are NOT "
-            "receipts. Promo: pure marketing with no personal transaction.")
-ALLOWED = ["Receipt", "Promo", "Accounts/Shopping"]
+_spec = importlib.util.spec_from_file_location(
+    "topic_fixtures", Path(__file__).resolve().parents[3] / "tools/make_fixtures.py")
+_fixtures = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_fixtures)
+_policy = _fixtures.topic_regression_policy()
+TAXONOMY, ALLOWED = _policy["taxonomy"], _policy["allowed_labels"]
 
 integration = pytest.mark.integration
 
@@ -69,10 +72,31 @@ def test_verbatim_evidence_survives():
 
 @integration
 def test_taxonomy_shapes_against_a_real_model():
-    """Skipped unless a live private config and a working transport are both present.
-    What it checks cannot be checked offline: whether the taxonomy's wording is strong
-    enough that a real model declines the tempting-but-wrong label."""
-    cfg = em_topic.load_config("dz")
-    if not cfg:
-        pytest.skip("no private config on this machine; nothing to check")
-    ...
+    """Use installed llmcall with synthetic messages; no mailbox/config is loaded.
+
+    The offline suite supplies an empty chain. Run this file directly to exercise
+    the installed route and the same assertions against a real model.
+    """
+    from llmcall import active_chain
+    if not active_chain():
+        pytest.skip("live model route is not enabled in the offline suite")
+    import em_tick
+    call = em_tick._make_transport()
+    cases = rows()
+    assert cases and any(case["expect_labels"] for case in cases)
+    failures = []
+    for case in cases:
+        result = em_topic.judge(
+            {"from": case["from"], "subject": case["subject"]},
+            TAXONOMY, {}, ALLOWED, call=call)
+        matched = result["state"] != "failed" and sorted(
+            label["label"] for label in result["labels"]) == sorted(case["expect_labels"])
+        print(json.dumps({"case": case["shape"], "matched": matched, "verdict": result}), flush=True)
+        if not matched:
+            failures.append(case["shape"])
+    assert not failures, failures
+
+
+if __name__ == "__main__":
+    test_taxonomy_shapes_against_a_real_model()
+    print("Live taxonomy regression passed all generated cases, including the positive control.")

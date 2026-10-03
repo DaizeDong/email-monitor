@@ -40,18 +40,32 @@ def test_topic_path_never_archives():
 
 
 def test_transport_closure_maps_a_dead_chain_to_failed(monkeypatch):
-    """A falsy Result must become None, so judge reports an outage rather than a
-    taxonomy problem. Without this mapping the two states collapse and the operator
-    cannot tell 'the model is down' from 'my labels are ambiguous'."""
+    """Preserve the provider failure instead of reporting a JSON parsing defect."""
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location("topic_transport_fixtures", root / "tools/make_fixtures.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+
     class DeadResult:
         data = None
+
+        def __init__(self, error):
+            self.error = error
+
         def __bool__(self):
             return False
 
     import em_tick
-    monkeypatch.setattr(em_tick.llmcall, "call", lambda *a, **k: DeadResult())
-    call = em_tick._make_transport()
-    assert call(prompt="anything") is None
+    for case in generator.topic_transport_failure_cases():
+        monkeypatch.setattr(em_tick.llmcall, "call", lambda *a, **k: DeadResult(case["error"]))
+        verdict = em_tick.em_topic.judge({}, "", {}, [], call=em_tick._make_transport())
+        assert verdict["state"] == "failed"
+        assert verdict["labels"] == []
+        assert case["reason"] in verdict["reason"]
+        assert "unparseable model reply" not in verdict["reason"]
 
 
 def test_topic_verdicts_are_counted_not_just_successes(monkeypatch, capsys):

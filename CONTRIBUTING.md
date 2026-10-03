@@ -1,17 +1,36 @@
 # Contributing
 
-This is a personal skill under the DaizeDong Skill Repo Spec v1. Changes must keep:
+This is a personal skill under the DaizeDong Skill Repo Spec v1.
 
-1. The acceptance suite green: `cd skills/email-monitor && pytest -q` (27 program-judged signals).
+Use the authorized source or approved host wheel described in the README for llmcall. CI's
+dependency-install step also needs repository access; a failed checkout is an unmet prerequisite,
+not a passing test run. The PyPI namesake is not this runtime.
+
+Changes must keep:
+
+1. The consumer suite: `python -m pytest skills/email-monitor/tests -q -m "not integration"`.
+   Add `--reminder-source <schedule-reminder>/skills/schedule-reminder/scripts` to run the optional
+   base round trips. Only its two implementation files are copied into a disposable test HOME;
+   records and databases stay in temporary test storage, and mail/network effects remain blocked.
 2. Spec conformance: `python check_conformance.py .` (7 files, philosophy-first bilingual README,
    badge block, four-source-synced version, plugin fingerprint).
 3. The library token budget: a description change must keep the whole `~/.claude/skills` set under
    ~15k chars (`budget_check.py`).
 4. The hard rules in `skills/email-monitor/SKILL.md`: never auto-send; pool only via the
    schedule-reminder CLI; no body/PII to Discord or git; UID+UIDVALIDITY incrementality.
-5. The data boundary: `python tools/data_boundary.py` exits 0. Runs in pre-commit, pre-push and CI.
+5. The data boundary: `python guards/tools/data_boundary.py` exits 0. Runs in pre-commit, pre-push and CI.
 
 Iteration is driven by `self-evolve` against the signals in `tests/test_acceptance.py`.
+
+`--guards-source <kit-directory>` selects a frozen Guards candidate for the original read-only
+tree/history scans. Those two scan commands use the invoking operator's policy profile; runtime
+tests keep their synthetic HOME and blocked external effects. Other runtime imports still use the
+bundled Guards dependency until its submodule is updated.
+
+`python skills/email-monitor/tests/test_topic_regression.py` explicitly calls installed llmcall
+with generated messages and a generated taxonomy. It checks every negative case and a positive
+control. This live synthetic check does not read the operator's taxonomy or real mailbox, and it
+does not establish production classification quality. The ordinary offline suite skips it.
 
 ## Never hand-edit a test fixture
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adversarial sample review of applied labels. Reports; never writes.
+"""Adversarial sample review of applied labels. Never modifies mailbox labels.
 
 Operational counters measure whether classification ran. This reviewer instead
 asks whether each sampled label violates the configured taxonomy. It requires a
@@ -9,7 +9,9 @@ available headers support the label.
 Review is manual and opt-in through quality_review.enabled. Findings can require
 a sender-map or taxonomy change; removing a label without correcting its rule can
 recreate the same error. Disabled review and a review with no findings are
-reported separately. Reports and sampled headers belong in the PRIVATE companion.
+reported separately. Reports and sampled headers belong in a verified PRIVATE
+companion, under version control. --force overrides only the enabled switch;
+PRIVATE paths and the installed model policy are always checked before mail access.
 
   python em_quality_review.py --account <slug> --user <addr>
   python em_quality_review.py --account <slug> --user <addr> --json <private-path>
@@ -20,6 +22,7 @@ import argparse
 import collections
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -27,6 +30,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_topic  # noqa: E402
+import em_runtime  # noqa: E402
+import em_watch  # noqa: E402
 from em_runtime import reject_model_overrides  # noqa: E402
 
 try:
@@ -134,9 +139,12 @@ def fetch_labelled(user, label, limit, app_pw, runner=None):
     run = runner or (lambda a, e: subprocess.run(
         a, capture_output=True, text=True, encoding="utf-8", errors="replace",
         env=e, **_NOWINDOW))
-    p = run(args, env)
+    try:
+        p = run(args, env)
+    except (OSError, subprocess.SubprocessError):
+        return None
     if getattr(p, "returncode", 1) != 0:
-        return []
+        return None
     out = []
     for line in (getattr(p, "stdout", "") or "").split("\n"):
         if "|" not in line or line.startswith("matched"):
@@ -181,8 +189,32 @@ def _allowed_block(allowed):
     return "\n".join(parts) + "\n"
 
 
+def _validated_findings(verdicts, count, taxonomy, allowed):
+    """Require one well-formed decision per sample before reporting a clean review."""
+    if not isinstance(verdicts, list) or len(verdicts) != count:
+        return None
+    seen = set()
+    findings = []
+    for row in verdicts:
+        if (not isinstance(row, dict) or type(row.get('n')) is not int
+                or not 1 <= row['n'] <= count or row['n'] in seen
+                or type(row.get('wrong')) is not bool
+                or not isinstance(row.get('clause'), str)
+                or not isinstance(row.get('should_be'), str)):
+            return None
+        seen.add(row['n'])
+        if row['wrong']:
+            if (not row['clause'].strip() or row['clause'] not in taxonomy
+                    or (allowed and row['should_be'] and row['should_be'] not in allowed)):
+                return None
+            findings.append(row)
+        elif row['clause']:
+            return None
+    return findings
+
+
 def judge(items, taxonomy, allowed=None, call=None, timeout=None):
-    """Refute a batch; None means transport failure, [] means no findings.
+    """Refute a batch; None means unavailable/invalid review, [] means no findings.
 
     Model policy belongs to installed llmcall. A legacy timeout is an error.
     """
@@ -194,15 +226,19 @@ def judge(items, taxonomy, allowed=None, call=None, timeout=None):
         for i, (f, s, l) in enumerate(items))
     prompt = PROMPT % {"taxonomy": taxonomy, "items": listing,
                        "allowed": _allowed_block(allowed)}
-    if call is not None:
-        return call(prompt)
-    if llmcall is None:
+    try:
+        if call is not None:
+            verdicts = call(prompt)
+        else:
+            if llmcall is None:
+                return None
+            result = llmcall.call(prompt, mode="judge", schema=VERDICT_SCHEMA)
+            data = getattr(result, 'data', None) if result else None
+            verdicts = data.get('findings') if isinstance(data, dict) else None
+    except Exception:
+        # The caller records this batch as unreviewed; transport errors never become clean results.
         return None
-    r = llmcall.call(prompt, mode="judge", schema=VERDICT_SCHEMA)
-    if not r:
-        return None
-    data = getattr(r, "data", None) or {}
-    return data.get("findings") or []
+    return _validated_findings(verdicts, len(items), taxonomy, allowed)
 
 
 def main(argv=None):
@@ -213,7 +249,7 @@ def main(argv=None):
                     help="comma-separated subset; default is every allowed label")
     ap.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
                     help="messages sampled per label (default %d)" % DEFAULT_SAMPLE)
-    ap.add_argument("--json", default=None, help="also write the findings here")
+    ap.add_argument("--json", default=None, help="write findings inside a verified PRIVATE companion")
     ap.add_argument("--registry", default="~/.email-monitor-config/registry.json")
     ap.add_argument("--force", action="store_true",
                     help="run even when quality_review.enabled is false")
@@ -222,15 +258,42 @@ def main(argv=None):
                     default=os.path.join("~", ".email-monitor-config", "scripts", "resolve-cred.ps1"))
     a = ap.parse_args(argv)
 
-    enabled, note = load_flag(a.registry)
-    if not enabled and not a.force:
-        # Saying this out loud matters: a silent exit 0 here is indistinguishable
-        # from a run that found nothing wrong.
+    if a.sample <= 0:
+        ap.error('--sample must be positive')
+    registry = Path(a.registry).expanduser()
+    if not registry.is_file() and not a.force:
         print("quality_review is DISABLED in registry.json -- nothing was reviewed.")
-        print("Set quality_review.enabled true, or pass --force for a one-off run.")
         return 0
 
-    cfg = em_topic.load_config(a.account, log=lambda m: print(m))
+    try:
+        registry = Path(em_runtime.prove_private(registry)['path'])
+        output = None
+        if a.json:
+            output = em_runtime.prove_private(a.json)['path']
+        with registry.open(encoding='utf-8-sig') as handle:
+            settings = json.load(handle)
+        if not isinstance(settings, dict):
+            raise ValueError('registry must be an object')
+        runtime = em_runtime.runtime_config(settings, registry.parent)
+        enabled = bool((settings.get('quality_review') or {}).get('enabled', False))
+        if not enabled and not a.force:
+            print("quality_review is DISABLED in registry.json -- nothing was reviewed.")
+            print("Set quality_review.enabled true, or pass --force for a one-off run.")
+            return 0
+        # This command always judges with a model, irrespective of the heartbeat's classifier mode.
+        em_runtime.check_local_route(runtime, {'mode': 'agent'}, False)
+        if not em_runtime.valid_account_slug(a.account):
+            raise ValueError('invalid account slug')
+        if llmcall is None or not callable(getattr(llmcall, 'call', None)):
+            print('llmcall dependency unavailable; nothing was reviewed.', file=sys.stderr)
+            return 5
+        for name in ('taxonomy.md', 'sender_map.json', 'labels.json'):
+            em_runtime.prove_private(registry.parent/'rules'/name)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print('quality review preflight failed: '+str(exc), file=sys.stderr)
+        return 1
+
+    cfg = em_topic.load_config(a.account, config_dir=str(registry.parent), log=lambda m: print(m))
     if cfg is None:
         print("no private config for account %r" % a.account)
         return 1
@@ -255,16 +318,22 @@ def main(argv=None):
           % (a.account, len(labels), a.sample))
 
     all_findings, unreviewed = [], []
+    sampled_total = 0
     for label in sorted(labels):
         pool = fetch_labelled(a.user, label, limit=0, app_pw=app_pw)
+        if pool is None:
+            unreviewed.append({'label': label, 'sampled': 0, 'reason': 'fetch_failed'})
+            print("  %-26s FETCH FAILED, not reviewed" % label)
+            continue
         if not pool:
             continue
         picked = [(f, s, label) for (f, s) in sample(pool, a.sample)]
+        sampled_total += len(picked)
         verdicts = judge(picked, cfg["taxonomy"], cfg["allowed_labels"])
         if verdicts is None:
             # An outage is not a clean result. Name it, and keep it out of the counts.
-            unreviewed.append((label, len(picked)))
-            print("  %-26s %3d sampled of %-4d -- REVIEWER UNREACHABLE, not reviewed"
+            unreviewed.append({'label': label, 'sampled': len(picked), 'reason': 'review_unavailable'})
+            print("  %-26s %3d sampled of %-4d -- REVIEW UNAVAILABLE, not reviewed"
                   % (label, len(picked), len(pool)))
             continue
         bad = [v for v in verdicts if v.get("wrong")]
@@ -295,21 +364,27 @@ def main(argv=None):
             print("Fixing an instance without fixing the rule lets the next run recreate it.")
             for s, n in repeat:
                 print("  %-44s %d findings" % (s[:44], n))
+    elif unreviewed:
+        print("no confirmed findings; some labels were not reviewed.")
+    elif not sampled_total:
+        print("no messages sampled; nothing reviewed.")
     else:
         print("no findings.")
 
     if unreviewed:
         print()
-        print("NOT REVIEWED (reviewer unreachable) -- absence of findings here means nothing:")
-        for label, n in unreviewed:
-            print("  %-26s %d message(s)" % (label, n))
+        print("NOT REVIEWED -- absence of findings here means nothing:")
+        for row in unreviewed:
+            print("  %-26s %d message(s): %s" % (row['label'], row['sampled'], row['reason']))
 
-    if a.json:
-        with open(os.path.expanduser(a.json), "w", encoding="utf-8") as fh:
-            json.dump({"account": a.account, "findings": all_findings,
-                       "unreviewed": [{"label": l, "sampled": n} for l, n in unreviewed]},
-                      fh, ensure_ascii=False, indent=2)
-        print("\nwrote %s" % a.json)
+    if output:
+        try:
+            em_watch.save_state(output, {'account': a.account, 'findings': all_findings,
+                                        'unreviewed': unreviewed, 'sampled': sampled_total})
+        except (OSError, ValueError, RuntimeError) as exc:
+            print('quality report write failed: '+str(exc), file=sys.stderr)
+            return 1
+        print("\nwrote %s" % output)
 
     # Exit codes carry the verdict, matching classification_review.py's convention so
     # the Task Scheduler's LastTaskResult means something.

@@ -1,18 +1,16 @@
-﻿"""Read-only runtime configuration and PRIVATE DATA boundary checks."""
-from datetime import datetime, timezone
-import fnmatch
+"""Runtime configuration, PRIVATE DATA proofs and atomic publication."""
+from functools import lru_cache
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
-import shlex
+import stat
+import tempfile
 import subprocess
-from subprocess import run as _run
 import sys
-from urllib.parse import urlsplit
 
 SOURCE_ROOT = Path(__file__).resolve().parents[3]
-MAX_CACHE_AGE_DAYS = 30
 
 
 def valid_account_slug(slug):
@@ -22,137 +20,122 @@ def valid_account_slug(slug):
             and re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?", slug, re.I) is None)
 
 
-def _query(arguments):
-    result = _run(arguments, capture_output=True, text=True, encoding='utf-8', timeout=20)
-    if result.returncode:
-        raise subprocess.CalledProcessError(result.returncode, arguments)
-    return result.stdout.strip()
+@lru_cache(maxsize=1)
+def _storage_api():
+    """Load the supported API from the required Guards submodule."""
+    source = SOURCE_ROOT / 'guards/tools/data_boundary.py'
+    if not source.is_file():
+        raise ValueError('Initialize the pinned Guards submodule before using PRIVATE storage')
+    spec = importlib.util.spec_from_file_location('email_monitor_storage_boundary', source)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def _ssh_hostname(alias):
-    """Interpret ordinary Host/HostName rules without evaluating SSH commands."""
-    active, hostname = True, None
-    for line in (Path.home()/'.ssh/config').read_text(encoding='utf-8').splitlines():
-        fields = shlex.split(re.sub(r'^(\s*\w+)\s*=\s*', r'\1 ', line), comments=True)
-        if not fields:
+def _plain_path(destination):
+    """Preserve lexical components until filesystem aliases have been rejected."""
+    path = Path(destination).expanduser().absolute()
+    if any(part.casefold() == '.git' or part == '..' for part in path.parts):
+        raise ValueError('DATA cannot traverse parent components or Git metadata')
+    if any(':' in part for part in path.parts[1:]):
+        raise ValueError('DATA cannot use alternate filesystem streams')
+    for component in (path, *path.parents):
+        try:
+            info = component.lstat()
+        except FileNotFoundError:
             continue
-        key, values = fields[0].lower(), fields[1:]
-        if key in {'include', 'match', 'canonicaldomains'} or key.startswith('canonicalize'):
-            raise ValueError('PRIVATE proof supports ordinary SSH Host/HostName rules only')
-        if key == 'host':
-            if not values:
-                raise ValueError('SSH Host requires a pattern')
-            patterns = [value.lower() for value in values]
-            active = (any(fnmatch.fnmatchcase(alias, p) for p in patterns if not p.startswith('!'))
-                      and not any(fnmatch.fnmatchcase(alias, p[1:]) for p in patterns if p.startswith('!')))
-        elif key == 'hostname':
-            if len(values) != 1:
-                raise ValueError('SSH HostName requires one hostname')
-            if active and hostname is None:
-                hostname = values[0].lower()
-    return hostname
-
-
-def _repository_identity(remote):
-    if not isinstance(remote, str) or not remote or any(c.isspace() for c in remote):
-        raise ValueError('DATA origin does not identify a GitHub repository')
-    ssh = True
-    if '://' in remote:
-        parsed = urlsplit(remote)
-        if (parsed.scheme not in {'https', 'ssh'} or parsed.password or parsed.query or parsed.fragment
-                or parsed.port is not None or parsed.username not in (None, 'git')):
-            raise ValueError('unsupported DATA origin')
-        host, name = parsed.hostname, parsed.path.removeprefix('/')
-        ssh = parsed.scheme == 'ssh'
-        if not ssh and parsed.username is not None:
-            raise ValueError('HTTPS origin cannot contain credentials')
-    else:
-        parsed = re.fullmatch(r'(?:git@)?([^/:\s]+):([^\s]+)', remote)
-        if parsed is None:
-            raise ValueError('DATA origin visibility is unknown')
-        host, name = parsed.groups()
-    host = host.lower() if host else None
-    if ssh and host and host != 'github.com':
-        host = _ssh_hostname(host)
-    name = name.removesuffix('.git')
-    if (host != 'github.com' or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*', name)
-            or any(part.endswith('.') for part in name.split('/'))):
-        raise ValueError('DATA origin must identify a GitHub repository')
-    return name.lower()
-
-
-def _cached_private(name):
-    """A failed live lookup may use only one recent, timezone-aware PRIVATE proof."""
-    cache = Path.home()/'.pii-guard/visibility.json'
-    try:
-        visibility = json.loads(cache.read_text(encoding='utf-8-sig'))
-        stamp = visibility['_refreshed']
-        refreshed = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
-        if refreshed.tzinfo is None:
-            raise ValueError('cache timestamp has no timezone')
-        age = (datetime.now(timezone.utc)-refreshed).total_seconds()
-        entries = [v for k,v in visibility.items() if k.casefold() == name.casefold()]
-        if not 0 <= age <= MAX_CACHE_AGE_DAYS*86400 or len(entries) != 1:
-            raise ValueError('cache is stale, future-dated or ambiguous')
-        value = entries[0]
-        if isinstance(value, dict):
-            value = value.get('v', value.get('visibility'))
-        if value != 'PRIVATE':
-            raise ValueError('cache does not prove PRIVATE')
-    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
-        raise ValueError('Current PRIVATE visibility unavailable; authenticate gh or refresh the visibility cache') from exc
-
-
-def _prove_visibility(name):
-    try:
-        output = _query(['gh', 'repo', 'view', name, '--json', 'nameWithOwner,visibility'])
-    except (OSError, subprocess.SubprocessError):
-        _cached_private(name)
-        return 'recent-cache'
-    answer = json.loads(output)
-    if (not isinstance(answer, dict) or answer.get('visibility') != 'PRIVATE'
-            or str(answer.get('nameWithOwner', name)).casefold() != name.casefold()):
-        raise ValueError('DATA origin must have current verified PRIVATE visibility')
-    return 'live'
+        if (stat.S_ISLNK(info.st_mode)
+                or getattr(info, 'st_file_attributes', 0) & 0x400):
+            raise ValueError('DATA path cannot contain filesystem aliases')
+        if stat.S_ISREG(info.st_mode) and info.st_nlink != 1:
+            raise ValueError('DATA file cannot have multiple hard links')
+        if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+            raise ValueError('DATA requires a regular file or directory')
+    if path.is_relative_to(SOURCE_ROOT) or SOURCE_ROOT.is_relative_to(path):
+        raise ValueError('DATA destination is inside the public source tree')
+    return path
 
 
 def prove_private(destination):
-    """Resolve an output's nearest Git repository, including linked worktrees.
+    """Require an unaliased, history-backed, unignored PRIVATE companion path.
 
-    Git establishes the governing repository; current GitHub visibility proves
-    privacy. A bounded recent cache is usable only when the live lookup fails.
-    This function creates neither DATA directories nor cache files.
+    Guards attests every physical and effective publication route using the local
+    fresh visibility receipt. No remote command or visibility refresh is executed.
+    This read-only snapshot must be repeated immediately before a later write.
     """
-    path = Path(destination).expanduser().resolve()
-    if path.is_relative_to(SOURCE_ROOT) or SOURCE_ROOT.is_relative_to(path):
-        raise ValueError('DATA destination is inside the public source tree')
-    if any(part.lower() == '.git' for part in path.parts):
-        raise ValueError('DATA cannot be written into Git metadata')
-    existing = path
-    while not existing.exists() and existing != existing.parent:
-        existing = existing.parent
-    if existing.is_file():
-        existing = existing.parent
+    path = _plain_path(destination)
+    containing = path if path.is_dir() else path.parent
+    root = None
+    for directory in (containing, *containing.parents):
+        if os.path.lexists(directory / '.git'):
+            if root is not None:
+                raise ValueError('DATA companion cannot be nested in another repository')
+            root = directory
+        elif (directory / 'HEAD').is_file() and (directory / 'objects').is_dir():
+            raise ValueError('DATA cannot fall through a bare repository boundary')
+    if root is None:
+        raise ValueError('DATA destination requires a PRIVATE Git companion')
+    if root.is_relative_to(SOURCE_ROOT) or SOURCE_ROOT.is_relative_to(root):
+        raise ValueError('DATA requires a separate PRIVATE worktree')
+    boundary = _storage_api()
     try:
-        discovered = _query(['git', '-C', str(existing), 'rev-parse', '--show-toplevel'])
-        root = Path(discovered)
-        if not discovered or not root.is_absolute():
-            raise ValueError('Git did not establish a worktree')
-        root = root.resolve()
-        if not root.is_dir() or not path.is_relative_to(root) or SOURCE_ROOT.is_relative_to(root):
-            raise ValueError('DATA requires a separate PRIVATE worktree')
-        name = _repository_identity(_query(['git', '-C', str(root), 'remote', 'get-url', 'origin']))
-        proof = _prove_visibility(name)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ValueError('DATA destination is not in a verifiable PRIVATE Git companion') from exc
-    return {'path': str(path), 'repository': name, 'visibility': 'PRIVATE', 'proof': proof}
+        proof = boundary.prove_private_companion(root)
+        if Path(proof.root) != root or not path.is_relative_to(root):
+            raise ValueError('Git did not establish the nearest DATA worktree')
+        boundary.read_private_companion_git(proof, 'rev-parse', '--verify', 'HEAD')
+        relative = path.relative_to(root).as_posix()
+        ignored = boundary.read_private_companion_git(
+            proof, 'check-ignore', '--no-index', '-q', '--', relative)
+        if ignored.returncode == 0:
+            raise ValueError('DATA must remain eligible for private version history')
+    except (boundary.GitError, OSError) as exc:
+        raise ValueError('DATA destination is not in a verifiable PRIVATE Git companion: ' + str(exc)) from exc
+    _plain_path(path)
+    return {'path': str(path), 'root': proof.root, 'repositories': list(proof.repositories),
+            'repository': ', '.join(proof.repositories), 'visibility': 'PRIVATE',
+            'proof': 'local-receipt', 'signature': proof.signature}
+
+
+def atomic_write(destination, content):
+    """Publish UTF-8 DATA through an exclusive temporary file in the same companion."""
+    before = prove_private(destination)
+    path = Path(before['path'])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+
+    def check(current):
+        if any(current[key] != before[key] for key in ('root', 'repositories', 'signature')):
+            raise ValueError('PRIVATE companion changed during atomic write')
+
+    try:
+        check(prove_private(path))
+        descriptor, name = tempfile.mkstemp(prefix='.' + path.name + '-', suffix='.tmp', dir=path.parent)
+        temporary = Path(name)
+        with os.fdopen(descriptor, 'w', encoding='utf-8', newline='\n') as handle:
+            identity = os.fstat(handle.fileno())
+            check(prove_private(temporary))
+            if not os.path.samestat(identity, temporary.stat()):
+                raise ValueError('Atomic temporary file changed before write')
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        check(prove_private(path))
+        check(prove_private(temporary))
+        if not os.path.samestat(identity, temporary.stat()):
+            raise ValueError('Atomic temporary file changed before publication')
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def resolve_path(value, companion):
     if not isinstance(value, str) or not value.strip():
         raise ValueError('path must be a nonempty string')
     path = Path(value).expanduser()
-    return str((path if path.is_absolute() else Path(companion) / path).resolve())
+    return str((path if path.is_absolute() else Path(companion) / path).absolute())
 
 
 def reject_model_overrides(**controls):

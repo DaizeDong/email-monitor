@@ -12,8 +12,7 @@ NOW = datetime.datetime(2026, 7, 20, 12, 0, 0, tzinfo=datetime.timezone.utc)
 def _local_utc(y, mo, d, h, mi):
     """What em_dates should produce for a NAIVE local wall-clock -- computed the same way (system
     local tz), so these assertions hold on any machine regardless of its timezone."""
-    local = datetime.datetime.now().astimezone().tzinfo
-    return (datetime.datetime(y, mo, d, h, mi, 0, tzinfo=local)
+    return (datetime.datetime(y, mo, d, h, mi, 0)
             .astimezone(datetime.timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"))
 
@@ -54,6 +53,15 @@ def test_junk_returns_none_never_raises():
     for j in [None, "", "   ", "null", "none", "N/A", "tomorrow", "next Tuesday",
               "2026-13-40T10:00:00Z", "2026-08-03T99:99", 20260803, {"x": 1}]:
         assert normalize_due_at(j, now=NOW) is None
+
+
+def test_invalid_model_offsets_return_none():
+    for offset in ('+99:99', '-24:00', '+00:60', '-00:99'):
+        assert normalize_due_at('2027-01-15T09:00'+offset, now=NOW) is None
+
+
+def test_naive_winter_deadline_uses_target_date_local_rules():
+    assert normalize_due_at('2027-01-15T09:00', now=NOW) == _local_utc(2027, 1, 15, 9, 0)
 
 
 # --- em_duenorm delegation (relative / English natural-language, resolved against the mail Date) ---

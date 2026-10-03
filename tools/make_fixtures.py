@@ -188,6 +188,19 @@ def build_topic_row(case):
             "expect_labels": case["expect_labels"], "why": case["why"]}
 
 
+def topic_regression_policy():
+    return {
+        "taxonomy": (
+            "Receipt: proof that money already left the account. An order confirmation without an amount, "
+            "a declined transaction, a password mail, an incoming payment, or an acknowledgement that "
+            "documents were received are NOT receipts. Promo: pure marketing with no personal transaction. "
+            "Accounts/Shopping: an explicit account issue with an online retailer. The sender or subject "
+            "must establish retail shopping; a generic account or password is insufficient. "
+            "Use no label when none of these definitions is supported."),
+        "allowed_labels": ["Receipt", "Promo", "Accounts/Shopping"],
+    }
+
+
 def render_topic():
     """The whole topic-regression fixture as one string. Same format rules as render()."""
     return "".join(
@@ -345,14 +358,43 @@ def reliability_cases():
         "private_proof": {
             "now": "2030-06-15T12:00:00+00:00",
             "fresh": "2030-06-14T12:00:00+00:00",
-            "stale": "2029-01-01T00:00:00+00:00",
-            "future": "2031-01-01T00:00:00+00:00",
+            "stale": "2000-01-01T00:00:00+00:00",
+            "future": "9999-01-01T00:00:00+00:00",
             "slug": "example-owner/email-monitor-config",
             "alias": "synthetic-github",
             "ssh_config": "Host synthetic-github\n    HostName github.com\n    User git\n",
             "unsafe_ssh_rules": ["Match exec synthetic-command", "Include synthetic-config", "CanonicalizeHostname yes"],
+            "unsafe_transport_rules": ["ProxyCommand synthetic-command", "ProxyJump synthetic-gateway",
+                                       "User synthetic-user", "Port 2222", "StrictHostKeyChecking no"],
+            "public_remote": "https://github.com/example-owner/public-output.git",
+            "public_slug": "example-owner/public-output",
+            "retained_text": "Synthetic original content.\n",
             "unrelated_https": "https://synthetic-github/example-owner/email-monitor-config.git",
         },
+        "type_map": {
+            "message": {"from": "Billing <billing@example.com>", "subject": "Big summer sale",
+                        "list_id": "Notices <notices.example.com>"},
+            "taxonomy": "Receipt means proof that money moved.",
+            "allowed": ["Receipt", "receipt", "Promo", "Accounts/Shopping"],
+            "types": ["Receipt", "Promo"],
+            "mapped_types": ["Receipt", "receipt", "RECEIPT", "ReCeIpT"],
+            "source": "Accounts/Shopping",
+            "buckets": {"by_address": "billing@example.com", "by_domain": "example.com",
+                        "by_list_id": "notices.example.com"},
+        },
+        "filter_precedence": {
+            "address": "sender@example.com", "domain": "example.com",
+            "narrow_domain": "sub.example.com", "narrow_address": "sender@sub.example.com",
+            "specific": "Specific", "general": "General", "unrelated": "other.example.org",
+        },
+        "backfill_tool_results": [
+            {"stdout": "", "returncode": 0, "matched": 0, "ok": False},
+            {"stdout": None, "returncode": 0, "matched": 0, "ok": False},
+            {"stdout": "Synthetic helper finished.", "returncode": 0, "matched": 0, "ok": False},
+            {"stdout": "matched 0 messages for query: synthetic", "returncode": 0, "matched": 0, "ok": True},
+            {"stdout": "matched 7 messages for query: synthetic", "returncode": 0, "matched": 7, "ok": True},
+            {"stdout": "matched 7 messages for query: synthetic", "returncode": 1, "matched": 0, "ok": False},
+        ],
         "draft": {"signature": "Avery Example", "language": "zh",
                   "style": {"max_lines": 8, "max_sentences": 5, "allow_markdown": False}},
         "helper_contract": {"idempotency_key": "synthetic-action-11", "label": "Review",
@@ -378,6 +420,30 @@ def reliability_cases():
                                 {"topic_labeling": {"timeout_sec": 17}}],
         },
     }
+
+
+def private_repository_fixture():
+    """Generate a real empty Git commit without invoking hooks or external commands."""
+    import hashlib
+    import zlib
+
+    files = {'.git/config': ('[core]\nrepositoryformatversion = 0\nbare = false\n'
+                            '[remote "origin"]\nurl = ' + reliability_cases()['private_remote'] + '\n').encode(),
+             '.git/HEAD': b'ref: refs/heads/main\n'}
+
+    def object_file(kind, body):
+        payload = kind.encode() + b' ' + str(len(body)).encode() + b'\0' + body
+        digest = hashlib.sha1(payload).hexdigest()
+        files['.git/objects/' + digest[:2] + '/' + digest[2:]] = zlib.compress(payload)
+        return digest
+
+    tree = object_file('tree', b'')
+    commit = object_file('commit', ('tree ' + tree + '\n'
+        'author Synthetic Fixture <user1@example.com> 1767225600 +0000\n'
+        'committer Synthetic Fixture <user1@example.com> 1767225600 +0000\n\n'
+        'Initialize synthetic private history.\n').encode())
+    files['.git/refs/heads/main'] = (commit + '\n').encode()
+    return files
 
 
 def doctor_cases():
@@ -1048,6 +1114,61 @@ def response_parser_cases():
     return json.loads(RESPONSE_CASES_JSON)
 
 
+def pool_merge_case():
+    """Synthetic two-account invoices and explicitly reviewed cross-thread identity."""
+    return {'id':'invoice-a','state':'pending','title':'Pay invoice A-41','description':'Keep receipt',
+            'source':'email-monitor','due_at':None,'ext':{
+                'x_email_monitor_account':'user1', 'x_email_monitor_message_id':'<first@example.com>',
+                'x_email_monitor_thread_key':'thread-a','x_email_monitor_msg_count':1,
+                'x_email_monitor_merge_rules':[{'account':'user1','sender':'billing@example.com',
+                    'subject':'payment reminder','contains':['invoice a-41'], 'until':'2099-12-31'}]}}
+
+
+def imap_observation_case():
+    return {
+        "account": "user1@example.com", "password": "synthetic-auth", "folder": "INBOX",
+        "cursor": {"uidvalidity": 1, "last_uid": 5}, "max_batch": 200,
+        "status": b'INBOX (UIDVALIDITY 1 UIDNEXT 1005)',
+        "ranges": ["6:205", "206:405", "406:605", "606:805", "806:1004"],
+        "metadata": b'1 (UID 1004 X-GM-MSGID 1004 X-GM-THRID 1004)',
+        "raw": (b'From: sender@example.com\r\nSubject: Synthetic update\r\n'
+                b'Message-ID: <observation@example.com>\r\nList-ID: Updates <updates.example.com>\r\n\r\nSynthetic body'),
+        "list_id": "Updates <updates.example.com>",
+        "sender_map": {"by_list_id": {"updates.example.com": "Updates"}},
+    }
+
+
+def native_pool_case():
+    return {"first": pool_merge_case(), "next_message": "<next@example.com>",
+            "second_message": "<second@example.com>", "second_thread": "thread-b",
+            "second_account": "user2", "first_address": "user1@example.com",
+            "first_key": "synthetic-action-1", "next_key": "synthetic-action-2",
+            "information_priority": 7, "action_priority": 4}
+
+def pool_tick_case():
+    return {'user':'user1@example.com','slug':'user1'}, {
+        'from':'billing@example.com','subject':'Payment reminder','uid':2,'gm_msgid':'2',
+        'message_id':'<next@example.com>','thread_key':'thread-a','body':'Invoice A-41 is overdue'}, {
+        'priority':'ACTION','label':'invoice','summary_zh':'Review synthetic invoice','tier':'fixture'}
+
+def initialized_config_rules():
+    return {'version':1,'by_address':{'billing@example.com':'Payments'},'by_domain':{},'by_list_id':{}}, {
+        'primary':['Payments','Scheduling']}
+
+def bytecode_probe(directory):
+    (directory/'synthetic_helper.py').write_text('value = 1\n',encoding='utf-8')
+    script=directory/'synthetic_owner.py'
+    script.write_text('import synthetic_helper\nprint(\'{"ok": true}\')\n',encoding='utf-8')
+    return script
+
+
+def archived_notification():
+    row = pool_merge_case()
+    row.update(kind='event', state='cancelled')
+    row['ext']['x_email_monitor_notification_archive'] = {'reason':'historical-information'}
+    return row
+
+
 def repo_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -1094,3 +1215,44 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def quality_review_response_cases(taxonomy, label):
+    """Synthetic complete and invalid responses for the standalone label reviewer."""
+    clean = {'n': 1, 'wrong': False, 'clause': '', 'should_be': ''}
+    wrong = {'n': 1, 'wrong': True, 'clause': taxonomy, 'should_be': label}
+    return {
+        'clean': {'findings': [clean]},
+        'wrong': {'findings': [wrong]},
+        'invalid': [None, [], {}, {'findings': None}, {'findings': []},
+                    {'findings': 'unparsed'}, {'findings': [None]},
+                    {'findings': [clean, clean]},
+                    {'findings': [{**clean, 'n': 0}]},
+                    {'findings': [{**clean, 'n': 2}]},
+                    {'findings': [{**clean, 'n': True}]},
+                    {'findings': [{**clean, 'wrong': 'false'}]},
+                    {'findings': [{**clean, 'clause': None}]},
+                    {'findings': [{**clean, 'should_be': []}]},
+                    {'findings': [{**wrong, 'clause': 'invented synthetic clause'}]},
+                    {'findings': [{**wrong, 'should_be': 'unconfigured-synthetic-label'}]}],
+    }
+
+
+def topic_transport_failure_cases():
+    """Synthetic provider failures that must remain distinct from abstentions."""
+    return [
+        {"error": "provider deadline exceeded", "reason": "provider deadline exceeded"},
+        {"error": "response did not match schema", "reason": "response did not match schema"},
+        {"error": None, "reason": "installed llmcall returned no usable result"},
+    ]
+
+
+def scanner_command_cases():
+    """Only ordinary read-only scans may use the invoking scanner profile."""
+    return [
+        {"arguments": ["--tree"], "allowed": True},
+        {"arguments": ["--tree", "--history"], "allowed": True},
+        {"arguments": [], "allowed": False},
+        {"arguments": ["grant", "--token", "synthetic-token"], "allowed": False},
+        {"arguments": ["--tree", "--history", "--unknown-option"], "allowed": False},
+    ]

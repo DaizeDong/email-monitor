@@ -212,7 +212,13 @@ def write(path, content, force):
         print("  SKIP (exists): %s" % path)
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
+    # Check the opened file before truncation so hardlink aliases keep their bytes.
+    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags, 0o666)
+    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as f:
+        if os.fstat(f.fileno()).st_nlink > 1:
+            raise ValueError("Refusing to overwrite a hardlinked configuration file: %s" % path)
+        f.truncate(0)
         f.write(content)
     print("  wrote: %s" % path)
 
@@ -240,8 +246,11 @@ def main():
     print("Init email-monitor companion config (Mode B) at %s" % out)
     print("Discovery env var: %s  (fallback %s)" % (env_var(), default_dir()))
 
-    write(os.path.join(out, "registry.json"),
-          json.dumps(REGISTRY, indent=2, ensure_ascii=False) + "\n", a.force)
+    try:
+        write(registry_path, json.dumps(REGISTRY, indent=2, ensure_ascii=False) + "\n", a.force)
+    except (OSError, ValueError) as error:
+        print("Cannot initialize registry: " + str(error))
+        return 1
     write(os.path.join(out, ".gitignore"), GITIGNORE, a.force)
     write(os.path.join(out, "rules", "classification.yaml"), CLASSIFICATION_YAML, a.force)
     write(os.path.join(out, "rules", "project_vocab.yaml"), PROJECT_VOCAB_YAML, a.force)

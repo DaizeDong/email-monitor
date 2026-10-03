@@ -8,8 +8,11 @@ to the mailbox. Each test names the failure it catches.
 """
 import os
 import sys
+import json
+from pathlib import Path
 
 import pytest
+from private_storage_helpers import make_repository
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
@@ -38,6 +41,8 @@ def test_the_flag_is_honoured(tmp_path):
 
 def test_disabled_run_says_so_and_reviews_nothing(tmp_path, capsys):
     # A silent exit 0 would be indistinguishable from "reviewed everything, all clean".
+    fixture = json.loads((Path(__file__).parent/'reliability.json').read_text(encoding='utf-8'))
+    make_repository(tmp_path)
     p = tmp_path / "registry.json"
     p.write_text('{"quality_review": {"enabled": false}}', encoding="utf-8")
     rc = qr.main(["--account", "acct1", "--user", "user1@example.com", "--registry", str(p)])
@@ -151,14 +156,14 @@ def test_fetch_parses_from_and_subject_and_skips_the_count_line():
     assert got[1] == ("b@y.example", "Second | with pipe")
 
 
-def test_fetch_returns_empty_on_tool_failure():
+def test_fetch_returns_unavailable_on_tool_failure():
     def runner(args, env):
         class P:
             returncode = 1
             stdout = ""
         return P()
 
-    assert qr.fetch_labelled("u@x", "L", 0, None, runner=runner) == []
+    assert qr.fetch_labelled("u@x", "L", 0, None, runner=runner) is None
 
 
 # ---------- the two reviewer errors the first real run produced ----------

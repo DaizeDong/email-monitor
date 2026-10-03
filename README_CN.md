@@ -47,6 +47,27 @@ agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各�
 git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
+使用 Python 3.11 或更新版本，在心跳任务所选的解释器中安装依赖：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+llmcall 的 Git 来源需要通过主机已有的凭据或 SSH 配置获得访问权限。匿名访问可能返回
+“Repository not found”。PyPI 上的 `llmcall` 属于另一个项目，不能用它替代这里的依赖。
+
+如果主机提供了已批准的 llmcall wheel，可以改用下面的安装方式，不再运行上面的 requirements
+命令。请把示例路径换成主机实际提供的文件：
+
+```bash
+python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
+python -m pip install "tzdata; sys_platform == 'win32'"
+python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"
+```
+
+即使已经装好 wheel，requirements 命令仍会访问其中声明的 Git 来源。配置 doctor 会检查所选解释器。
+路由、凭据、超时和回退仍由已安装的主机包负责，安装 Email Monitor 不会替你配置这些内容。
+
 还需一个经过 PRIVATE 验证的 Git 伴生仓 `email-monitor-config`，存放账户、规则、模板、
 纳入版本管理的运行 DATA 和 DPAPI 指针，凭据单独保存。
 详见[摘要与部署说明](skills/email-monitor/reference/summary-and-deploy.md)。

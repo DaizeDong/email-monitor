@@ -151,6 +151,7 @@ def parse_header_fetch(raw_headers, uid, gm_msgid=None, gm_thrid=None):
         "subject": subj,
         "date": date,
         "list_unsubscribe": lu,
+        "list_id": dec(msg.get("List-ID", "")),
         "body": extract_body(msg),
     }
 
@@ -197,15 +198,8 @@ def load_state(path):
 def save_state(path, state):
     if not path:
         return
-    from em_runtime import prove_private
-    prove_private(path)
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    from em_runtime import atomic_write
+    atomic_write(path, json.dumps(state, ensure_ascii=False, indent=2))
 
 
 # ---------- live IMAP (thin; logic above is what tests cover) ----------
@@ -227,6 +221,8 @@ def run_once(user, folder, cursor, max_batch=400, app_pw=None):
         if typ != "OK":
             raise RuntimeError("select %s failed: %r" % (folder, data))
         status, sd = M.status(folder, "(UIDVALIDITY UIDNEXT)")
+        if status != "OK":
+            raise RuntimeError("IMAP STATUS failed")
         sd0 = sd[0].decode() if sd and sd[0] else ""
         uidvalidity = int(re.search(r"UIDVALIDITY (\d+)", sd0).group(1))
         uidnext = int(re.search(r"UIDNEXT (\d+)", sd0).group(1))
@@ -236,22 +232,28 @@ def run_once(user, folder, cursor, max_batch=400, app_pw=None):
             # Full message (PEEK -> no \\Seen) so the classifier agent gets the real body.
             typ, fd = M.uid("FETCH", "%d:%d" % (lo, hi),
                             "(X-GM-MSGID X-GM-THRID BODY.PEEK[])")
-            if typ == "OK":
-                for item in fd:
-                    if not isinstance(item, tuple):
-                        continue
-                    meta, raw = item[0], item[1]
-                    uid_m = re.search(rb"UID (\d+)", meta)
-                    uid = int(uid_m.group(1)) if uid_m else None
-                    gm_msgid = _x_attr(meta, "X-GM-MSGID")
-                    gm_thrid = _x_attr(meta, "X-GM-THRID")
-                    if uid is None:
-                        continue
-                    rec = parse_header_fetch(raw, uid, gm_msgid, gm_thrid)
-                    records.append(rec)
-                    fetched.append(uid)
+            if typ != "OK":
+                raise RuntimeError("IMAP FETCH failed")
+            for item in fd or []:
+                if not isinstance(item, tuple):
+                    continue
+                meta, raw = item[0], item[1]
+                uid_m = re.search(rb"UID (\d+)", meta)
+                uid = int(uid_m.group(1)) if uid_m else None
+                gm_msgid = _x_attr(meta, "X-GM-MSGID")
+                gm_thrid = _x_attr(meta, "X-GM-THRID")
+                if uid is None:
+                    raise RuntimeError("IMAP FETCH returned a message without a UID")
+                if not lo <= uid <= hi:
+                    raise RuntimeError("IMAP FETCH returned a UID outside the requested range")
+                rec = parse_header_fetch(raw, uid, gm_msgid, gm_thrid)
+                records.append(rec)
+                fetched.append(uid)
         new_cursor = advance_cursor(uidvalidity, uidnext, fetched,
                                     int(cursor.get("last_uid", 0) or 0), rebaselined)
+        if lo is not None:
+            # Successful FETCH has observed the entire bounded range, including expunged UIDs.
+            new_cursor["last_uid"] = max(new_cursor["last_uid"], hi)
         return records, new_cursor
     finally:
         try:
