@@ -32,3 +32,5 @@ jobs:
         with:
           python-version: '3.x'
       - uses: ./guards/ci/pii-guard
+        env:
+          PYTEST_ADDOPTS: "--confcutdir=${{ github.workspace }}/guards -p no:cacheprovider"

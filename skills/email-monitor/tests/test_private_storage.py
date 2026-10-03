@@ -78,10 +78,17 @@ def test_source_destination_refused_before_git_or_visibility():
 
 
 @pytest.mark.parametrize('rule', ['', *DATA['unsafe_ssh_rules'], *DATA['unsafe_transport_rules']])
-def test_ssh_transport_policy_is_shared_and_never_executes_commands(proof, rule):
+def test_ssh_transport_policy_is_shared_and_never_executes_commands(proof, rule, monkeypatch):
     ssh = proof.parent / '.ssh/config'
     ssh.parent.mkdir()
     ssh.write_text('Host ' + DATA['alias'] + '\nHostName github.com\n' + rule + '\n', encoding='utf-8')
+    system_ssh = proof.parent / 'ssh_config'
+    system_ssh.write_text('', encoding='utf-8')
+    # Isolate config discovery while retaining the real parser and PRIVATE proof.
+    monkeypatch.setattr(runtime._storage_api(), '_ssh_config_sources', lambda: {
+        'paths': [str(ssh), str(system_ssh)],
+        'chains': [(str(ssh), str(system_ssh))],
+    })
     (proof / '.git/config').write_text('[core]\nrepositoryformatversion = 0\nbare = false\n'
         '[remote "origin"]\nurl = git@' + DATA['alias'] + ':' + DATA['slug'] + '.git\n', encoding='utf-8')
     if rule:
