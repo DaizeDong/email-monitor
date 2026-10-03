@@ -20,3 +20,5 @@ jobs:
         with:
           python-version: '3.x'
       - uses: ./style/ci/load-budget
+        env:
+          PYTEST_ADDOPTS: "--confcutdir=${{ github.workspace }}/style -p no:cacheprovider"
