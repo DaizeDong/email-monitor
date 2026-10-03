@@ -13,10 +13,13 @@ consume it. That is the seam where the generator and its consumer drifted apart 
 test that only imports init_config without running it end to end through the real loader would
 not have caught it.
 """
+import copy
 import json
 import os
 import subprocess
 import sys
+
+import pytest
 
 TESTS_DIR = os.path.dirname(__file__)
 SCRIPTS = os.path.abspath(os.path.join(TESTS_DIR, "..", "..", "..", "scripts"))
@@ -59,6 +62,7 @@ def test_generator_output_is_consumable_by_em_topic_load_config(tmp_path, monkey
 
     # Fresh out of the generator, nothing is configured yet: load_config must stay inert
     # rather than raise, exactly like the "not initialised" case in test_topic_config.py.
+    monkeypatch.delenv("EMAIL_MONITOR_CONFIG", raising=False)
     monkeypatch.setenv("EMAIL_MONITOR_CONFIG_DIR", str(out))
     assert em_topic.load_config("primary") is None
 
@@ -89,6 +93,53 @@ def test_write_clobbers_with_force(tmp_path):
     init_config.write(str(p), "first\n", force=False)
     init_config.write(str(p), "second\n", force=True)
     assert p.read_text(encoding="utf-8") == "second\n"
+
+
+@pytest.mark.parametrize(
+    ("hardlinked", "force", "expected_exit"),
+    [(True, True, 1), (True, False, 0), (False, True, 0), (False, False, 0)],
+    ids=["hardlink-force", "hardlink-preserve", "regular-force", "regular-preserve"],
+)
+def test_initializer_preserves_external_hardlink_content(
+    tmp_path, monkeypatch, hardlinked, force, expected_exit
+):
+    with open(os.path.join(TESTS_DIR, "drafting.json"), encoding="utf-8") as handle:
+        fixture = json.load(handle)
+    registry = copy.deepcopy(init_config.REGISTRY)
+    registry["draft"] = fixture["alternate_config"]
+    original = (json.dumps(registry, indent=2) + "\n").encode("utf-8")
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(original)
+    out = tmp_path / "selected"
+    out.mkdir()
+    target = out / "registry.json"
+    if hardlinked:
+        os.link(outside, target)
+        assert target.stat().st_nlink == 2
+    else:
+        target.write_bytes(original)
+    outside_before = outside.stat()
+    monkeypatch.setattr(
+        sys, "argv", ["init_config.py", "--out", str(out)] + (["--force"] if force else [])
+    )
+
+    exit_code = init_config.main()
+
+    assert outside.read_bytes() == original
+    outside_after = outside.stat()
+    assert (outside_after.st_dev, outside_after.st_ino) == (
+        outside_before.st_dev, outside_before.st_ino
+    )
+    assert exit_code == expected_exit
+    if hardlinked:
+        assert os.path.samefile(outside, target)
+        assert target.stat().st_nlink == 2
+    if hardlinked and force:
+        assert list(out.iterdir()) == [target]
+    elif force:
+        assert json.loads(target.read_text(encoding="utf-8")) == init_config.REGISTRY
+    else:
+        assert target.read_bytes() == original
 
 
 def test_running_generator_twice_is_idempotent_and_does_not_corrupt(tmp_path):

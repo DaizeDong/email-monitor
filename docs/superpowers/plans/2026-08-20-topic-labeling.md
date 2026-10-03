@@ -1,5 +1,13 @@
 # Topic Labeling Implementation Plan
 
+> Historical design record, superseded by the current entrypoints in
+> `skills/email-monitor/scripts/`. Do not execute these checkboxes or copy their
+> implementation sketches into production. In particular, the old filter-export
+> sketch below lacks today's PRIVATE input/output proof and atomic publication.
+> Use the current `em_filters.py` CLI: both sender map and XML output must belong
+> to verified PRIVATE companions. Missing proof is a write failure. This current
+> rule supersedes the old blanket instruction that all uninitialized commands exit zero.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the skill one judgement kernel that answers "what is this mail about", used identically by the incremental watcher and by a batch pass over historical mail, so the labelling standard cannot exist in two drifting copies.

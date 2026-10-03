@@ -13,8 +13,14 @@ import tempfile
 import types
 import importlib.util
 import json
-import configparser
+import shutil
 from pathlib import Path
+
+# Ordinary repository scans use the invoking operator's policy metadata. Runtime
+# tests keep the synthetic profile below; only the exact read-only scans restore it.
+_SCANNER_PROFILE = {name: os.environ.get(name) for name in ("HOME", "USERPROFILE")}
+_SCANNER_GIT = {name: value for name, value in os.environ.items()
+                if name.upper().startswith('GIT_')}
 
 _SANDBOX = os.path.join(tempfile.gettempdir(), "email-monitor-tests")
 os.makedirs(os.path.join(_SANDBOX, "state"), exist_ok=True)
@@ -39,6 +45,7 @@ for variable, relative in {
 }.items():
     os.environ[variable] = str(_SANDBOX / relative)
 os.environ.pop("GMAIL_APP_PW", None)
+os.environ.pop("EMAIL_MONITOR_REMINDER_CLI", None)
 sys.dont_write_bytecode = True
 
 # Synthetic PRIVATE Git metadata makes ordinary logger tests exercise the actual
@@ -48,11 +55,20 @@ _spec = importlib.util.spec_from_file_location("email_fixture_generator", _SOURC
 _generator = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_generator)
 _input = _generator.reliability_cases()
-(_SANDBOX / ".git").mkdir()
-(_SANDBOX / ".git" / "config").write_text(
-    '[remote "origin"]\nurl = ' + _input["private_remote"], encoding="utf-8")
+for name, content in _generator.private_repository_fixture().items():
+    target = _SANDBOX / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
 (_SANDBOX / ".pii-guard").mkdir()
-(_SANDBOX / ".pii-guard" / "visibility.json").write_text(json.dumps(_input["visibility"]), encoding="utf-8")
+from datetime import datetime, timezone
+(_SANDBOX / ".pii-guard" / "visibility.json").write_text(json.dumps({
+    **_input["visibility"], '_refreshed': datetime.now(timezone.utc).isoformat(),
+}), encoding="utf-8")
+for name in list(os.environ):
+    if name.upper().startswith('GIT_') or name.upper().endswith('_PROXY'):
+        os.environ.pop(name)
+os.environ.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
+                  GIT_CONFIG_SYSTEM=os.devnull, GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
 
 
 def _blocked(*args, **kwargs):
@@ -63,6 +79,77 @@ socket.create_connection = _blocked
 socket.socket.connect = _blocked
 socket.socket.connect_ex = _blocked
 _real_popen = subprocess.Popen
+_REMINDER_PATH = None
+_GUARD_SCANNER = _SOURCE / "guards/tools/pii_guard.py"
+
+
+def pytest_addoption(parser):
+    parser.addoption("--reminder-source", help="Copy the real reminder Python modules into the disposable test HOME")
+    parser.addoption("--guards-source", help="Use this Guards kit for the original read-only repository scans")
+
+
+def pytest_configure(config):
+    global _REMINDER_PATH, _GUARD_SCANNER
+    guards_source = config.getoption("--guards-source")
+    if guards_source:
+        _GUARD_SCANNER = Path(guards_source).resolve() / "tools/pii_guard.py"
+        if not _GUARD_SCANNER.is_file():
+            raise ValueError("--guards-source must contain tools/pii_guard.py")
+    source = config.getoption("--reminder-source")
+    if not source:
+        return
+    source = Path(source).resolve()
+    target = _SANDBOX / "CodesClaude/schedule-reminder/skills/schedule-reminder/scripts"
+    target.mkdir(parents=True)
+    for name in ("reminder.py", "store.py"):
+        if not (source / name).is_file():
+            raise ValueError("--reminder-source must contain reminder.py and store.py")
+    for script in source.rglob('*.py'):
+        destination = target / script.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(script, destination)
+    _REMINDER_PATH = target / "reminder.py"
+
+
+def _native_test_command(command):
+    if len(command) < 4 or command[:2] != [sys.executable, "-B"]:
+        return False
+    script = Path(command[2]).resolve()
+    if script == _REMINDER_PATH:
+        if len(command) < 8 or command[3] != "--db" or command[5:7] != ["--actor", "email-monitor"]:
+            return False
+        database = Path(command[4]).resolve()
+        return database.is_relative_to(_TEMP_ROOT) and command[7] in {
+            "init", "list", "get", "add", "update", "transition", "done", "block"}
+    # The bytecode probe is generated in a test directory and only imports a constant.
+    return (script.is_relative_to(_TEMP_ROOT) and script.name == "synthetic_owner.py"
+            and script.read_text(encoding="utf-8") ==
+            'import synthetic_helper\nprint(\'{"ok": true}\')\n'
+            and (script.parent / "synthetic_helper.py").read_text(encoding="utf-8") == 'value = 1\n')
+
+
+def _is_guard_scan(command):
+    return (len(command) >= 3
+            and Path(str(command[0])).resolve() == Path(sys.executable).resolve()
+            and Path(str(command[1])).resolve() == _SOURCE / "guards/tools/pii_guard.py"
+            and command[2:] in (["--tree"], ["--tree", "--history"]))
+
+
+def _read_only_git(command):
+    if not command or Path(str(command[0])).stem.lower() != 'git':
+        return False
+    arguments = command[1:]
+    while len(arguments) >= 2 and arguments[0] in ('-C', '-c'):
+        if arguments[0] == '-c' and arguments[1] != 'core.excludesFile=' + os.devnull:
+            return False
+        arguments = arguments[2:]
+    if not arguments:
+        return False
+    if arguments[0] == 'remote':
+        return len(arguments) == 1 or (len(arguments) >= 3 and arguments[1] == 'get-url')
+    if arguments[0] == 'config':
+        return arguments[1:] == ['--null', '--list']
+    return arguments[0] in {'rev-parse', 'check-ignore', 'ls-files', 'log', 'show', 'diff'}
 
 
 class _SafePopen(_real_popen):
@@ -70,65 +157,31 @@ class _SafePopen(_real_popen):
 
     def __init__(self, args, *pos, **kw):
         command = list(args) if isinstance(args, (list, tuple)) else []
-        read_only_git = command and Path(str(command[0])).stem.lower() == "git" and any(
-            item in command for item in ("rev-parse", "check-ignore", "ls-files", "log", "show", "diff")
-        )
-        guard_scan = len(command) > 1 and Path(str(command[1])).resolve() == _SOURCE / "guards" / "tools" / "pii_guard.py"
-        if not (read_only_git or guard_scan):
+        read_only_git = _read_only_git(command)
+        guard_scan = _is_guard_scan(command)
+        if not (read_only_git or guard_scan or _native_test_command(command)):
             _blocked()
+        if guard_scan:
+            command[1] = str(_GUARD_SCANNER)
+            args = command
+            env = dict(os.environ if kw.get("env") is None else kw["env"])
+            for name in list(env):
+                if name.upper().startswith('GIT_'):
+                    env.pop(name)
+            env.update(_SCANNER_GIT)
+            for name, value in _SCANNER_PROFILE.items():
+                if value is None:
+                    env.pop(name, None)
+                else:
+                    env[name] = value
+            kw["env"] = env
         super().__init__(args, *pos, **kw)
 
 
 subprocess.Popen = _SafePopen
-_real_run = subprocess.run
 _TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
 
 
-def _offline_metadata_run(args, *pos, **kw):
-    """Supply Git/gh transport for generated repositories, never ambient metadata."""
-    command = list(args) if isinstance(args, (list, tuple)) else []
-    if len(command) >= 5 and command[:2] == ['git', '-C']:
-        requested = Path(command[2]).resolve()
-        if requested.is_relative_to(_TEMP_ROOT):
-            if command[3:] == ['-c', 'core.excludesFile=' + os.devnull,
-                               'check-ignore', '--no-index', '--verbose', '-z', '--stdin']:
-                return _real_run(args, *pos, **kw)
-            root = next((p for p in (requested, *requested.parents)
-                         if p.is_relative_to(_TEMP_ROOT) and (p/'.git').exists()), None)
-            try:
-                if root is None:
-                    raise ValueError('synthetic directory is unversioned')
-                metadata = root/'.git'
-                if metadata.is_file():
-                    pointer = metadata.read_text(encoding='utf-8')
-                    if not pointer.startswith('gitdir:'):
-                        raise ValueError('invalid synthetic worktree pointer')
-                    metadata = (root/pointer.split(':', 1)[1].strip()).resolve()
-                if not metadata.is_relative_to(_TEMP_ROOT):
-                    raise ValueError('synthetic worktree escaped test storage')
-                if (metadata/'commondir').is_file():
-                    metadata = (metadata/(metadata/'commondir').read_text().strip()).resolve()
-                if not metadata.is_relative_to(_TEMP_ROOT):
-                    raise ValueError('synthetic common directory escaped test storage')
-                parser = configparser.ConfigParser(interpolation=None)
-                parser.read_string((metadata/'config').read_text(encoding='utf-8'))
-                remote = parser.get('remote "origin"', 'url')
-                if command[3:] == ['rev-parse', '--show-toplevel']:
-                    return subprocess.CompletedProcess(args, 0, str(root), '')
-                if command[3:] == ['remote', 'get-url', 'origin']:
-                    return subprocess.CompletedProcess(args, 0, remote, '')
-            except (OSError, ValueError, configparser.Error):
-                return subprocess.CompletedProcess(args, 128, '', 'invalid synthetic Git repository')
-            return _blocked()
-    if command[:3] == ['gh', 'repo', 'view']:
-        slug = _input['private_proof']['slug']
-        if len(command) == 6 and command[3] == slug and command[4:] == ['--json', 'nameWithOwner,visibility']:
-            return subprocess.CompletedProcess(args, 0, json.dumps({'nameWithOwner': slug, 'visibility': 'PRIVATE'}), '')
-        return _blocked()
-    return _real_run(args, *pos, **kw)
-
-
-subprocess.run = _offline_metadata_run
 llmcall = types.ModuleType("llmcall")
 llmcall.call = _blocked
 llmcall.active_chain = lambda: ()

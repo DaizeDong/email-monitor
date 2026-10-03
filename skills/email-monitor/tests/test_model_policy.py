@@ -18,12 +18,13 @@ POLICY = FIX["model_policy"]
 
 @pytest.fixture
 def transport(monkeypatch):
+    from test_standalone_cli_boundary import RESPONSES
     calls = []
 
     def call(prompt, **kwargs):
         calls.append((prompt, kwargs))
         return SimpleNamespace(provider="synthetic-route", data={
-            **POLICY["verdict"], "labels": [], "findings": []})
+            **POLICY["verdict"], "labels": [], "findings": RESPONSES['clean']['findings']})
 
     monkeypatch.setattr(classifier, "_llmcall", call)
     monkeypatch.setattr(tick.llmcall, "call", call)

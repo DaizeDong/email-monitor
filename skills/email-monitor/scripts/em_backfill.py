@@ -87,10 +87,10 @@ def plan(sender_map, allowed_labels, type_labels):
     """
     by_label, skipped = {}, []
     allowed = set(allowed_labels or [])
-    types = set(type_labels or [])
+    types = {label.casefold() for label in (type_labels or [])}
 
     for addr, label in sorted((sender_map.get("by_address") or {}).items()):
-        if label in types:
+        if label.casefold() in types:
             raise UnsafeBackfill(
                 "sender %r maps to type label %r; a type label is a property of the "
                 "individual message and cannot be settled by sender" % (addr, label))
@@ -142,7 +142,7 @@ def run_tool(user, query, label, commit, app_pw=None, runner=None):
     if getattr(p, "returncode", 1) != 0:
         return 0, False
     m = re.search(r"matched (\d+) messages", out)
-    return (int(m.group(1)) if m else 0), True
+    return (int(m.group(1)), True) if m else (0, False)
 
 
 def main(argv=None):

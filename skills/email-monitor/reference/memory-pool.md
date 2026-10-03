@@ -35,9 +35,11 @@ The database and action ledger are versioned DATA in a verified PRIVATE Git comp
    classification with topic models off, as described in `monitor-and-classify.md`.
 2. Persist the scoped action key and payload before dispatch. Mark the action uncertain before
    calling `em_pool.upsert`; `--dry` only prints the plan and never calls the pool write adapter.
-3. Find an existing thread within the account. Reusing the same action key is a no-op; a new
-   message in that thread updates ext metadata and increments its message count. Otherwise add
-   a new item. `ERR_BUSY` uses bounded exponential backoff.
+3. Match retained message identity, then the account-scoped thread or a reviewed cross-thread
+   rule. Such rules require account, sender, exact subject, nonempty entity tokens and an expiry.
+   Preserve consolidation aliases and manually maintained summaries. A message replay does not
+   increment the count or reopen a finished obligation. New actionable mail can reopen an
+   explicitly archived information event. `ERR_BUSY` uses bounded exponential backoff.
 4. Complete the pool action only when the returned item confirms the same action key. Ambiguous
    results stay uncertain for reconciliation; a moved mail cursor cannot discard pending work.
 5. For later manual workflow changes, use transition/done/block instead of `update` on state.
@@ -46,10 +48,14 @@ The database and action ledger are versioned DATA in a verified PRIVATE Git comp
 
 ## Dual idempotency gate
 
-The heartbeat's action key binds account, mailbox, UIDVALIDITY, Message-ID and action; the pool
-stores it as `x_email_monitor_action_key`. Legacy direct callers without that argument retain
-`email-monitor:<Message-ID>` as their base idempotency key. A second gate merges thread items;
-keyed heartbeat calls scope that lookup to the account. See `delivery-state.md` for retry rules.
+The heartbeat's action key binds account, mailbox, UIDVALIDITY, Message-ID and action. The pool
+retains current and prior action keys so an older message can still return its confirmation after
+later mail advances the thread. A replay of legacy mail can add this receipt binding without
+changing the obligation. Direct callers without an action key use an account/thread key and
+retained Message-IDs. Adapter locking covers the read/update sequence across local processes.
+Account slugs remain compatible with reviewed rules; the current email address is retained as
+`x_email_monitor_account_user`. The private pending payload includes original subject/body text
+for reviewed entity matching. See `delivery-state.md` for retry rules.
 
 The base owns the database format. Keep its working database on local storage inside the PRIVATE
 companion and follow its consistent-snapshot procedure for backups; do not copy live WAL files

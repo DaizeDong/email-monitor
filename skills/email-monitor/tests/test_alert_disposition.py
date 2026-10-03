@@ -62,20 +62,22 @@ def caller(harness, monkeypatch, request):
     else:
         _configured_registry(harness, monkeypatch)
         state_path = harness.companion / 'data' / 'state' / 'summary.state.json'
-        monkeypatch.setattr(em_summary.em_pool, 'due', lambda *a: {'items': [
+        monkeypatch.setattr(em_summary.em_pool, 'due', lambda *a, **kw: {'items': [
             {'id': CASES['event_id'], 'ext': {'x_email_monitor_kind': 'daily-summary'}}]})
-        monkeypatch.setattr(em_summary, 'assemble', lambda *a: CASES['message'])
+        monkeypatch.setattr(em_summary, 'assemble', lambda *a, **kw: CASES['message'])
         monkeypatch.setattr(sys, 'argv', ['em_summary.py', '--config', str(harness.companion / 'registry.json')])
         run = em_summary.main
         def steps(state):
             return next(iter(state['summary_runs'].values()))['steps']
 
     effects = []
-    def mark_done(reminder, db, item_id):
+    def mark_done(reminder, db, item_id, **kwargs):
+        assert kwargs['python'] == sys.executable
         assert steps(json.loads(state_path.read_text(encoding='utf-8')))[0]['status'] == 'completed'
         effects.append('mark_done')
         return {'id': item_id, 'state': 'done'}
-    def arm_next(reminder, db, verb, args):
+    def arm_next(reminder, db, verb, args, **kwargs):
+        assert kwargs['python'] == sys.executable
         assert steps(json.loads(state_path.read_text(encoding='utf-8')))[1]['status'] == 'completed'
         effects.append('arm_next')
         assert verb == 'add'

@@ -6,8 +6,11 @@ looks like it worked. So most of these assert a REFUSAL: the type-label guard, t
 allowed-set filter, the additive-only posture, and dry-by-default. Each one is
 written so that removing the guard it covers turns it red.
 """
+import json
 import os
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +18,52 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 
 import em_backfill  # noqa: E402
+
+RELIABILITY = json.loads(Path(__file__).with_name("reliability.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("case_index", range(4))
+@pytest.mark.parametrize("allowed", [True, False])
+def test_backfill_type_guard_is_case_insensitive(case_index, allowed):
+    case = RELIABILITY["type_map"]
+    label = case["mapped_types"][case_index]
+    mapping = {"by_address": {case["buckets"]["by_address"]: label}}
+    with pytest.raises(em_backfill.UnsafeBackfill, match="type label"):
+        em_backfill.plan(mapping, [label] if allowed else [], case["types"])
+
+
+def test_backfill_source_label_keeps_exact_spelling():
+    case = RELIABILITY["type_map"]
+    source, address = case["source"], case["buckets"]["by_address"]
+    mapping = {"by_address": {address: source}}
+    assert em_backfill.plan(mapping, [source], case["types"]) == ({source: [address]}, [])
+    planned, skipped = em_backfill.plan(mapping, [source.casefold()], case["types"])
+    assert planned == {}
+    assert skipped == [(address, source, "not in this account's allowed set")]
+
+
+@pytest.mark.parametrize("case_index", range(6))
+def test_backfill_requires_an_observed_helper_count(case_index):
+    case = RELIABILITY["backfill_tool_results"][case_index]
+    account = RELIABILITY["account"]
+    runner = lambda args, env: SimpleNamespace(stdout=case["stdout"], returncode=case["returncode"])
+    assert em_backfill.run_tool(account["user"], "synthetic", RELIABILITY["type_map"]["source"],
+                                commit=True, runner=runner) == (case["matched"], case["ok"])
+
+
+def test_backfill_main_reports_unobserved_count_as_failure(monkeypatch, capsys):
+    case = RELIABILITY["type_map"]
+    account = RELIABILITY["account"]
+    config = {"sender_map": {"by_address": {case["buckets"]["by_address"]: case["source"]}},
+              "allowed_labels": [case["source"]], "type_labels": case["types"]}
+    monkeypatch.setenv("GMAIL_APP_PW", RELIABILITY["helper_contract"]["receipt_id"])
+    monkeypatch.setattr(em_backfill.em_topic, "load_config", lambda *args, **kwargs: config)
+    response = RELIABILITY["backfill_tool_results"][0]
+    monkeypatch.setattr(em_backfill.subprocess, "run", lambda *args, **kwargs:
+                        SimpleNamespace(stdout=response["stdout"], returncode=response["returncode"]))
+    assert em_backfill.main(["--account", account["slug"], "--user", account["user"], "--commit"]) == 1
+    output = capsys.readouterr().out
+    assert "FAILED" in output and "1 chunk failure(s)" in output
 
 
 MAP = {"by_address": {

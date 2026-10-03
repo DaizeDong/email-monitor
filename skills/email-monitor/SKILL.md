@@ -43,6 +43,12 @@ description: "Auto-monitor Gmail: classify new mail by importance, alert importa
 
 ## Workflow (thin, load the named reference shard only for the step you are on)
 
+Before creating a reminder, compare its obligation with existing records across sources.
+The pool adapter preserves account-scoped message identity and returns an existing result on
+replay. Cross-thread merges require a reviewed rule with account, sender, exact subject,
+nonempty entity/period tokens and an expiry. Keep those rules in the PRIVATE pool. Consolidation
+aliases route later mail to the retained obligation; completed obligations remain completed.
+
 | # | Step | Load | Code |
 |---|------|------|------|
 | 1 | Incremental watch + classify each new mail | `reference/monitor-and-classify.md` | `em_watch.py`, `em_agent_classify.py`, `em_classify.py` |

@@ -162,15 +162,17 @@ TOPIC_SCHEMA = {
 def _make_transport(timeout=None, log=None):
     """Adapt llmcall to the contract em_topic.judge expects.
 
-    llmcall never raises; it returns a falsy Result when the whole provider chain failed.
-    Converting that to None is what lets judge report `failed` (an outage) rather than
-    `unsure` (a taxonomy problem) -- those two states exist precisely to be told apart.
+    llmcall returns a falsy Result when its configured provider policy fails.
+    Raise its diagnostic so judge records a transport failure with the actual reason;
+    returning None would incorrectly describe every outage as an unparseable reply.
     mode="judge" is the right tier and already the default: read only, no MCP, deterministic.
     """
     em_runtime.reject_model_overrides(timeout=timeout)
     def _call(prompt):
         r = llmcall.call(prompt, schema=TOPIC_SCHEMA, mode="judge", log=log)
-        return r.data if r else None
+        if not r:
+            raise RuntimeError(getattr(r, "error", None) or "installed llmcall returned no usable result")
+        return r.data
     return _call
 
 
@@ -351,12 +353,13 @@ def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled
              summary=verdict.get("summary_zh", ""), account_label=acct.get("display_zh"))})
     if pool_enabled and priority in ("URGENT", "ACTION", "FYI"):
         add("pool", {"thread_key": record.get("thread_key", record["message_id"]),
+            "match_text": record.get("subject", "") + "\n" + record.get("body", ""),
             "title": derive_title(priority, semantic, record.get("subject", ""), verdict.get("summary_zh", "")),
             "kind": "task" if priority in ("URGENT", "ACTION") else "event",
             "due_at": verdict.get("due_at") or em_dates.normalize_due_at(verdict.get("due_raw"), base=record.get("date")),
             "priority": 2 if priority == "URGENT" else 4 if priority == "ACTION" else 7,
             "tags": ["acct:%s" % slug, semantic],
-            "ext_extra": {"account": user, "uid": record.get("uid"), "subject_raw": record.get("subject", ""),
+            "ext_extra": {"account": slug, "account_user": user, "uid": record.get("uid"), "subject_raw": record.get("subject", ""),
                           "from": record.get("from", ""), "label": label, "priority_tier": verdict.get("tier")}})
     if priority == "NOISE" and archive_enabled:
         add("archive", {"label": label})
@@ -626,7 +629,7 @@ def main():
                 report["daily_summary"] = {"status": "planned", "delivery": "not_measured"}
             else:
                 worker = subprocess.run(
-                    [runtime["python"], a.summary, "--config", config_path,
+                    [runtime["python"], a.summary, "--config", config_path, "--python", runtime["python"],
                      "--reminder", a.reminder, "--db", storage["db"]],
                     capture_output=True, text=True, encoding="utf-8", timeout=180, **_NOWINDOW)
                 try:

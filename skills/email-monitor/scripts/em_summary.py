@@ -11,7 +11,8 @@ Digest sections (Chinese): 待处理 / 等对方回复 / 草稿已备等你点�
 New tasks today / Archived today (count). No bodies, no PII beyond local titles already in the pool.
 
 Usage:
-  python em_summary.py --config <registry.json> [--db PATH] [--reminder PATH] [--now ISO] [--dry]
+  python em_summary.py --config <registry.json> [--python PATH] [--db PATH] [--reminder PATH] [--now ISO] [--dry]
+--python overrides the configured interpreter for every helper used by this worker.
 Stdlib only.
 """
 import argparse
@@ -49,9 +50,10 @@ def next_summary_utc(local_time="08:00", now=None):
     return tomorrow.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def assemble(reminder, db):
+def assemble(reminder, db, python=None):
     """Pull open/active items from the base and bucket them into a plain-text digest."""
-    res = em_pool._run(reminder, db, "list", ["--source", "email-monitor", "--active", "--limit", "200"])
+    res = em_pool._run(reminder, db, "list", ["--source", "email-monitor", "--active", "--limit", "200"],
+                       python=python)
     items = res.get("items", [])
     important, awaiting, drafted, newtoday = [], [], [], []
     today = datetime.datetime.now(tz=timezone.utc).date().isoformat()
@@ -89,6 +91,7 @@ def assemble(reminder, db):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
+    ap.add_argument("--python", help="override runtime.python for all subprocess adapters")
     ap.add_argument("--db", default=None)
     ap.add_argument("--reminder", default=em_pool.default_reminder_path())
     ap.add_argument("--now", default=None)
@@ -98,11 +101,13 @@ def main():
     report = {"status": "failed", "delivery": "not_measured", "reconciliation": "manual"}
     possible_effect = False
     try:
+        em_runtime.prove_private(a.config)
         with open(a.config, encoding="utf-8-sig") as handle:
             cfg = json.load(handle)
         companion = os.path.dirname(os.path.abspath(a.config))
-        em_runtime.prove_private(a.config)
         runtime = em_runtime.runtime_config(cfg, companion)
+        if a.python:
+            runtime['python'] = em_runtime.resolve_path(a.python, companion)
         storage, _ = em_runtime.storage_config(cfg, companion, db=a.db)
         if a.dry:
             report.update(status="planned", planned_actions=["assemble", "alert", "mark_done", "arm_next"])
@@ -125,7 +130,7 @@ def main():
                     raise ValueError("invalid summary step status")
                 if step["status"] == "completed" and em_actions.receipt_status(step["receipt"], step["key"], step["adapter"]) != "confirmed":
                     raise ValueError("summary completion is missing its receipt")
-        due = em_pool.due(a.reminder, storage["db"])
+        due = em_pool.due(a.reminder, storage["db"], python=runtime['python'])
         for item in due.get("items", []):
             if (item.get("ext") or {}).get("x_email_monitor_kind") != "daily-summary":
                 continue
@@ -133,7 +138,7 @@ def main():
             if run_key in runs:
                 continue
             next_at = next_summary_utc(cfg.get("daily_summary", {}).get("local_time", "08:00"))
-            plans = [("alert", {"message": assemble(a.reminder, storage["db"])}),
+            plans = [("alert", {"message": assemble(a.reminder, storage["db"], python=runtime['python'])}),
                      ("summary_mark_done", {"item_id": item["id"]}),
                      ("summary_arm_next", {"due_at": next_at})]
             runs[run_key] = {"steps": [{"key": run_key + ":" + adapter, "adapter": adapter,
@@ -155,7 +160,8 @@ def main():
                     if adapter == "alert":
                         receipt = em_alert.send(payload["message"], idempotency_key=key, python=runtime["python"])
                     elif adapter == "summary_mark_done":
-                        confirmed = em_pool.mark_done(a.reminder, storage["db"], payload["item_id"])
+                        confirmed = em_pool.mark_done(a.reminder, storage["db"], payload["item_id"],
+                                                      python=runtime['python'])
                         if isinstance(confirmed, dict) and confirmed.get("id") == payload["item_id"] and confirmed.get("state") == "done":
                             receipt = {"status": "confirmed", "idempotency_key": key,
                                        "adapter": adapter, "receipt_id": str(confirmed["id"])}
@@ -163,7 +169,8 @@ def main():
                         response = em_pool._run(a.reminder, storage["db"], "add", [
                             "--kind", "event", "--title", "每日邮件汇总", "--due-at", payload["due_at"],
                             "--source", "email-monitor", "--idempotency-key", key,
-                            "--ext", json.dumps({"x_email_monitor_kind": "daily-summary"})])
+                            "--ext", json.dumps({"x_email_monitor_kind": "daily-summary"})],
+                            python=runtime['python'])
                         item = response.get("item", {})
                         if item.get("id") and item.get("idempotency_key") == key and item.get("due_at") == payload["due_at"]:
                             receipt = {"status": "confirmed", "idempotency_key": key,

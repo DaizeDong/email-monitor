@@ -1,4 +1,6 @@
-# The headless LLM chain (codex -> cc -> claude) is the shared llmcall package.
+# Installed llmcall owns model routing, timeout and fallback policy.
+# This source requires authorized repository access. For an approved host wheel,
+# use the alternate installation commands in README.md; do not use the PyPI namesake.
 llmcall @ git+https://github.com/DaizeDong/llmcall.git
 
 # zoneinfo reads the SYSTEM tz database. Linux has one, Windows does not, and without it the

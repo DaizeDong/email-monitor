@@ -94,25 +94,39 @@ def test_account_scope_and_duplicate_redirect(monkeypatch):
     assert em_pool.find_thread('cli',None,'thread-a',account='user2') is None
 
 
-def test_failed_pool_write_keeps_cursor_and_dry_run_has_no_writes(monkeypatch,tmp_path):
+def test_failed_pool_write_retains_intent_and_dry_run_has_no_writes(monkeypatch,tmp_path):
     import em_tick
     account,message,verdict=fixtures.pool_tick_case()
-    writes=[]
+    from private_storage_helpers import make_repository
+    companion=tmp_path/'companion'
+    make_repository(companion)
+    saved=[]
+    calls=[]
     monkeypatch.setattr(em_tick,'resolve_app_pw',lambda *a:'synthetic-auth')
-    monkeypatch.setattr(em_tick,'log',lambda *a:None)
     monkeypatch.setattr(em_tick.em_watch,'load_state',lambda *a:{'cursors':{},'seen_gm_msgids':[]})
-    monkeypatch.setattr(em_tick.em_watch,'run_once',lambda *a:([message],{'last_uid':2,'uidvalidity':1}))
-    monkeypatch.setattr(em_tick.em_watch,'save_state',lambda *a:writes.append('cursor'))
-    monkeypatch.setattr(em_tick.em_alert,'send',lambda *a:writes.append('alert'))
+    monkeypatch.setattr(em_tick.em_watch,'run_once',lambda *a,**kw:([message],{'last_uid':2,'uidvalidity':1}))
+    monkeypatch.setattr(em_tick.em_watch,'save_state',lambda path,state:saved.append(copy.deepcopy(state)))
     monkeypatch.setattr(em_tick,'classify_records_parallel',lambda *a:[verdict])
-    def failed(*a,**kw):raise em_pool.PoolError('ERR_BUSY','synthetic failure')
+    def failed(*a,**kw):
+        calls.append(kw['idempotency_key'])
+        raise em_pool.PoolError('ERR_BUSY','synthetic failure')
     monkeypatch.setattr(em_pool,'upsert',failed)
-    result=em_tick.process_account(account,{},'cli',None,None,str(tmp_path),False)
-    assert result['error']=='pool_write_failed' and writes==[]
-    result=em_tick.process_account(account,{},'cli',None,None,str(tmp_path),True)
-    assert 'error' not in result and writes==[]
+    def run(dry):
+        return em_tick.process_account(account,{'discord_push_levels':[]},'cli',None,None,
+            str(companion/'state'),dry,agent_cfg={'mode':'heuristic'},log_path=str(companion/'run.log'))
+    result=run(False)
+    assert result['status']=='incomplete' and len(calls)==1
+    pending=list(saved[-1]['actions'].values())
+    assert len(pending)==1 and pending[0]['action']=='pool' and pending[0]['status']=='uncertain'
+    assert pending[0]['message_id']==message['message_id']
+    assert pending[0]['payload']['ext_extra']['account']==account['slug']
+    assert message['body'] in pending[0]['payload']['match_text']
+    before=copy.deepcopy(saved)
+    assert run(True)['status']=='planned'
+    assert saved==before and len(calls)==1
 
 
+@pytest.mark.skipif(not em_pool.available(), reason="schedule-reminder base not installed")
 def test_concurrent_adapter_calls_and_reviewed_cross_thread_merge(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     import json
@@ -142,3 +156,86 @@ def test_owner_cli_reads_do_not_add_files_to_installed_source(tmp_path,monkeypat
     before={p.name for p in tmp_path.iterdir()}
     assert em_pool._run(str(script),None,'list',[])=={'ok':True}
     assert {p.name for p in tmp_path.iterdir()}==before
+
+
+@pytest.mark.skipif(not em_pool.available(), reason="schedule-reminder base not installed")
+def test_durable_pool_receipts_survive_later_messages_and_legacy_replay(tmp_path):
+    cli=em_pool.default_reminder_path()
+    assert Path(cli).is_file(), 'Pass --reminder-source for native reminder integration'
+    db=str(tmp_path/'receipts.sqlite3')
+    native=fixtures.native_pool_case()
+    case=native['first']
+    def write(message,key):
+        return em_pool.upsert(cli,db,message,case['ext']['x_email_monitor_thread_key'],case['title'],
+            ext_extra={'account':case['ext']['x_email_monitor_account']},idempotency_key=key)
+    first=case['ext']['x_email_monitor_message_id']
+    assert write(first,None)['action']=='created'
+    receipt=write(first,native['first_key'])
+    assert receipt['status']=='confirmed'
+    assert write(native['next_message'],native['next_key'])['status']=='confirmed'
+    assert write(first,native['first_key'])==receipt
+    rows=em_pool._items(cli,db)
+    assert len(rows)==1 and rows[0]['ext']['x_email_monitor_msg_count']==2
+
+
+def test_reviewed_merge_rejects_empty_entity_constraint():
+    case=fixtures.pool_merge_case()
+    case['ext']['x_email_monitor_merge_rules'][0]['contains']=[]
+    with pytest.raises(em_pool.PoolError,match='ERR_MERGE_RULE'):
+        em_pool._matches_reviewed(case,{},'')
+
+
+@pytest.mark.skipif(not em_pool.available(), reason="schedule-reminder base not installed")
+def test_reviewed_cross_account_merge_retains_both_source_identities_and_priority(tmp_path):
+    import json
+    cli=em_pool.default_reminder_path()
+    db=str(tmp_path/'cross-account.sqlite3')
+    native=fixtures.native_pool_case()
+    case=native['first']
+    account=case['ext']['x_email_monitor_account']
+    thread=case['ext']['x_email_monitor_thread_key']
+    original=case['ext']['x_email_monitor_message_id']
+    first=em_pool.upsert(cli,db,original,thread,case['title'],kind='event',priority=native['information_priority'],
+                         ext_extra={'account':account})['item']
+    rule=copy.deepcopy(case['ext']['x_email_monitor_merge_rules'][0])
+    rule['account']=native['second_account']
+    em_pool._run(cli,db,'update',['--id',first['id'],'--ext',json.dumps({'x_email_monitor_merge_rules':[rule]})])
+    second=em_pool.upsert(cli,db,native['second_message'],native['second_thread'],case['title'],priority=native['action_priority'],
+        ext_extra={'account':native['second_account'],'from':rule['sender'],'subject_raw':rule['subject']})['item']
+    assert second['id']==first['id'] and second['priority']==native['action_priority'] and second['kind']=='task'
+    replay=em_pool.upsert(cli,db,original,thread,case['title'],ext_extra={'account':account})
+    assert replay['action']=='replayed' and replay['item']['id']==first['id']
+    assert em_pool.find_thread(cli,db,thread,account=account)['id']==first['id']
+    assert em_pool.find_thread(cli,db,native['second_thread'],account=native['second_account'])['id']==first['id']
+    assert len(em_pool._items(cli,db))==1
+
+
+@pytest.mark.skipif(not em_pool.available(), reason="schedule-reminder base not installed")
+def test_prior_address_scoped_threads_accept_the_same_accounts_slug(tmp_path):
+    native=fixtures.native_pool_case()
+    case=native['first']
+    cli=em_pool.default_reminder_path()
+    db=str(tmp_path/'legacy-address.sqlite3')
+    thread=case['ext']['x_email_monitor_thread_key']
+    first=em_pool.upsert(cli,db,case['ext']['x_email_monitor_message_id'],thread,case['title'],
+        ext_extra={'account':native['first_address']})['item']
+    result=em_pool.upsert(cli,db,native['next_message'],thread,case['title'],ext_extra={
+        'account':case['ext']['x_email_monitor_account'],'account_user':native['first_address']})
+    assert result['action']=='merged' and result['item']['id']==first['id']
+    assert len(em_pool._items(cli,db))==1
+
+
+@pytest.mark.parametrize('explicit_db',[False,True])
+def test_pool_cli_rejects_unproven_destination_before_owner_call(tmp_path,monkeypatch,capsys,explicit_db):
+    import json
+    case=fixtures.pool_merge_case()
+    args=['em_pool.py']
+    if explicit_db:
+        args+=['--db',str(tmp_path/'public.db')]
+    args+=['upsert','--message-id',case['ext']['x_email_monitor_message_id'],
+           '--thread-key',case['ext']['x_email_monitor_thread_key'],'--title',case['title']]
+    monkeypatch.setattr(sys,'argv',args)
+    monkeypatch.setattr(em_pool,'upsert',lambda *a,**kw:pytest.fail('owner call reached'))
+    assert em_pool._cli()==1
+    assert json.loads(capsys.readouterr().err)['error_code']=='ERR_DATA_BOUNDARY'
+    assert not (tmp_path/'public.db').exists()

@@ -37,18 +37,15 @@ PAST_GRACE_DAYS = 2       # allow "today/yesterday" (tz slop) but drop anything 
 FUTURE_CAP_DAYS = 730     # 2 years: beyond this it is almost certainly a parse error / junk
 
 
-def _local_tzinfo():
-    """The system local timezone as a fixed-offset tzinfo -- the machine running email-monitor IS the
-    owner's, so its local offset is the right lens for a naive '7/21 2pm'. Pure stdlib (no zoneinfo)."""
-    return datetime.datetime.now().astimezone().tzinfo
-
-
 def _parse_offset(tz):
     if tz == "Z":
         return datetime.timezone.utc
     tz = tz.replace(":", "")
     sign = 1 if tz[0] == "+" else -1
-    return datetime.timezone(sign * datetime.timedelta(hours=int(tz[1:3]), minutes=int(tz[3:5])))
+    hours, minutes = int(tz[1:3]), int(tz[3:5])
+    if hours >= 24 or minutes >= 60:
+        raise ValueError("invalid UTC offset")
+    return datetime.timezone(sign * datetime.timedelta(hours=hours, minutes=minutes))
 
 
 def _resolve_phrase(phrase, base, now):
@@ -86,10 +83,10 @@ def normalize_due_at(raw, now=None, base=None):
         y, mo, d, h, mi, se, tz = m.groups()
         try:
             dt = datetime.datetime(int(y), int(mo), int(d), int(h), int(mi), int(se or 0))
+            if tz:
+                dt = dt.replace(tzinfo=_parse_offset(tz))
         except ValueError:
             return None
-        if tz:
-            dt = dt.replace(tzinfo=_parse_offset(tz))
     else:
         m = _DATE_RE.match(s)
         if m:
@@ -103,9 +100,11 @@ def normalize_due_at(raw, now=None, base=None):
         # the mail's Date to resolve against. Absolute ISO is handled above (time-preserving).
         return _resolve_phrase(s, base, now)
 
-    if dt.tzinfo is None:                      # naive -> interpret in the owner's local tz
-        dt = dt.replace(tzinfo=_local_tzinfo())
-    dt_utc = dt.astimezone(datetime.timezone.utc)
+    try:
+        # Naive astimezone conversion uses the system's rules for this date, including DST.
+        dt_utc = dt.astimezone(datetime.timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
 
     now = now or datetime.datetime.now(datetime.timezone.utc)
     if now.tzinfo is None:

@@ -10,7 +10,7 @@
     "Never hand-edit generated fixtures. Edit cases and run python tools/make_fixtures.py."
   ],
   "data": [],
-  "_audited": "Runtime writes audited: process_account, main, log and summary prove each DATA destination belongs to a PRIVATE Git repository. No source-tree fallback. Runtime state includes unresolved payloads and receipts; these are private versioned DATA.",
+  "_audited": "Public DATA sinks audited: heartbeat state/log, summary state, quality-review JSON, filter XML and pool CLI writes prove PRIVATE destinations before effects. No source-tree fallback. Model-driven standalone review validates local-only policy before credential or mail access. Native owner-adapter tests use generated temporary databases; public CLI writes require an explicit proven database.",
   "_data_note": [
     "Heartbeat cursors, action ledgers, pending topic headers, summary ledgers, log and pool database resolve from the selected PRIVATE companion.",
     "Relative storage paths resolve from the companion, never cwd. Explicit CLI outputs and log destinations receive the same PRIVATE check.",
