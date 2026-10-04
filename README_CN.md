@@ -4,14 +4,14 @@
 
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-orange?style=flat)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Languages](https://img.shields.io/badge/Languages-EN%20%2F%20CN-blue?style=flat)](#languages)
+[![Languages](https://img.shields.io/badge/Languages-EN%20%2F%20CN-blue?style=flat)](README.md)
 [![Roadmap](https://img.shields.io/badge/Roadmap-v0.2.0-purple?style=flat)](ROADMAP.md)
 
 [English](README.md) | [中文版](README_CN.md)
 
 ---
 
-## ⭐ 先读这里 -- 设计理念
+## ⭐ 设计哲学
 
 email-monitor 是一个**薄编排层 skill**。它不自建邮件存储、不自建调度、不自建推送,而是复用本机
 已有的三块基座 -- Gmail IMAP 工具链、schedule-reminder 事务池、Discord relay -- 只补上缺口:
@@ -22,6 +22,10 @@ email-monitor 是一个**薄编排层 skill**。它不自建邮件存储、不�
 若要求模型处理只能在本地进行，在私有配置中设置 `runtime.local_only=true`、
 `classifier.mode="heuristic"` 和 `topic_labeling.enabled=false`。运行时会拒绝无法确认本地执行的
 agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各自的服务。
+
+复用现有基座减少重复账本，但需要这些依赖保持可用。重要性分类、主题标签和归档分别
+作决定，避免给邮件加标签时顺手隐藏它。默认模型路由以覆盖能力换取外部处理；
+本地启发式模式减少这种暴露，也会失去模型分类能力。
 
 📜 **[完整设计理念 -> PHILOSOPHY.md](PHILOSOPHY.md)**
 

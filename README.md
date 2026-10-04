@@ -4,14 +4,14 @@ Incremental inbox triage with reviewable drafts and durable action tracking.
 
 [![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-orange?style=flat)](https://docs.anthropic.com/en/docs/claude-code)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Languages](https://img.shields.io/badge/Languages-EN%20%2F%20CN-blue?style=flat)](#languages)
+[![Languages](https://img.shields.io/badge/Languages-EN%20%2F%20CN-blue?style=flat)](README_CN.md)
 [![Roadmap](https://img.shields.io/badge/Roadmap-v0.2.0-purple?style=flat)](ROADMAP.md)
 
 [English](README.md) | [中文版](README_CN.md)
 
 ---
 
-## ⭐ Read this first -- the design philosophy
+## ⭐ Design Philosophy
 
 email-monitor is a **thin orchestration skill**. It does not build a new mail store, a new scheduler,
 or a new notifier. It reuses three substrates already on the machine -- the Gmail IMAP toolchain, the
@@ -25,6 +25,12 @@ For enforced local-only model processing, set `runtime.local_only=true`,
 `classifier.mode="heuristic"`, and `topic_labeling.enabled=false` in the private registry.
 The runtime rejects agent classification and topic models when their locality cannot be verified.
 Mail access and explicitly configured notifications still use their respective services.
+
+Reusing these substrates avoids duplicate ledgers but makes their availability a
+prerequisite. Importance, topic labels and archive actions stay separate so adding
+a label cannot silently hide a message. Default model routing trades external
+processing for broader classification; local heuristics reduce that exposure and
+give up model classification.
 
 📜 **[Read the full design philosophy -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
