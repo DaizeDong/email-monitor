@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "tool": "email-monitor",
+  "artifacts": [
+    {
+      "artifact_id": "readme",
+      "path_pattern": "README.md",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "exclusions",
+      "path_pattern": ".gitignore",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "registry",
+      "path_pattern": "registry.json",
+      "purpose": "Mailbox topology, policy selections, resource references and runtime storage settings.",
+      "schema": "CONFIG.md registry schema_version 1; scripts/verify_config.py; skills/email-monitor/scripts/em_runtime.py.",
+      "producer": "Companion maintainer and scripts/init_config.py.",
+      "consumer_or_final_deliverable": "Heartbeat, summary, doctor and draft linter.",
+      "rebuild_or_restore": "Restore the selected private configuration; reestablish machine-bound credentials separately.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep the current configuration and any version required to interpret unresolved actions. Retire obsolete copies only after their recovery dependencies end."
+      }
+    },
+    {
+      "artifact_id": "effective_rules",
+      "path_pattern": "rules/merged.json",
+      "purpose": "Effective deterministic classification rules.",
+      "schema": "CONFIG.md; skills/email-monitor/scripts/em_classify.py: classify.",
+      "producer": "Reviewed rule preparation.",
+      "consumer_or_final_deliverable": "Heartbeat classification.",
+      "rebuild_or_restore": "Restore the effective rule version; rebuild only from the complete approved layers.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep the active rules and versions needed to explain unresolved actions or selected quality evidence."
+      }
+    },
+    {
+      "artifact_id": "personal_rules",
+      "path_pattern": "rules/_personal_layer.json",
+      "purpose": "Private sender and classification overrides.",
+      "schema": "CONFIG.md companion layout and effective-rule contract.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Reviewed preparation of rules/merged.json.",
+      "rebuild_or_restore": "Restore the selected private layer before recomputing effective rules.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep the layer used by the active effective rules; retire superseded layers after required review and recovery dependencies end."
+      }
+    },
+    {
+      "artifact_id": "global_rules",
+      "path_pattern": "rules/_global_layer.json",
+      "purpose": "Optional global classification layer used by the selected rule builder.",
+      "schema": "CONFIG.md companion layout.",
+      "producer": "Approved rule preparation.",
+      "consumer_or_final_deliverable": "Reviewed preparation of rules/merged.json.",
+      "rebuild_or_restore": "Restore the exact selected layer or its authoritative source version.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only a layer actually required to rebuild the active effective rules."
+      }
+    },
+    {
+      "artifact_id": "taxonomy",
+      "path_pattern": "rules/taxonomy.md",
+      "purpose": "Private topic labeling definitions.",
+      "schema": "CONFIG.md topic-labeling contract; skills/email-monitor/scripts/em_topic.py.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Evidence-gated topic judgments.",
+      "rebuild_or_restore": "Restore the reviewed taxonomy with matching sender maps and label sets.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while topic labeling or selected labeling review depends on it."
+      }
+    },
+    {
+      "artifact_id": "sender_map",
+      "path_pattern": "rules/sender_map.json",
+      "purpose": "Deterministic source-label mappings by address, domain and list ID.",
+      "schema": "CONFIG.md sender-map schema; skills/email-monitor/scripts/em_topic.py.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Topic pre-gate and filter compilation.",
+      "rebuild_or_restore": "Restore the reviewed map and validate against the selected account label sets.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep the effective map and mappings needed for current labeling or selected rollback."
+      }
+    },
+    {
+      "artifact_id": "labels",
+      "path_pattern": "rules/labels.json",
+      "purpose": "Closed per-account label sets and optional type-label selection.",
+      "schema": "CONFIG.md labels schema; skills/email-monitor/scripts/em_topic.py.",
+      "producer": "Authorized label configuration.",
+      "consumer_or_final_deliverable": "Topic validation and configuration doctor.",
+      "rebuild_or_restore": "Restore the selected label sets; independently verify any changed mailbox configuration.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the current topic policy or pending label actions references the sets."
+      }
+    },
+    {
+      "artifact_id": "draft_profiles",
+      "path_pattern": "templates/*.txt",
+      "purpose": "Private draft profiles and the configured signature.",
+      "schema": "CONFIG.md draft identity and style contract; skills/email-monitor/scripts/em_draft_lint.py.",
+      "producer": "Source initializer and companion maintainer.",
+      "consumer_or_final_deliverable": "The authorized draft workflow and its linter.",
+      "rebuild_or_restore": "Restore approved profiles and keep their signatures consistent with registry.json.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep the current approved profiles used for drafting; retire unused versions after any selected review finishes."
+      }
+    },
+    {
+      "artifact_id": "delivery_state",
+      "path_pattern": "data/state/*.state.json",
+      "purpose": "Account observation cursors, durable action records, topic retries and daily-summary steps.",
+      "schema": "skills/email-monitor/reference/delivery-state.md; skills/email-monitor/scripts/em_watch.py, em_actions.py and em_summary.py.",
+      "producer": "Heartbeat and daily-summary state writers.",
+      "consumer_or_final_deliverable": "Later ticks, retries, reconciliation and duplicate prevention.",
+      "rebuild_or_restore": "Restore exact state before enabling writers; a moved cursor or missing file does not prove delivery.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep pending, uncertain and failed work plus identities required to prevent replay. Retire state only after writers stop, unresolved outcomes are reconciled and no delivery, retry or selected evidence depends on it."
+      }
+    },
+    {
+      "artifact_id": "reminder_pool",
+      "path_pattern": "data/pool.db",
+      "purpose": "Optional reminder-pool state used by the configured adapter.",
+      "schema": "The selected schedule-reminder database schema; skills/email-monitor/scripts/em_pool.py.",
+      "producer": "The configured reminder adapter.",
+      "consumer_or_final_deliverable": "Reminder obligations and email action reconciliation.",
+      "rebuild_or_restore": "Restore consistently using the reminder system's database recovery procedure.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while live obligations, idempotency lookups or unresolved pool actions depend on the database."
+      }
+    },
+    {
+      "artifact_id": "sqlite_sidecars",
+      "path_pattern": "data/pool.db-*",
+      "purpose": "SQLite transactional sidecars associated with the optional pool.",
+      "schema": "SQLite journal/WAL protocol and the selected reminder database schema.",
+      "producer": "The active SQLite writer.",
+      "consumer_or_final_deliverable": "Crash recovery and pending database transactions.",
+      "rebuild_or_restore": "Use a consistent SQLite recovery or backup; do not copy or delete individual sidecars blindly.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the database is open or its transaction state is unresolved; remove only through the owning database recovery procedure."
+      }
+    },
+    {
+      "artifact_id": "runtime_log",
+      "path_pattern": "data/email-monitor.log",
+      "purpose": "Heartbeat and delivery diagnostics.",
+      "schema": "CONFIG.md runtime storage; skills/email-monitor/scripts/em_tick.py.",
+      "producer": "Heartbeat diagnostics.",
+      "consumer_or_final_deliverable": "Current incident diagnosis and specifically selected operational evidence.",
+      "rebuild_or_restore": "New logs can be collected; exact historical evidence must be retained only when selected.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Rotate or remove portions after the relevant diagnosis ends and no unresolved action or selected evidence depends on them; coordinate with the active writer."
+      }
+    },
+    {
+      "artifact_id": "filter_exports",
+      "path_pattern": "data/filter-exports/*.xml",
+      "purpose": "Compiled Gmail filter configuration selected for import or review.",
+      "schema": "skills/email-monitor/scripts/em_filters.py filter XML format.",
+      "producer": "skills/email-monitor/scripts/em_filters.py with an explicit private --out path.",
+      "consumer_or_final_deliverable": "Reviewed filter import or comparison.",
+      "rebuild_or_restore": "Regenerate from the retained reviewed sender map; preserve independent baseline exports separately when rollback requires them.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep the selected export through review/import and any needed rollback. Retire unused compiled copies once those dependencies end."
+      }
+    },
+    {
+      "artifact_id": "quality_reviews",
+      "path_pattern": "data/reviews/*.json",
+      "purpose": "Explicitly requested classification findings with scope and observation evidence.",
+      "schema": "skills/email-monitor/scripts/em_quality_review.py output contract.",
+      "producer": "Authorized quality review with an explicit private --json path.",
+      "consumer_or_final_deliverable": "The current classification review and selected final evidence.",
+      "rebuild_or_restore": "Repeat observation only when authorized; a later sample is different evidence.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only findings selected for an unresolved review or final deliverable. Retire completed reviews after all correction and evidence dependencies end."
+      }
+    },
+    {
+      "artifact_id": "atomic_staging",
+      "path_pattern": "data/**/.*.tmp",
+      "purpose": "Exclusive temporary bytes before atomic runtime publication.",
+      "schema": "skills/email-monitor/scripts/em_runtime.py: atomic_write.",
+      "producer": "Runtime state publication.",
+      "consumer_or_final_deliverable": "The active atomic write.",
+      "rebuild_or_restore": "Recreate from reconciled inputs after checking whether the previous write committed.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Remove only after the writer stops and the final state and commit outcome are known."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_0",
+      "path_pattern": "rules/_personal_layer.json.template",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_1",
+      "path_pattern": "state/SCHEMA.md",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_2",
+      "path_pattern": "state/.gitkeep",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_3",
+      "path_pattern": "secrets/README.md",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_4",
+      "path_pattern": "secrets/.gitkeep",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    },
+    {
+      "artifact_id": "initializer_reference_5",
+      "path_pattern": "secrets/_accounts.env.template",
+      "purpose": "Minimal companion setup instructions or an initializer template.",
+      "schema": "CONFIG.md and scripts/init_config.py.",
+      "producer": "Source initializer or companion maintainer.",
+      "consumer_or_final_deliverable": "Configuration setup and restoration.",
+      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+      }
+    }
+  ],
+  "protected_paths": [
+    "data/pool.db-*"
+  ]
+}
