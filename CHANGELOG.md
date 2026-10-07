@@ -5,7 +5,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [Unreleased]
 
 ### Process ownership
-- The tick declares its model calls as owned work (`LLMCALL_WINDOWS_TREE_OWNERSHIP=1` unless the launcher sets it): on Windows each client's whole process tree ends with the call, so a timed-out or finished call leaves no orphaned helpers.
+- The tick's model calls need no ownership declaration: llmcall 0.3.0 owns every background call's process tree on Windows, so a timed-out or finished call leaves no orphaned helpers.
 
 ### Documentation
 - Extend storage ownership to historical filter candidates, configuration backups, private review notes and referenced recovery helpers. Preserve selected evidence and recovery obligations; helper validation and retirement remain separate work.
