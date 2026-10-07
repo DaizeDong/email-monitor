@@ -10,13 +10,12 @@ template-driven and deterministic: re-running with the same --out produces byte-
 Discovery convention the skill uses (also CONFIG.md, E2). The config dir resolves, first hit wins:
   1. $EMAIL_MONITOR_CONFIG          (recommended; location-independent)
   2. $EMAIL_MONITOR_CONFIG_DIR      (accepted alias)
-  3. ~/.email-monitor-config/       (dotfile-in-home fallback)
-  4. ~/.config/email-monitor-config/ (XDG-style fallback)
+  3. The pinned Guards companion-root convention, including sibling and legacy locations.
 The skill then reads <dir>/registry.json.
 
 Usage:
   python init_config.py [--out <dir>] [--force]
---out   target dir; default = the discovery dotfile path ~/.email-monitor-config/.
+--out   target dir; default = the selected companion or a sibling email-monitor-config repository.
 Stdlib only. Cross-platform.
 """
 import argparse
@@ -27,9 +26,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "email-monitor" / "scripts"))
 from em_lint_rules import draft_config
+import em_runtime
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
-DEFAULT_DIR = "~/.email-monitor-config"
+DEFAULT_DIR = str(Path(__file__).resolve().parents[1].with_name('email-monitor-config'))
 
 # registry.json -- committed, ZERO secrets. Placeholders only; cred_path uses ~ so the dir is
 # self-contained / portable (E5: no machine-bound absolute path). "machine" is a literal
@@ -204,7 +204,7 @@ def env_var():
 
 
 def default_dir():
-    return os.path.expanduser(DEFAULT_DIR)
+    return str(em_runtime.companion_dir() or Path(DEFAULT_DIR))
 
 
 def write(path, content, force):
@@ -225,7 +225,7 @@ def write(path, content, force):
 
 def main():
     ap = argparse.ArgumentParser(description="Stamp the email-monitor companion config (Mode B).")
-    ap.add_argument("--out", default=None, help="target dir; default ~/.email-monitor-config/")
+    ap.add_argument("--out", default=None, help="target dir; default selected or sibling PRIVATE companion")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
 

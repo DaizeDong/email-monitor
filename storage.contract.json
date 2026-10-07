@@ -5,14 +5,14 @@
     {
       "artifact_id": "readme",
       "path_pattern": "README.md",
-      "purpose": "Minimal companion setup instructions or an initializer template.",
-      "schema": "CONFIG.md and scripts/init_config.py.",
-      "producer": "Source initializer or companion maintainer.",
-      "consumer_or_final_deliverable": "Configuration setup and restoration.",
-      "rebuild_or_restore": "Recreate from the current source initializer or documentation.",
+      "purpose": "Current private installation and recovery instructions.",
+      "schema": "Markdown; source-owned configuration and storage contracts.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Installation, configured helper selection and restoration.",
+      "rebuild_or_restore": "Restore the reviewed private installation reference from companion history.",
       "retention_rule": {
-        "class": "rebuildable",
-        "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
+        "class": "core",
+        "rule": "Keep the current installation reference while recovery or configured helper selection depends on it; reconcile obsolete instructions with source policy before retirement."
       }
     },
     {
@@ -182,7 +182,8 @@
       "retention_rule": {
         "class": "rebuildable",
         "rule": "Rotate or remove portions after the relevant diagnosis ends and no unresolved action or selected evidence depends on them; coordinate with the active writer."
-      }
+      },
+      "max_bytes": 16777216
     },
     {
       "artifact_id": "filter_exports",
@@ -208,11 +209,12 @@
       "retention_rule": {
         "class": "core",
         "rule": "Keep only findings selected for an unresolved review or final deliverable. Retire completed reviews after all correction and evidence dependencies end."
-      }
+      },
+      "max_bytes": 4194304
     },
     {
       "artifact_id": "atomic_staging",
-      "path_pattern": "data/**/.*.tmp",
+      "path_pattern": "data/state/.*.state.json-*.tmp",
       "purpose": "Exclusive temporary bytes before atomic runtime publication.",
       "schema": "skills/email-monitor/scripts/em_runtime.py: atomic_write.",
       "producer": "Runtime state publication.",
@@ -300,9 +302,337 @@
         "class": "rebuildable",
         "rule": "Keep only a current useful setup reference; remove obsolete copies after configuration is established."
       }
+    },
+    {
+      "artifact_id": "migrated_quality_reviews",
+      "path_pattern": "data/quality-review/*.json",
+      "purpose": "Classification quality findings retained at the migrated private report path.",
+      "schema": "skills/email-monitor/scripts/em_quality_review.py output contract.",
+      "producer": "Authorized quality review with an explicit private --json path.",
+      "consumer_or_final_deliverable": "The current classification review and selected final evidence.",
+      "rebuild_or_restore": "Repeat observation only when authorized; a later sample is different evidence.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only findings selected for an unresolved review or final deliverable. Retire completed reviews after all correction and evidence dependencies end."
+      },
+      "max_bytes": 4194304
+    },
+    {
+      "artifact_id": "classification_report",
+      "path_pattern": "data/reports/classification-review.txt",
+      "purpose": "Read-only classification diagnostic report.",
+      "schema": "scripts/classification_review.py report and exit-code contract.",
+      "producer": "The configured classification-review wrapper and private helper.",
+      "consumer_or_final_deliverable": "Current classification diagnosis and selected review evidence.",
+      "rebuild_or_restore": "Regenerate from retained log evidence when authorized; a later log sample is different evidence.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Keep while an unresolved classification review or selected finding references the report; regenerate or retire after dependencies end and the writer is inactive."
+      },
+      "max_bytes": 1048576
+    },
+    {
+      "artifact_id": "credential_capture",
+      "path_pattern": "scripts/capture-app-pw.ps1",
+      "purpose": "Capture machine-bound mailbox credentials through the configured private procedure.",
+      "schema": "CONFIG.md, scripts/init_config.py and the selected private helper interface.",
+      "producer": "Reviewed private integration setup.",
+      "consumer_or_final_deliverable": "Credential initialization or resolution and configured classification diagnostics.",
+      "rebuild_or_restore": "Restore the reviewed helper version; validate private resource bindings on the destination machine.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the configured consumer or recovery procedure references this helper; reconcile its replacement before retirement."
+      }
+    },
+    {
+      "artifact_id": "credential_resolution",
+      "path_pattern": "scripts/resolve-cred.ps1",
+      "purpose": "Resolve the configured machine-bound credential resource without logging its value.",
+      "schema": "CONFIG.md, scripts/init_config.py and the selected private helper interface.",
+      "producer": "Reviewed private integration setup.",
+      "consumer_or_final_deliverable": "Credential initialization or resolution and configured classification diagnostics.",
+      "rebuild_or_restore": "Restore the reviewed helper version; validate private resource bindings on the destination machine.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the configured consumer or recovery procedure references this helper; reconcile its replacement before retirement."
+      }
+    },
+    {
+      "artifact_id": "classification_review_helper",
+      "path_pattern": "scripts/classification_review.py",
+      "purpose": "Read-only classification log analysis used by the configured report wrapper.",
+      "schema": "CONFIG.md, scripts/init_config.py and the selected private helper interface.",
+      "producer": "Reviewed private integration setup.",
+      "consumer_or_final_deliverable": "Credential initialization or resolution and configured classification diagnostics.",
+      "rebuild_or_restore": "Restore the reviewed helper version; validate private resource bindings on the destination machine.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the configured consumer or recovery procedure references this helper; reconcile its replacement before retirement."
+      }
+    },
+    {
+      "artifact_id": "recovery_add-account",
+      "path_pattern": "runbooks/add-account.md",
+      "purpose": "Private operator instructions for the named recovery operation.",
+      "schema": "CONFIG.md and the configured credential/registry procedure.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Account setup, incident recovery and reauthorization.",
+      "rebuild_or_restore": "Restore the current reviewed private runbook; verify changing paths and resources before use.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the installed recovery procedure relies on it; review outdated facts rather than treating an old path as authoritative."
+      }
+    },
+    {
+      "artifact_id": "recovery_diagnose-imap-auth",
+      "path_pattern": "runbooks/diagnose-imap-auth.md",
+      "purpose": "Private operator instructions for the named recovery operation.",
+      "schema": "CONFIG.md and the configured credential/registry procedure.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Account setup, incident recovery and reauthorization.",
+      "rebuild_or_restore": "Restore the current reviewed private runbook; verify changing paths and resources before use.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the installed recovery procedure relies on it; review outdated facts rather than treating an old path as authoritative."
+      }
+    },
+    {
+      "artifact_id": "recovery_new-machine",
+      "path_pattern": "runbooks/new-machine.md",
+      "purpose": "Private operator instructions for the named recovery operation.",
+      "schema": "CONFIG.md and the configured credential/registry procedure.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Account setup, incident recovery and reauthorization.",
+      "rebuild_or_restore": "Restore the current reviewed private runbook; verify changing paths and resources before use.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the installed recovery procedure relies on it; review outdated facts rather than treating an old path as authoritative."
+      }
+    },
+    {
+      "artifact_id": "recovery_secret-rotation",
+      "path_pattern": "runbooks/secret-rotation.md",
+      "purpose": "Private operator instructions for the named recovery operation.",
+      "schema": "CONFIG.md and the configured credential/registry procedure.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "Account setup, incident recovery and reauthorization.",
+      "rebuild_or_restore": "Restore the current reviewed private runbook; verify changing paths and resources before use.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the installed recovery procedure relies on it; review outdated facts rather than treating an old path as authoritative."
+      }
+    },
+    {
+      "artifact_id": "directory_layout",
+      "path_pattern": "DIRECTORY-LAYOUT.md",
+      "purpose": "Current private path selection and migration consistency reference.",
+      "schema": "Markdown linked by the companion installation instructions.",
+      "producer": "Reviewed configuration migration.",
+      "consumer_or_final_deliverable": "Operator recovery and verification of configured paths.",
+      "rebuild_or_restore": "Restore the reviewed layout record and verify live selections separately.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while installation and recovery instructions reference the migration/layout record."
+      }
+    },
+    {
+      "artifact_id": "initializer_classification_yaml",
+      "path_pattern": "rules/classification.yaml",
+      "purpose": "Initializer rule defaults; they are not the effective runtime merged rules.",
+      "schema": "scripts/init_config.py default rule templates.",
+      "producer": "Source initializer.",
+      "consumer_or_final_deliverable": "Initial configuration review only.",
+      "rebuild_or_restore": "Regenerate defaults from the matching initializer; preserve any privately edited layer before replacing it.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Retire unused defaults after confirming that no selected private builder or recovery input depends on local edits."
+      }
+    },
+    {
+      "artifact_id": "initializer_project_vocab_yaml",
+      "path_pattern": "rules/project_vocab.yaml",
+      "purpose": "Initializer rule defaults; they are not the effective runtime merged rules.",
+      "schema": "scripts/init_config.py default rule templates.",
+      "producer": "Source initializer.",
+      "consumer_or_final_deliverable": "Initial configuration review only.",
+      "rebuild_or_restore": "Regenerate defaults from the matching initializer; preserve any privately edited layer before replacing it.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Retire unused defaults after confirming that no selected private builder or recovery input depends on local edits."
+      }
+    },
+    {
+      "artifact_id": "initializer_kill_list_txt",
+      "path_pattern": "rules/kill_list.txt",
+      "purpose": "Initializer rule defaults; they are not the effective runtime merged rules.",
+      "schema": "scripts/init_config.py default rule templates.",
+      "producer": "Source initializer.",
+      "consumer_or_final_deliverable": "Initial configuration review only.",
+      "rebuild_or_restore": "Regenerate defaults from the matching initializer; preserve any privately edited layer before replacing it.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Retire unused defaults after confirming that no selected private builder or recovery input depends on local edits."
+      }
+    },
+    {
+      "artifact_id": "baseline_native_xml",
+      "path_pattern": "filters-baseline/*/native_*.xml",
+      "purpose": "Independent historical mailbox filter exports.",
+      "schema": "Gmail filter export XML or private filter snapshot JSON; filters-baseline/README.md provenance rules.",
+      "producer": "Authorized historical mailbox export and filter inspection.",
+      "consumer_or_final_deliverable": "Selected rollback and independent historical filter evidence.",
+      "rebuild_or_restore": "Restore the selected private revision; new exports cannot recreate an older mailbox observation.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      },
+      "max_bytes": 1048576
+    },
+    {
+      "artifact_id": "baseline_nested_native_xml",
+      "path_pattern": "filters-baseline/*/filters/native_*.xml",
+      "purpose": "Independent historical mailbox filter exports in the nested export layout.",
+      "schema": "Gmail filter export XML or private filter snapshot JSON; filters-baseline/README.md provenance rules.",
+      "producer": "Authorized historical mailbox export and filter inspection.",
+      "consumer_or_final_deliverable": "Selected rollback and independent historical filter evidence.",
+      "rebuild_or_restore": "Restore the selected private revision; new exports cannot recreate an older mailbox observation.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      },
+      "max_bytes": 1048576
+    },
+    {
+      "artifact_id": "baseline_filter_json",
+      "path_pattern": "filters-baseline/*/filters_*.json",
+      "purpose": "Historical filter snapshot records for reviewed comparison.",
+      "schema": "Gmail filter export XML or private filter snapshot JSON; filters-baseline/README.md provenance rules.",
+      "producer": "Authorized historical mailbox export and filter inspection.",
+      "consumer_or_final_deliverable": "Selected rollback and independent historical filter evidence.",
+      "rebuild_or_restore": "Restore the selected private revision; new exports cannot recreate an older mailbox observation.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      },
+      "max_bytes": 1048576
+    },
+    {
+      "artifact_id": "baseline_policy",
+      "path_pattern": "filters-baseline/README.md",
+      "purpose": "Interpretation and rollback limitations for private filter baselines.",
+      "schema": "Private Markdown provenance and correction notes.",
+      "producer": "Authorized filter review.",
+      "consumer_or_final_deliverable": "Correct interpretation of selected baseline files and unresolved corrections.",
+      "rebuild_or_restore": "Restore alongside the referenced observation; verify pending status separately.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      }
+    },
+    {
+      "artifact_id": "baseline_export_provenance",
+      "path_pattern": "filters-baseline/*/README.md",
+      "purpose": "Export provenance and interpretation for one selected filter observation.",
+      "schema": "Private Markdown provenance and correction notes.",
+      "producer": "Authorized filter review.",
+      "consumer_or_final_deliverable": "Correct interpretation of selected baseline files and unresolved corrections.",
+      "rebuild_or_restore": "Restore alongside the referenced observation; verify pending status separately.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      }
+    },
+    {
+      "artifact_id": "baseline_pending_corrections",
+      "path_pattern": "filters-baseline/*/PENDING.md",
+      "purpose": "Pending filter correction and review dependencies.",
+      "schema": "Private Markdown provenance and correction notes.",
+      "producer": "Authorized filter review.",
+      "consumer_or_final_deliverable": "Correct interpretation of selected baseline files and unresolved corrections.",
+      "rebuild_or_restore": "Restore alongside the referenced observation; verify pending status separately.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only independent observations selected for rollback, an unresolved filter correction or a final comparison. Confirm which sample was taken from the mailbox; a date or filename is not current-state proof. Reconcile all rollback and correction dependencies before retirement."
+      }
+    },
+    {
+      "artifact_id": "legacy_triage_campaign",
+      "path_pattern": "data/gmail-triage/2026-08-19/**",
+      "purpose": "Historical mailbox triage development campaign: scripts, samples, plans, intervention evidence and review outputs.",
+      "schema": "Preserved campaign scripts including build_plan.py, build_review.py, chunk.py and apply.py; private filter and review artifacts.",
+      "producer": "The preserved historical triage builders, samplers, audits and authorized mailbox intervention workflow.",
+      "consumer_or_final_deliverable": "Dependency review and extraction of unique code, required observations and selected correction/rollback evidence.",
+      "rebuild_or_restore": "Use reviewed exact private revisions and hashes to extract selected evidence; never replay intervention scripts as a restoration procedure.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new campaign writes. Hold until unique useful code, required mailbox observations, unresolved corrections, selected results and rollback evidence are extracted into their owning current families. Then prove consumers and recovery dependencies are reconciled and writers are inactive before separately authorized retirement. Retired classification does not assert completion or authorize deletion."
+      },
+      "max_bytes": 67108864
+    },
+    {
+      "artifact_id": "legacy_self_evolve_records",
+      "path_pattern": "data/legacy-self-evolve/**",
+      "purpose": "Historical self-evolve events, state, target metadata and their preservation index.",
+      "schema": "INDEX.md and the historical events.jsonl, state.json and target.json record formats.",
+      "producer": "The historical self-evolve workflow; reviewed byte-preserving relocation.",
+      "consumer_or_final_deliverable": "Historical development reconciliation only; the index explicitly is not a resume manifest.",
+      "rebuild_or_restore": "Reconcile recorded revisions and exact bytes before extracting selected unique code or evidence; current-state audit is required before any attempted resume.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Hold until useful unique code and selected evidence are reconciled with their source revisions and no unresolved run, consumer or recovery dependency remains. Retirement still requires inactivity proof and a separately approved concrete removal plan."
+      },
+      "max_bytes": 1048576
+    },
+    {
+      "artifact_id": "filter_export_staging",
+      "path_pattern": "data/filter-exports/.*.xml-*.tmp",
+      "purpose": "Exclusive unpublished bytes before atomic publication of one declared CLI output.",
+      "schema": "skills/email-monitor/scripts/em_runtime.py: atomic_write.",
+      "producer": "em_filters.py or em_quality_review.py through em_runtime.atomic_write.",
+      "consumer_or_final_deliverable": "The active atomic write.",
+      "rebuild_or_restore": "Recreate from reconciled inputs after checking whether the previous write committed.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Remove only after the writer stops and the final state and commit outcome are known."
+      }
+    },
+    {
+      "artifact_id": "quality_review_staging",
+      "path_pattern": "data/reviews/.*.json-*.tmp",
+      "purpose": "Exclusive unpublished bytes before atomic publication of one declared CLI output.",
+      "schema": "skills/email-monitor/scripts/em_runtime.py: atomic_write.",
+      "producer": "em_filters.py or em_quality_review.py through em_runtime.atomic_write.",
+      "consumer_or_final_deliverable": "The active atomic write.",
+      "rebuild_or_restore": "Recreate from reconciled inputs after checking whether the previous write committed.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Remove only after the writer stops and the final state and commit outcome are known."
+      }
+    },
+    {
+      "artifact_id": "migrated_quality_review_staging",
+      "path_pattern": "data/quality-review/.*.json-*.tmp",
+      "purpose": "Exclusive unpublished bytes before atomic publication of one declared CLI output.",
+      "schema": "skills/email-monitor/scripts/em_runtime.py: atomic_write.",
+      "producer": "em_filters.py or em_quality_review.py through em_runtime.atomic_write.",
+      "consumer_or_final_deliverable": "The active atomic write.",
+      "rebuild_or_restore": "Recreate from reconciled inputs after checking whether the previous write committed.",
+      "retention_rule": {
+        "class": "rebuildable",
+        "rule": "Remove only after the writer stops and the final state and commit outcome are known."
+      }
     }
   ],
   "protected_paths": [
+    "registry.json",
+    "rules/merged.json",
+    "rules/_personal_layer.json",
+    "data/state/*.state.json",
+    "data/pool.db",
     "data/pool.db-*"
-  ]
+  ],
+  "layout": "separate_companion",
+  "max_bytes": 67108864,
+  "scope": "All paths are relative to the exact initialized PRIVATE companion Git root. These declarations do not run mailbox operations, initialize state or authorize retirement. Explicit output overrides outside these families need their own reviewed entries. Undeclared files remain inventory failures.",
+  "budget_policy": "A 64 MiB aggregate working-tree review threshold, excluding Git administration. A threshold breach remains a failed capacity check and never authorizes deletion of required state, configuration, selected deliverables or recovery evidence."
 }

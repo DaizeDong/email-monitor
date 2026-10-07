@@ -51,20 +51,10 @@ _LOG = contextvars.ContextVar("email_monitor_log", default=None)
 
 
 def resolve_config(explicit):
-    """Locate registry.json (config-spec E2). Explicit --config wins; else discovery dir order:
-    $EMAIL_MONITOR_CONFIG -> $EMAIL_MONITOR_CONFIG_DIR -> ~/.email-monitor-config/ ->
-    ~/.config/email-monitor-config/, then <dir>/registry.json. Returns a path or None (no crash)."""
+    """Explicit registry wins; otherwise use the shared companion-root resolver."""
     if explicit:
         return os.path.abspath(os.path.expanduser(explicit))
-    for v in (ENV_VAR, ENV_VAR + "_DIR"):
-        val = os.environ.get(v)
-        if val:
-            return os.path.join(os.path.abspath(os.path.expanduser(val)), "registry.json")
-    for d in (os.path.expanduser("~/.email-monitor-config"),
-              os.path.expanduser("~/.config/email-monitor-config")):
-        if os.path.isdir(d):
-            return os.path.join(d, "registry.json")
-    return None
+    return em_runtime.companion_file('registry.json')
 
 
 def log(msg):
@@ -562,6 +552,9 @@ def derive_title(priority, label, subject, summary=""):
 
 
 def main():
+    # Unattended work: llmcall owns each client's whole process tree, so a timed-out or finished
+    # call leaves no orphaned helpers behind. setdefault keeps an explicit "0" from the launcher.
+    os.environ.setdefault("LLMCALL_WINDOWS_TREE_OWNERSHIP", "1")
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
     ap.add_argument("--python", help="Override the configured interpreter for runtime checks and helpers")

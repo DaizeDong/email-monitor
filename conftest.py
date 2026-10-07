@@ -199,7 +199,7 @@ def _file_boundary(event, args):
     if str(args[0]).lower() in (os.devnull.lower(), "nul", "\\\\.\\nul"):
         return
     path = Path(args[0]).resolve()
-    if any(part in (".email-monitor-config", ".pw-auth", ".credentials.json", ".local")
+    if any(part in (".email-monitor-config", "email-monitor-config", ".pw-auth", ".credentials.json", ".local")
            for part in path.parts) and not path.is_relative_to(_SANDBOX):
         raise RuntimeError("offline suite: private profile read blocked")
     mode = args[1] or ""

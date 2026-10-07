@@ -5,9 +5,12 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [Unreleased]
 
 ### Documentation
+- Declare source-owned PRIVATE storage families for runtime state, configured recovery helpers and selected filter/quality evidence. Historical development groups have conditional retirement holds; unknown paths remain failed coverage checks.
+- Apply a 64 MiB aggregate storage review threshold. Thresholds and retirement classes require dependency review and do not authorize removal.
 - Correct the initializer record: topic rules, templates and runtime DATA are versioned in the PRIVATE companion; only credential values follow the Mode-B exclusion policy.
 - Explain model-locality tradeoffs and keep importance, labeling, archive and draft approval decisions separate in both READMEs.
 ### Fixed
+- Use the pinned companion-root resolver across heartbeat, doctor, initialization and review defaults. Preserve explicit missing selections, refuse discovery without Guards, and prevent a cached resolver from another source choosing the companion. Backfill reads rules from that root; explicit review and credential-helper paths bypass unrelated discovery.
 - **The tick now counts topic verdicts, not just successes.** `topic_labeled=N` cannot separate
   "the gate is calibrated and this mail genuinely has no label" from "the gate refuses everything"
   from "the model chain is down", and those need three different responses; `unsure` and `failed`

@@ -1256,3 +1256,45 @@ def scanner_command_cases():
         {"arguments": ["grant", "--token", "synthetic-token"], "allowed": False},
         {"arguments": ["--tree", "--history", "--unknown-option"], "allowed": False},
     ]
+
+
+def companion_discovery_cases():
+    """Synthetic layout names for shared runtime and doctor discovery."""
+    return {'source': 'email-monitor', 'companion': 'email-monitor-config',
+            'explicit': 'selected-companion', 'missing': 'missing-companion',
+            'legacy': '.email-monitor-config', 'data_override': 'selected-output',
+            'account': 'user1', 'user': r'SYNTHETIC\user1'}
+
+
+def make_companion_discovery_layout(root, *, companion=True, legacy=False):
+    """Write only synthetic discovery markers, never private runtime observations."""
+    from pathlib import Path
+
+    cases = companion_discovery_cases()
+    root = Path(root)
+    source = root / cases['source']
+    (source / '.git').mkdir(parents=True)
+    selected = root / cases['companion']
+    if companion:
+        selected.mkdir()
+        (selected / '.companion').write_text(cases['source'] + '\n', encoding='utf-8')
+        (selected / 'data').mkdir()
+    if legacy:
+        retained = root / 'profile' / cases['legacy']
+        retained.mkdir(parents=True)
+    return source, selected
+
+
+def make_backfill_discovery_rules(companion):
+    """Write generated topic inputs for a backfill's companion-root regression."""
+    from pathlib import Path
+
+    cases = reliability_cases()
+    account = cases['account']
+    rules = Path(companion) / 'rules'
+    rules.mkdir(parents=True)
+    (rules / 'taxonomy.md').write_text(cases['model_policy']['taxonomy'], encoding='utf-8')
+    (rules / 'sender_map.json').write_text(json.dumps(doctor_cases()['sender_map']), encoding='utf-8')
+    (rules / 'labels.json').write_text(json.dumps(
+        {account['slug']: cases['model_policy']['topic_config']['allowed_labels']}), encoding='utf-8')
+    return account, cases['message']['message_id']

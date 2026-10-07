@@ -5,7 +5,7 @@ PASS/FAIL per check naming exactly what is missing. Exit 0 = ready, 1 = not read
 
 Discovery order (config-spec E2):
   1. $EMAIL_MONITOR_CONFIG   2. $EMAIL_MONITOR_CONFIG_DIR
-  3. ~/.email-monitor-config/   4. ~/.config/email-monitor-config/
+  3. The pinned Guards companion-root convention, including sibling and legacy locations.
 
 Usage:
   python verify_config.py [--config-dir <dir>]
@@ -61,10 +61,9 @@ def discover(override):
         val = os.environ.get(v)
         if val:
             return os.path.abspath(os.path.expanduser(val)), "env:%s" % v
-    for d in (os.path.expanduser("~/.email-monitor-config"),
-              os.path.expanduser("~/.config/email-monitor-config")):
-        if os.path.isdir(d):
-            return d, "default:%s" % d
+    root = em_runtime.companion_dir()
+    if root is not None:
+        return str(root), 'shared companion resolver'
     return None, None
 
 

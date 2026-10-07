@@ -12,13 +12,19 @@ and runtime DATA belong under version control in the PRIVATE companion, never in
 
 ## Discovery convention (how the skill finds your config), E2
 
-The skill resolves its config **dir** in this order; the first that exists wins, then it reads
+The skill resolves its config **dir** in this order; explicit selections win even
+when missing, then shared discovery selects the first eligible companion, then it reads
 `<dir>/registry.json`:
 
 1. `$EMAIL_MONITOR_CONFIG`, environment variable (recommended; location-independent).
 2. `$EMAIL_MONITOR_CONFIG_DIR`, accepted alias.
-3. `~/.email-monitor-config/`, dotfile-in-home fallback.
-4. `~/.config/email-monitor-config/`, XDG-style fallback (Linux/macOS).
+3. The pinned Guards `resolve_companion_root("email-monitor")` convention, including a
+   sibling `email-monitor-config` repository and retained home companion locations.
+
+Explicit environment selections remain authoritative even when their directory is missing;
+runtime and doctor do not silently select a different companion. New initialization defaults to
+the sibling repository, or the selected environment path. Clone or initialize a verified PRIVATE
+repository there first. The public source repository never receives runtime DATA.
 
 You may always override discovery with an explicit `--config <dir>/registry.json` on the runtime
 scripts (`em_tick.py`, `em_summary.py`); the explicit path wins over the env order. If nothing
@@ -164,10 +170,10 @@ leaks. Neither repo ever echoes a secret.
 
 ```bash
 # 1. Stamp a conformant, zero-secret companion skeleton (deterministic — E4):
-python scripts/init_config.py        # -> ~/.email-monitor-config/  (or --out <dir>)
+python scripts/init_config.py --out <private-companion>
 
 # 2. Point the skill at it (skip if you used the default path):
-export EMAIL_MONITOR_CONFIG=~/.email-monitor-config
+export EMAIL_MONITOR_CONFIG=<private-companion>
 
 # 3. Edit registry.json (real accounts), capture app passwords into DPAPI (Mode B),
 #    copy rules/_personal_layer.json.template -> _personal_layer.json, then confirm:
@@ -212,6 +218,27 @@ version history. Source-tree, nested-repository, ignored and unversioned outputs
 mail access. Filesystem aliases and hardlinked output files are rejected before resolution.
 State, report and filter exports use exclusive temporary files and repeat the PRIVATE proof
 before writing and publishing. Git configuration changes during publication abort the write.
+
+### Companion layout and preservation
+
+The source repository defines the schemas and storage contract. The PRIVATE companion holds
+`registry.json`, `rules/`, `templates/`, credential references and operator runbooks. Runtime
+state belongs in `data/state/`; logs in `data/email-monitor.log`; read-only classification reports
+and optional label-quality reports belong in `data/reports/` and `data/quality-review/`.
+The legacy `state/` schema documents may remain, but must not become a second active state store.
+
+Historical mailbox cleanup materials belong in `triage/<run-id>/`: scripts, filter XML,
+manifests, analysis inputs and verdicts. Keep complete historical evidence in PRIVATE version
+history; importing it does not reapply filters or rerun mailbox actions. Bytecode is disposable.
+Retain current cursors, seen message identities, retry queues, intended/completed action receipts,
+the current rules and all unique historical evidence. Do not delete pending work by age.
+Log/report rotation may archive older material only after preserving the corresponding action
+evidence; this migration does not introduce an automatic pruning job.
+
+When a shared schedule-reminder pool already exists, set `storage.db` to that owner's single
+PRIVATE, versioned database, and access it through the existing reminder CLI. Do not initialize
+`data/pool.db` as a second empty pool. Coordinate database publication with its existing writers
+and consumers, preserve IDs and terminal states, and use SQLite's online backup for recovery.
 
 SSH aliases and HTTPS routing/trust follow the shared Guards policy, read locally without
 executing SSH or network commands. Every plausible SSH configuration chain must establish

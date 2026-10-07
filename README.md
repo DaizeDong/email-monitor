@@ -104,13 +104,14 @@ classification rules, draft templates, DPAPI credential pointers) from a **separ
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
 - **Mount (discovery order):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
-  `~/.email-monitor-config/` → `~/.config/email-monitor-config/`, then `<dir>/registry.json`. An
+  the pinned Guards companion-root convention (including sibling and legacy locations),
+  then `<dir>/registry.json`. An
   explicit `--config <registry.json>` overrides discovery. Missing configuration produces structured
   failure and a nonzero exit without sending an alert.
 - **First time:** create or clone a verified PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
   at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
   ```bash
-  export EMAIL_MONITOR_CONFIG=~/.email-monitor-config
+  export EMAIL_MONITOR_CONFIG=<private-companion>
   python scripts/init_config.py    # stamp a conformant skeleton (deterministic)
   # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
   python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
