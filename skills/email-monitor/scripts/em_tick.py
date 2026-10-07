@@ -552,9 +552,6 @@ def derive_title(priority, label, subject, summary=""):
 
 
 def main():
-    # Unattended work: llmcall owns each client's whole process tree, so a timed-out or finished
-    # call leaves no orphaned helpers behind. setdefault keeps an explicit "0" from the launcher.
-    os.environ.setdefault("LLMCALL_WINDOWS_TREE_OWNERSHIP", "1")
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
     ap.add_argument("--python", help="Override the configured interpreter for runtime checks and helpers")
