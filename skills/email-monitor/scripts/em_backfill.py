@@ -53,6 +53,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import em_topic  # noqa: E402
+import em_runtime  # noqa: E402
 
 LABEL_TOOL = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
@@ -62,9 +63,7 @@ LABEL_TOOL = os.path.expanduser(os.environ.get(
 # are only a convention -- em_tick reads the same two locations.
 CRED_TEMPLATE = os.environ.get("EMAIL_MONITOR_CRED_TEMPLATE",
                                os.path.join("~", ".secrets", "gmail-%s.cred"))
-RESOLVE_CRED = os.environ.get(
-    "EMAIL_MONITOR_RESOLVE_CRED",
-    os.path.join("~", ".email-monitor-config", "scripts", "resolve-cred.ps1"))
+RESOLVE_CRED = os.environ.get('EMAIL_MONITOR_RESOLVE_CRED') or ''
 
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
@@ -167,7 +166,8 @@ def main(argv=None):
     app_pw = os.environ.get("GMAIL_APP_PW")
     if not app_pw:
         cred = os.path.expanduser(a.cred or (CRED_TEMPLATE % a.account))
-        resolver = os.path.expanduser(a.resolve_cred)
+        resolver = os.path.expanduser(a.resolve_cred or
+                                      em_runtime.companion_file('scripts/resolve-cred.ps1') or '')
         if os.path.isfile(cred) and os.path.isfile(resolver):
             p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                                 "-File", resolver, "-CredPath", cred],
@@ -183,7 +183,11 @@ def main(argv=None):
             print("set GMAIL_APP_PW in the environment, or pass --cred/--resolve-cred")
             return 2
 
-    cfg = em_topic.load_config(a.account, log=lambda m: print(m))
+    companion = em_runtime.companion_dir()
+    if companion is None:
+        print("no private companion configured; nothing to do")
+        return 1
+    cfg = em_topic.load_config(a.account, log=lambda m: print(m), config_dir=str(companion))
     if cfg is None:
         print("no private config for account %r; nothing to do" % a.account)
         return 1

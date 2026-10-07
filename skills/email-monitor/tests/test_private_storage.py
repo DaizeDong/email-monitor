@@ -46,6 +46,14 @@ def test_fresh_private_receipt_proves_normal_and_linked_history(proof, linked):
     assert not target.exists()
 
 
+def test_companion_container_is_not_a_git_ignored_relative_dot(proof):
+    (proof / '.gitignore').write_text('*.log\n\n# Synthetic private DATA\n!data/current.log\n', encoding='utf-8')
+    assert runtime.prove_private(proof)['visibility'] == 'PRIVATE'
+    assert runtime.prove_private(proof / 'data/current.log')['visibility'] == 'PRIVATE'
+    with pytest.raises(ValueError):
+        runtime.prove_private(proof / 'data/ignored.log')
+
+
 @pytest.mark.parametrize('visibility', ['PUBLIC', 'UNKNOWN', 'malformed'])
 def test_nonprivate_or_invalid_visibility_cannot_authorize_storage(proof, visibility):
     write_visibility(proof.parent, visibility=visibility)

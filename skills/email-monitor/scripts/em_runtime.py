@@ -13,6 +13,31 @@ import sys
 SOURCE_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _resolved_companion_root():
+    """Use the pinned Guards discovery convention for the private repository root."""
+    source = SOURCE_ROOT / 'guards/tools/datadir.py'
+    if not source.is_file():
+        raise ValueError('Initialize the pinned Guards submodule before discovering configuration')
+    spec = importlib.util.spec_from_file_location('email_monitor_companion_resolver', source)
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+    return resolver.resolve_companion_root('email-monitor')
+
+
+def companion_dir(explicit=None):
+    """Honor explicit selections, including missing paths, before shared discovery."""
+    selected = explicit or os.environ.get('EMAIL_MONITOR_CONFIG') or os.environ.get('EMAIL_MONITOR_CONFIG_DIR')
+    if selected:
+        return Path(selected).expanduser().absolute()
+    resolved = _resolved_companion_root()
+    return Path(resolved).absolute() if resolved else None
+
+
+def companion_file(name):
+    root = companion_dir()
+    return str(root / name) if root is not None else None
+
+
 def valid_account_slug(slug):
     """Accept one portable account state filename component."""
     return (isinstance(slug, str) and re.fullmatch(r"[A-Za-z0-9_.@+-]+", slug) is not None
@@ -85,10 +110,15 @@ def prove_private(destination):
             raise ValueError('Git did not establish the nearest DATA worktree')
         boundary.read_private_companion_git(proof, 'rev-parse', '--verify', 'HEAD')
         relative = path.relative_to(root).as_posix()
-        ignored = boundary.read_private_companion_git(
-            proof, 'check-ignore', '--no-index', '-q', '--', relative)
-        if ignored.returncode == 0:
-            raise ValueError('DATA must remain eligible for private version history')
+        # The root is a container, not a relative DATA entry. Git's dot path
+        # can match a blank ignore rule; verify each DATA destination separately.
+        if relative != '.':
+            ignored = boundary.read_private_companion_git(
+                proof, 'check-ignore', '--no-index', '-q', '--', relative)
+            if ignored.returncode == 0:
+                raise ValueError('DATA must remain eligible for private version history')
+            if ignored.returncode != 1:
+                raise ValueError('Git could not establish DATA version eligibility')
     except (boundary.GitError, OSError) as exc:
         raise ValueError('DATA destination is not in a verifiable PRIVATE Git companion: ' + str(exc)) from exc
     _plain_path(path)

@@ -250,16 +250,23 @@ def main(argv=None):
     ap.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
                     help="messages sampled per label (default %d)" % DEFAULT_SAMPLE)
     ap.add_argument("--json", default=None, help="write findings inside a verified PRIVATE companion")
-    ap.add_argument("--registry", default="~/.email-monitor-config/registry.json")
+    ap.add_argument("--registry", default=None)
     ap.add_argument("--force", action="store_true",
                     help="run even when quality_review.enabled is false")
     ap.add_argument("--cred", default=None)
     ap.add_argument("--resolve-cred",
-                    default=os.path.join("~", ".email-monitor-config", "scripts", "resolve-cred.ps1"))
+                    default=os.environ.get('EMAIL_MONITOR_RESOLVE_CRED'))
     a = ap.parse_args(argv)
 
     if a.sample <= 0:
         ap.error('--sample must be positive')
+    if a.registry is None:
+        a.registry = em_runtime.companion_file('registry.json')
+    if not a.registry:
+        if a.force:
+            ap.error('No private companion configured; supply --registry')
+        print("quality_review is DISABLED: no private companion configured -- nothing was reviewed.")
+        return 0
     registry = Path(a.registry).expanduser()
     if not registry.is_file() and not a.force:
         print("quality_review is DISABLED in registry.json -- nothing was reviewed.")
@@ -300,6 +307,8 @@ def main(argv=None):
 
     labels = [l.strip() for l in a.labels.split(",")] if a.labels else list(cfg["allowed_labels"])
 
+    if not a.resolve_cred:
+        a.resolve_cred = str(registry.parent / 'scripts/resolve-cred.ps1')
     app_pw = os.environ.get("GMAIL_APP_PW")
     if not app_pw:
         cred = os.path.expanduser(a.cred or os.path.join("~", ".secrets", "gmail-%s.cred" % a.account))
