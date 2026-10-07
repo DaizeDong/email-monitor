@@ -557,10 +557,10 @@
     },
     {
       "artifact_id": "legacy_triage_campaign",
-      "path_pattern": "data/gmail-triage/2026-08-19/**",
-      "purpose": "Historical mailbox triage development campaign: scripts, samples, plans, intervention evidence and review outputs.",
-      "schema": "Preserved campaign scripts including build_plan.py, build_review.py, chunk.py and apply.py; private filter and review artifacts.",
-      "producer": "The preserved historical triage builders, samplers, audits and authorized mailbox intervention workflow.",
+      "path_pattern": "data/gmail-triage/20[0-9][0-9]-[01][0-9]-[0-3][0-9]/**",
+      "purpose": "Historical mailbox triage development and export-preservation records.",
+      "schema": "Private campaign scripts, samples, plans, intervention evidence, reviews and preserved filter exports.",
+      "producer": "Historical triage preparation, sampling, review and authorized export preservation.",
       "consumer_or_final_deliverable": "Dependency review and extraction of unique code, required observations and selected correction/rollback evidence.",
       "rebuild_or_restore": "Use reviewed exact private revisions and hashes to extract selected evidence; never replay intervention scripts as a restoration procedure.",
       "retention_rule": {
@@ -620,6 +620,201 @@
       "retention_rule": {
         "class": "rebuildable",
         "rule": "Remove only after the writer stops and the final state and commit outcome are known."
+      }
+    },
+    {
+      "artifact_id": "legacy_filter_backup_native_copy",
+      "path_pattern": "data/gmail-triage/filter-backup-*/native_*_*.xml",
+      "purpose": "Historical duplicate original filter export in a correction backup.",
+      "schema": "Gmail filter export XML; exact duplicate hash checked against a declared native baseline.",
+      "producer": "Historical filter correction backup.",
+      "consumer_or_final_deliverable": "Selected rollback and independent baseline reconciliation.",
+      "rebuild_or_restore": "Use the matching declared native baseline and exact private revision.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_filter_backup_correction",
+      "path_pattern": "data/gmail-triage/filter-backup-*/corrected_*_selfaddr.xml",
+      "purpose": "Historical derived correction candidate distinct from the original mailbox export.",
+      "schema": "Private derived Gmail filter XML; not an independent mailbox observation.",
+      "producer": "Historical filter correction preparation.",
+      "consumer_or_final_deliverable": "Reconciliation of correction inputs and rollback evidence.",
+      "rebuild_or_restore": "Preserve exact private bytes until correction and rollback outcomes are reconciled; never replay as restore.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_filter_backup_import",
+      "path_pattern": "data/gmail-triage/filter-backup-*/import_*.xml",
+      "purpose": "Historical derived import candidate distinct from independent baseline exports.",
+      "schema": "Private derived Gmail filter XML; import outcome is not established by the file.",
+      "producer": "Historical reviewed filter import preparation.",
+      "consumer_or_final_deliverable": "Selected import/correction and rollback reconciliation.",
+      "rebuild_or_restore": "Preserve exact private bytes until the import and rollback obligations are reconciled; never replay as restore.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_baseline_social_label_candidates",
+      "path_pattern": "filters-baseline/*/add_social_*.xml",
+      "purpose": "Historical generated category filter candidates.",
+      "schema": "Private derived Gmail filter XML; preserved private generator inputs.",
+      "producer": "Historical private category filter generator.",
+      "consumer_or_final_deliverable": "Historical generator lineage and selected correction evidence.",
+      "rebuild_or_restore": "Retain exact private generator inputs while needed; static reconstruction does not establish mailbox results.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_baseline_category_candidates",
+      "path_pattern": "filters-baseline/*/cat_social_*.xml",
+      "purpose": "Historical category filter candidates with private matching criteria.",
+      "schema": "Private derived Gmail filter XML; not an independent mailbox observation.",
+      "producer": "Historical category filter preparation.",
+      "consumer_or_final_deliverable": "Selected category-correction evidence and rollback reconciliation.",
+      "rebuild_or_restore": "Preserve exact private bytes until selected correction and rollback dependencies are reconciled.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_baseline_corrected_candidates",
+      "path_pattern": "filters-baseline/*/corrected_*.xml",
+      "purpose": "Historical derived filter correction candidates.",
+      "schema": "Private derived Gmail filter XML distinct from the native baseline exports.",
+      "producer": "Historical filter correction preparation.",
+      "consumer_or_final_deliverable": "Selected correction and rollback reconciliation.",
+      "rebuild_or_restore": "Keep native observations separate and preserve exact derived bytes until selected dependencies are reconciled.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_baseline_category_probe",
+      "path_pattern": "filters-baseline/*/probe_smartlabel.xml",
+      "purpose": "Historical filter import capability probe.",
+      "schema": "Private derived Gmail filter probe; not an independent mailbox export.",
+      "producer": "Historical controlled filter-import investigation.",
+      "consumer_or_final_deliverable": "Selected capability findings and correction review.",
+      "rebuild_or_restore": "Restore exact private revision only as historical evidence; repeat observation only with separate authorization.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_baseline_social_generator",
+      "path_pattern": "filters-baseline/*/make_social_filter.py",
+      "purpose": "Historical private generator containing the original category-candidate inputs.",
+      "schema": "Python generator with literal private configuration; writes sibling add_social_*.xml files.",
+      "producer": "Historical category-filter investigation.",
+      "consumer_or_final_deliverable": "Unique generator lineage and correction evidence extraction.",
+      "rebuild_or_restore": "Preserve useful code and exact private inputs before retirement; a public replacement must use synthetic inputs.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "historical_pipeline_review",
+      "path_pattern": "docs/20[0-9][0-9]-[01][0-9]-[0-3][0-9]-pipeline-review/README.md",
+      "purpose": "Dated independent pipeline observations, intervention results and unresolved historical findings.",
+      "schema": "Private Markdown review; date and historical conclusions do not establish current mailbox behavior.",
+      "producer": "Authorized historical log review and mailbox inspection.",
+      "consumer_or_final_deliverable": "Selected historical review, unresolved corrections and operational evidence.",
+      "rebuild_or_restore": "Restore the exact dated private review; a new sample cannot recreate older observations.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep only while selected independent observations, unresolved findings, intervention results or final comparisons depend on the review. Reconcile each selected finding against current policy and evidence before retirement; never treat historical completion claims as current-state proof or replay instructions."
+      }
+    },
+    {
+      "artifact_id": "companion_installation_policy",
+      "path_pattern": "PHILOSOPHY.md",
+      "purpose": "Private installation and recovery rationale requiring current-policy reconciliation.",
+      "schema": "Private Markdown installation rationale, separate from the source design philosophy.",
+      "producer": "Companion installation maintainer.",
+      "consumer_or_final_deliverable": "Installation and recovery policy reconciliation.",
+      "rebuild_or_restore": "Restore the selected private revision and reconcile obsolete instructions with the source storage contract.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while installation or recovery review depends on the rationale. Reconcile obsolete instructions with current private-data and runtime policy before treating the document as authority or retiring it."
+      }
+    },
+    {
+      "artifact_id": "legacy_registry_before_allmail",
+      "path_pattern": "registry.json.bak-before-allmail",
+      "purpose": "Historical private configuration snapshot.",
+      "schema": "Private registry schema_version 1.",
+      "producer": "Historical companion configuration maintainer.",
+      "consumer_or_final_deliverable": "Unique recovery-input and unresolved historical-action interpretation review.",
+      "rebuild_or_restore": "Extract any selected unique recovery inputs from exact private history before retirement; never restore obsolete configuration wholesale.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "legacy_registry_chain",
+      "path_pattern": "registry.json.bak-chain",
+      "purpose": "Historical private configuration snapshot.",
+      "schema": "Private registry schema_version 1.",
+      "producer": "Historical companion configuration maintainer.",
+      "consumer_or_final_deliverable": "Unique recovery-input and unresolved historical-action interpretation review.",
+      "rebuild_or_restore": "Extract any selected unique recovery inputs from exact private history before retirement; never restore obsolete configuration wholesale.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
+      }
+    },
+    {
+      "artifact_id": "historical_label_name_validator",
+      "path_pattern": "scripts/check_label_names.py",
+      "purpose": "Installed private label validator backed by an independent historical mailbox-label snapshot.",
+      "schema": "Python static snapshot comparison against rules/labels.json and rules/sender_map.json.",
+      "producer": "Private baseline verification maintainer.",
+      "consumer_or_final_deliverable": "Declared baseline provenance notes and configuration label-name verification.",
+      "rebuild_or_restore": "Restore the exact helper with matching private label snapshot; independently refresh any live-state claim.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while baseline verification or selected recovery depends on the helper and its historical mailbox-label snapshot. Preserve required private observations and reconcile replacement code and documentation consumers before retirement."
+      }
+    },
+    {
+      "artifact_id": "installed_functional_recovery_probe",
+      "path_pattern": "scripts/functional-test.py",
+      "purpose": "Installed private credential and read-only IMAP connectivity probe used by recovery runbooks.",
+      "schema": "Python registry consumer with resolve-cred.ps1 -CredPath and live IMAP login/select/search calls.",
+      "producer": "Private installation and recovery maintainer.",
+      "consumer_or_final_deliverable": "The declared add-account, authentication, new-machine and secret-rotation recovery runbooks.",
+      "rebuild_or_restore": "Restore reviewed helper and credential resolver together; execution requires an authorized live-mail scope.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the installed recovery runbooks depend on it. Reconcile its resolver exit handling and non-OK IMAP search handling before relying on success, and reconcile all runbook consumers before replacement or retirement. Storage classification does not authorize network execution."
+      }
+    },
+    {
+      "artifact_id": "legacy_local_state_container",
+      "path_pattern": "data/legacy-local-state",
+      "purpose": "Former local-state container retained by migration documentation.",
+      "schema": "Legacy migration directory; new state files require their own declaration.",
+      "producer": "Reviewed historical local-state migration.",
+      "consumer_or_final_deliverable": "Companion README and DIRECTORY-LAYOUT migration interpretation.",
+      "rebuild_or_restore": "Reconcile documented residual-metadata claims and any selected migration evidence before removal.",
+      "retention_rule": {
+        "class": "retired",
+        "rule": "No new state writes. Keep until migration documentation and any selected residual-state or recovery dependency are reconciled and writer inactivity is proven. An empty container is not evidence that the former state was reconstructed or permission to remove it. Removal requires a separately approved concrete retirement."
       }
     }
   ],
