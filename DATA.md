@@ -38,7 +38,7 @@ provenance and pending-review notes. A new compiled XML cannot recreate an older
 mailbox observation. Baseline filenames and dates do not prove current mailbox state;
 filter import still requires its separately authorized review.
 
-`data/gmail-triage/2026-08-19/` is a historical triage development campaign, and
+Dated `data/gmail-triage/` groups preserve historical development and exports;
 `data/legacy-self-evolve/` preserves historical events/state/target metadata. Their
 `retired` class prohibits new campaign writes and imposes a conditional hold: extract
 useful unique code, required DATA, selected results and correction/rollback evidence;
@@ -46,11 +46,15 @@ then reconcile consumers, unresolved outcomes and recovery dependencies and prov
 writer inactivity. The self-evolve index is not a resume manifest. Classification
 alone establishes neither closure nor permission to delete.
 
-Undeclared newer triage/export groups, registry backup copies, nonselected baseline
-candidates/probes, private review/design notes and unreferenced helper experiments
-remain inventory gaps. Private storage and Git history do not make them core. They
-need producer, selected-output and recovery review before a precise declaration;
-no broad rule hides them. The aggregate review threshold is 64 MiB, excluding Git administration. A breached
+Historical backup and derived-filter families have conditional retirement holds.
+Dated pipeline reviews and installation rationale remain necessary only while
+selected findings or recovery depend on them. Referenced label and functional
+helpers retain their historical-snapshot and recovery obligations. The functional
+probe still needs resolver and IMAP error-handling review; these declarations do
+not execute, repair or validate private helpers. Unknown paths remain inventory
+failures.
+
+The aggregate review threshold is 64 MiB, excluding Git administration. A breached
 threshold remains a failed capacity check; required DATA must be reconciled without
 dropping it to make the check pass. Declared budgets never authorize removal.
 

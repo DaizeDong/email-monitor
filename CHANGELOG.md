@@ -8,6 +8,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - The tick declares its model calls as owned work (`LLMCALL_WINDOWS_TREE_OWNERSHIP=1` unless the launcher sets it): on Windows each client's whole process tree ends with the call, so a timed-out or finished call leaves no orphaned helpers.
 
 ### Documentation
+- Extend storage ownership to historical filter candidates, configuration backups, private review notes and referenced recovery helpers. Preserve selected evidence and recovery obligations; helper validation and retirement remain separate work.
 - Declare source-owned PRIVATE storage families for runtime state, configured recovery helpers and selected filter/quality evidence. Historical development groups have conditional retirement holds; unknown paths remain failed coverage checks.
 - Apply a 64 MiB aggregate storage review threshold. Thresholds and retirement classes require dependency review and do not authorize removal.
 - Correct the initializer record: topic rules, templates and runtime DATA are versioned in the PRIVATE companion; only credential values follow the Mode-B exclusion policy.
