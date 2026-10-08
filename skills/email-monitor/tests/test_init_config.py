@@ -13,13 +13,9 @@ consume it. That is the seam where the generator and its consumer drifted apart 
 test that only imports init_config without running it end to end through the real loader would
 not have caught it.
 """
-from datetime import datetime, timezone
-import importlib.util
-from pathlib import Path
 import copy
 import json
 import os
-import subprocess
 import sys
 
 import pytest
@@ -35,45 +31,21 @@ import verify_config  # noqa: E402
 import em_topic  # noqa: E402
 
 
-@pytest.fixture
-def private_companion(tmp_path, monkeypatch):
-    # Permit only generated local Git setup/proof commands in this disposable fixture.
-    # The suite's network and filesystem guards remain active.
-    import conftest
-    guarded_popen = subprocess.Popen
-    def native_git(command, *args, **kwargs):
-        argv = list(command) if isinstance(command, (list, tuple)) else []
-        cwd = Path(kwargs.get("cwd") or os.getcwd()).absolute()
-        env = kwargs.get("env") or {}
-        isolated = Path(env.get("GIT_CONFIG_GLOBAL", "/absent")).absolute().is_relative_to(tmp_path)
-        if (argv and Path(str(argv[0])).stem.lower() == "git" and cwd.is_relative_to(tmp_path)
-                and isolated and len(argv) > 1 and argv[1] in
-                {"init", "add", "commit", "remote", "config", "rev-parse", "check-ignore", "status"}):
-            return conftest._real_popen(command, *args, **kwargs)
-        return guarded_popen(command, *args, **kwargs)
-    monkeypatch.setattr(subprocess, "Popen", native_git)
-    source = Path(__file__).resolve().parents[3]
-    spec = importlib.util.spec_from_file_location("email_guard_fixtures", source / "guards/tools/make_fixtures.py")
-    generator = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(generator)
-    fixture = generator.make_storage_contract_fixture(
-        tmp_path / "generated", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    for key in list(os.environ):
-        if key.startswith(("GIT_", "EMAIL_MONITOR_")):
-            monkeypatch.delenv(key)
-    for key, value in fixture["companion"].env.items():
-        if key.startswith("GIT_"):
-            monkeypatch.setenv(key, value)
-    api = init_config.em_runtime._contract_api()
-    actual = api.authorize_artifact_write
-    monkeypatch.setattr(api, "authorize_artifact_write",
-                        lambda *a, **kw: actual(*a, **kw, visibility_map=fixture["receipt"]))
-    return fixture["companion"].root
-
-
 def test_registry_declares_topic_labeling_disabled_by_default():
     """An uninitialised machine must stay inert (CONFIG.md, em_tick.py default)."""
     assert init_config.REGISTRY["topic_labeling"]["enabled"] is False
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_initializer_refuses_unversioned_storage_before_writing(tmp_path, monkeypatch, capsys, exists):
+    out = tmp_path / "unversioned"
+    if exists:
+        out.mkdir()
+    monkeypatch.setattr(sys, "argv", ["init_config.py", "--out", str(out)])
+    assert init_config.main() == 1
+    assert "Cannot initialize PRIVATE configuration" in capsys.readouterr().out
+    assert out.exists() is exists
+    assert not list(out.rglob("*"))
 
 
 def test_generator_output_is_consumable_by_em_topic_load_config(tmp_path, monkeypatch, private_companion):
