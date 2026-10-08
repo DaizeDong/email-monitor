@@ -162,3 +162,8 @@ English (`README.md`, authoritative) · 中文 (`README_CN.md`)
 ## Roadmap · Contributing · License
 
 See [ROADMAP.md](ROADMAP.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [LICENSE](LICENSE) (MIT).
+
+Discovery detail: after `EMAIL_MONITOR_CONFIG` and `EMAIL_MONITOR_CONFIG_DIR`, the existing
+`EMAIL_MONITOR_DATA_DIR` candidate precedes sibling `email-monitor-config`,
+`~/.email-monitor-config` and `~/.email-monitor-data`. A final `data` component selects its
+parent as the companion root. See [CONFIG.md](CONFIG.md) for missing-candidate behavior.

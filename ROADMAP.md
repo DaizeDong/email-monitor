@@ -2,7 +2,15 @@
 
 Current: **v0.2.0**
 
-## v0.2.0 (current)
+## Current implementation and verification
+
+The source includes explicit companion discovery, PRIVATE write admission, installed llmcall routing,
+and evidence-gated topic labeling with per-verdict diagnostics. Configuration and storage checks
+are separate from mailbox authentication, external delivery and process cleanup evidence. This
+maintenance work uses synthetic/offline checks; it does not establish configured live readiness
+or a published release. See [CONFIG.md](CONFIG.md) and [CHANGELOG.md](CHANGELOG.md).
+
+## v0.2.0 (historical release baseline)
 - A concrete owner-facing date in a mail now becomes a *dated* reminder (`due_at` extracted by the
   classifier, normalized in `em_dates.py`, passed through to the pool).
 - The skill runs standalone: the schedule-reminder pool integration is an optional downstream, so
@@ -10,7 +18,7 @@ Current: **v0.2.0**
 - Test fixtures are generated rather than pasted, and the data boundary runs in both hooks and CI.
 - v0.1.4 through v0.1.9 are not itemized here; see [CHANGELOG.md](CHANGELOG.md).
 
-## v0.1.3
+## v0.1.3 (historical acceptance)
 - Incremental IMAP watch (UID + UIDVALIDITY watermark, read-only BODY.PEEK, X-GM-MSGID dedupe).
 - Three-tier classifier (L0 rules / L1 cheap scoring deterministic; L2 LLM hook).
 - Redacted Discord alerts + archive via existing label tool.

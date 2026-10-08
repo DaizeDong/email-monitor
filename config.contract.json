@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "repository_kind": "skill",
+  "configuration": "settings",
+  "rationale": "Native configuration controls selected runtime resources and private state; storage discovery alone cannot establish readiness.",
+  "documentation": [
+    "README.md",
+    "README_CN.md",
+    "CONFIG.md"
+  ],
+  "settings": {
+    "schema_document": "CONFIG.md",
+    "discovery_document": "CONFIG.md",
+    "environment": "EMAIL_MONITOR_CONFIG",
+    "aliases": [
+      "EMAIL_MONITOR_CONFIG_DIR",
+      "EMAIL_MONITOR_DATA_DIR"
+    ],
+    "precedence": [
+      "explicit runtime --config / doctor --config-dir / initializer --out",
+      "EMAIL_MONITOR_CONFIG",
+      "EMAIL_MONITOR_CONFIG_DIR",
+      "EMAIL_MONITOR_DATA_DIR (existing companion discovery)",
+      "sibling email-monitor-config",
+      "~/.email-monitor-config",
+      "~/.email-monitor-data"
+    ],
+    "required_fields": [
+      "accounts",
+      "runtime.python",
+      "draft.signature"
+    ],
+    "initializer": {
+      "path": "scripts/init_config.py",
+      "args": [
+        "--out",
+        "{output}"
+      ]
+    },
+    "doctor": {
+      "path": "scripts/verify_config.py",
+      "args": [
+        "--json"
+      ]
+    }
+  }
+}

@@ -18,8 +18,16 @@ when missing, then shared discovery selects the first eligible companion, then i
 
 1. `$EMAIL_MONITOR_CONFIG`, environment variable (recommended; location-independent).
 2. `$EMAIL_MONITOR_CONFIG_DIR`, accepted alias.
-3. The pinned Guards `resolve_companion_root("email-monitor")` convention, including a
-   sibling `email-monitor-config` repository and retained home companion locations.
+3. `EMAIL_MONITOR_DATA_DIR`, through pinned Guards when neither CONFIG variable is set.
+   An existing path ending in `data` selects its parent as the companion root.
+4. The sibling `email-monitor-config` repository, with companion identity proof.
+5. `~/.email-monitor-config`.
+6. `~/.email-monitor-data`.
+
+Steps 3 through 6 select the first existing eligible directory through the pinned Guards
+`resolve_companion_root("email-monitor")` function. A missing DATA_DIR candidate can fall through;
+CONFIG and CONFIG_DIR are explicit selections and do not. The registry and its relative storage
+paths then use that one selected root.
 
 Explicit environment selections remain authoritative even when their directory is missing;
 runtime and doctor do not silently select a different companion. New initialization defaults to
@@ -227,11 +235,13 @@ state belongs in `data/state/`; logs in `data/email-monitor.log`; read-only clas
 and optional label-quality reports belong in `data/reports/` and `data/quality-review/`.
 The legacy `state/` schema documents may remain, but must not become a second active state store.
 
-Historical mailbox cleanup materials belong in `triage/<run-id>/`: scripts, filter XML,
-manifests, analysis inputs and verdicts. Keep complete historical evidence in PRIVATE version
-history; importing it does not reapply filters or rerun mailbox actions. Bytecode is disposable.
+Historical mailbox cleanup evidence already under `data/gmail-triage/YYYY-MM-DD/` is a retired
+artifact family in [storage.contract.json](storage.contract.json). Do not start new campaigns in
+that family or in an undeclared `triage/` directory. Preserve selected evidence while rollback,
+review or recovery depends on it; retirement requires that dependency review. Reading archived
+evidence does not reapply filters or rerun mailbox actions. Bytecode is disposable.
 Retain current cursors, seen message identities, retry queues, intended/completed action receipts,
-the current rules and all unique historical evidence. Do not delete pending work by age.
+the current rules and historical evidence still required by the source retention contract. Do not delete pending work by age.
 Log/report rotation may archive older material only after preserving the corresponding action
 evidence; this migration does not introduce an automatic pruning job.
 
