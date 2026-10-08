@@ -54,10 +54,9 @@ def test_cli_reports_configuration_failure_without_changing_json_api(tmp_path, m
 
 
 @pytest.mark.parametrize("config_key", [None, "alternate_config", "literal_config"])
-def test_new_templates_use_the_selected_registry_and_pass_its_linter(tmp_path, monkeypatch, config_key):
-    out = tmp_path / "config"
+def test_new_templates_use_the_selected_registry_and_pass_its_linter(private_companion, monkeypatch, config_key):
+    out = private_companion
     if config_key:
-        out.mkdir()
         registry = copy.deepcopy(init_config.REGISTRY)
         registry["draft"] = FIX[config_key]
         registry_path = out / "registry.json"
@@ -74,8 +73,8 @@ def test_new_templates_use_the_selected_registry_and_pass_its_linter(tmp_path, m
     assert len(list((out / "templates").glob("*.txt"))) == 4
 
 
-def test_existing_custom_template_and_registry_are_not_replaced(tmp_path, monkeypatch):
-    out = tmp_path / "config"
+def test_existing_custom_template_and_registry_are_not_replaced(private_companion, monkeypatch):
+    out = private_companion
     (out / "templates").mkdir(parents=True)
     registry = {"draft": FIX["alternate_config"]}
     (out / "registry.json").write_text(json.dumps(registry), encoding="utf-8")

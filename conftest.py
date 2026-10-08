@@ -16,6 +16,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 # Ordinary repository scans use the invoking operator's policy metadata. Runtime
 # tests keep the synthetic profile below; only the exact read-only scans restore it.
 _SCANNER_PROFILE = {name: os.environ.get(name) for name in ("HOME", "USERPROFILE")}
@@ -210,6 +212,41 @@ def _file_boundary(event, args):
 
 
 sys.addaudithook(_file_boundary)
+
+
+@pytest.fixture
+def private_companion(tmp_path, monkeypatch):
+    # Permit only generated local Git setup/proof commands in this disposable fixture.
+    # The suite's network and filesystem guards remain active.
+    import em_runtime
+    guarded_popen = subprocess.Popen
+    def native_git(command, *args, **kwargs):
+        argv = list(command) if isinstance(command, (list, tuple)) else []
+        cwd = Path(kwargs.get("cwd") or os.getcwd()).absolute()
+        env = kwargs.get("env") or {}
+        isolated = Path(env.get("GIT_CONFIG_GLOBAL", "/absent")).absolute().is_relative_to(tmp_path)
+        if (argv and Path(str(argv[0])).stem.lower() == "git" and cwd.is_relative_to(tmp_path)
+                and isolated and len(argv) > 1 and argv[1] in
+                {"init", "add", "commit", "remote", "config", "rev-parse", "check-ignore", "status"}):
+            return _real_popen(command, *args, **kwargs)
+        return guarded_popen(command, *args, **kwargs)
+    monkeypatch.setattr(subprocess, "Popen", native_git)
+    spec = importlib.util.spec_from_file_location("email_guard_fixtures", _SOURCE / "guards/tools/make_fixtures.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    fixture = generator.make_storage_contract_fixture(
+        tmp_path / "generated", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    for key in list(os.environ):
+        if key.startswith(("GIT_", "EMAIL_MONITOR_")):
+            monkeypatch.delenv(key)
+    for key, value in fixture["companion"].env.items():
+        if key.startswith("GIT_"):
+            monkeypatch.setenv(key, value)
+    api = em_runtime._contract_api()
+    actual = api.authorize_artifact_write
+    monkeypatch.setattr(api, "authorize_artifact_write",
+                        lambda *a, **kw: actual(*a, **kw, visibility_map=fixture["receipt"]))
+    return fixture["companion"].root
 
 
 def pytest_sessionfinish(session, exitstatus):
