@@ -4,8 +4,14 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+### Configuration maintenance
+- Admit initializer leaves through the pinned source storage contract and PRIVATE versionability checks. Report the selected root in JSON doctor output.
+- State the complete discovery order, export the root before Chinese setup commands, and align retired mailbox evidence with source retention policy.
+- Limit process-ownership claims to the installed interface; no live mailbox, delivery or process-tree acceptance is implied.
+
+
 ### Process ownership
-- The tick's model calls need no ownership declaration: llmcall 0.3.0 owns every background call's process tree on Windows, so a timed-out or finished call leaves no orphaned helpers.
+- The tick delegates background process ownership to the installed llmcall interface without a separate declaration. Cleanup guarantees depend on that installed implementation and its receipts; import/callability checks alone do not prove that completed or timed-out calls leave no helpers.
 
 ### Documentation
 - Extend storage ownership to historical filter candidates, configuration backups, private review notes and referenced recovery helpers. Preserve selected evidence and recovery obligations; helper validation and retirement remain separate work.

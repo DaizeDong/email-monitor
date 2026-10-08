@@ -91,3 +91,7 @@ is theirs alone.
 
 This `SKILL.md` is the only always-loaded file. Read one `reference/<shard>.md` at a time, for the step
 you are executing. Never load the whole `reference/` directory at once.
+
+Configuration discovery and initialization follow [CONFIG.md](../../CONFIG.md), including the
+DATA_DIR legacy candidate. Initialize only the selected PRIVATE companion; preserve unresolved
+state and the source-owned retention contract before any operational changes.

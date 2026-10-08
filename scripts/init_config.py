@@ -10,7 +10,8 @@ template-driven and deterministic: re-running with the same --out produces byte-
 Discovery convention the skill uses (also CONFIG.md, E2). The config dir resolves, first hit wins:
   1. $EMAIL_MONITOR_CONFIG          (recommended; location-independent)
   2. $EMAIL_MONITOR_CONFIG_DIR      (accepted alias)
-  3. The pinned Guards companion-root convention, including sibling and legacy locations.
+  3. Existing EMAIL_MONITOR_DATA_DIR (data child selects parent), then sibling email-monitor-config,
+     ~/.email-monitor-config and ~/.email-monitor-data through pinned Guards.
 The skill then reads <dir>/registry.json.
 
 Usage:
@@ -19,6 +20,7 @@ Usage:
 Stdlib only. Cross-platform.
 """
 import argparse
+from functools import partial
 import json
 import os
 import sys
@@ -207,11 +209,15 @@ def default_dir():
     return str(em_runtime.companion_dir() or Path(DEFAULT_DIR))
 
 
-def write(path, content, force):
+def write(path, content, force, *, root=None):
     if os.path.exists(path) and not force:
         print("  SKIP (exists): %s" % path)
         return
+    if root is None:
+        raise ValueError("Configuration writes require an explicit PRIVATE companion root")
+    em_runtime.authorize_config_write(root, path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    em_runtime.authorize_config_write(root, path)
     # Check the opened file before truncation so hardlink aliases keep their bytes.
     flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
     descriptor = os.open(path, flags, 0o666)
@@ -231,6 +237,7 @@ def main():
 
     out = a.out or default_dir()
     out = os.path.abspath(os.path.expanduser(out))
+    write_config = partial(write, root=out)
     registry_path = os.path.join(out, "registry.json")
     try:
         registry = REGISTRY
@@ -243,31 +250,36 @@ def main():
     except (OSError, ValueError) as error:
         print("Cannot initialize draft templates: invalid configuration: " + str(error))
         return 1
+    try:
+        em_runtime.authorize_config_write(out, registry_path)
+    except (OSError, ValueError, RuntimeError) as error:
+        print("Cannot initialize PRIVATE configuration: " + str(error))
+        return 1
     print("Init email-monitor companion config (Mode B) at %s" % out)
     print("Discovery env var: %s  (fallback %s)" % (env_var(), default_dir()))
 
     try:
-        write(registry_path, json.dumps(REGISTRY, indent=2, ensure_ascii=False) + "\n", a.force)
+        write_config(registry_path, json.dumps(REGISTRY, indent=2, ensure_ascii=False) + "\n", a.force)
     except (OSError, ValueError) as error:
         print("Cannot initialize registry: " + str(error))
         return 1
-    write(os.path.join(out, ".gitignore"), GITIGNORE, a.force)
-    write(os.path.join(out, "rules", "classification.yaml"), CLASSIFICATION_YAML, a.force)
-    write(os.path.join(out, "rules", "project_vocab.yaml"), PROJECT_VOCAB_YAML, a.force)
-    write(os.path.join(out, "rules", "kill_list.txt"), KILL_LIST, a.force)
-    write(os.path.join(out, "rules", "_personal_layer.json.template"), PERSONAL_LAYER_TEMPLATE, a.force)
-    write(os.path.join(out, "rules", "taxonomy.md"), TAXONOMY_MD, a.force)
-    write(os.path.join(out, "rules", "sender_map.json"), SENDER_MAP_JSON, a.force)
-    write(os.path.join(out, "rules", "labels.json"), LABELS_JSON, a.force)
+    write_config(os.path.join(out, ".gitignore"), GITIGNORE, a.force)
+    write_config(os.path.join(out, "rules", "classification.yaml"), CLASSIFICATION_YAML, a.force)
+    write_config(os.path.join(out, "rules", "project_vocab.yaml"), PROJECT_VOCAB_YAML, a.force)
+    write_config(os.path.join(out, "rules", "kill_list.txt"), KILL_LIST, a.force)
+    write_config(os.path.join(out, "rules", "_personal_layer.json.template"), PERSONAL_LAYER_TEMPLATE, a.force)
+    write_config(os.path.join(out, "rules", "taxonomy.md"), TAXONOMY_MD, a.force)
+    write_config(os.path.join(out, "rules", "sender_map.json"), SENDER_MAP_JSON, a.force)
+    write_config(os.path.join(out, "rules", "labels.json"), LABELS_JSON, a.force)
     # Keep configured braces literal when the remaining name/body fields are formatted.
     template_signature = signature.replace("{", "{{").replace("}", "}}")
     for name, body in TEMPLATES.items():
-        write(os.path.join(out, "templates", name), body.replace("{signature}", template_signature), a.force)
-    write(os.path.join(out, "secrets", "README.md"), SECRETS_README, a.force)
-    write(os.path.join(out, "secrets", "_accounts.env.template"), ACCOUNTS_ENV_TEMPLATE, a.force)
-    write(os.path.join(out, "secrets", ".gitkeep"), "", a.force)
-    write(os.path.join(out, "state", "SCHEMA.md"), STATE_SCHEMA, a.force)
-    write(os.path.join(out, "state", ".gitkeep"), "", a.force)
+        write_config(os.path.join(out, "templates", name), body.replace("{signature}", template_signature), a.force)
+    write_config(os.path.join(out, "secrets", "README.md"), SECRETS_README, a.force)
+    write_config(os.path.join(out, "secrets", "_accounts.env.template"), ACCOUNTS_ENV_TEMPLATE, a.force)
+    write_config(os.path.join(out, "secrets", ".gitkeep"), "", a.force)
+    write_config(os.path.join(out, "state", "SCHEMA.md"), STATE_SCHEMA, a.force)
+    write_config(os.path.join(out, "state", ".gitkeep"), "", a.force)
 
     print("\nNext:")
     print("  1) Edit registry.json: set account slug/user/role, cred_path and draft.signature.")

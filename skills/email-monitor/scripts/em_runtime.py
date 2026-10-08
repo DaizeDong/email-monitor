@@ -58,6 +58,25 @@ def _storage_api():
     return module
 
 
+@lru_cache(maxsize=1)
+def _contract_api():
+    source = SOURCE_ROOT / 'guards/tools/storage_contract.py'
+    if not source.is_file():
+        raise ValueError('Initialize the pinned Guards submodule before configuration writes')
+    spec = importlib.util.spec_from_file_location('email_monitor_storage_contract', source)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def authorize_config_write(root, destination):
+    root = Path(root).expanduser().absolute()
+    path = _plain_path(destination)
+    return _contract_api().authorize_artifact_write(
+        SOURCE_ROOT, root, path.relative_to(root).as_posix())
+
+
 def _plain_path(destination):
     """Preserve lexical components until filesystem aliases have been rejected."""
     path = Path(destination).expanduser().absolute()

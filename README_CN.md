@@ -93,13 +93,15 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 完整规范见 **[CONFIG.md](CONFIG.md)**。
 
 - **挂载(发现顺序):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
-  Guards 的统一伴生仓解析（包括同级配置仓和旧用户目录），命中后读 `<dir>/registry.json`。
+  已存在的 `$EMAIL_MONITOR_DATA_DIR` → 同级 `email-monitor-config` →
+  `~/.email-monitor-config` → `~/.email-monitor-data`，命中后读 `<dir>/registry.json`。
+  DATA_DIR 末尾为 `data` 时取父目录；该候选不存在时可继续查找。CONFIG 变量选定的目录不存在时不会换仓。
   显式 `--config <registry.json>` 优先。找不到配置时，程序输出结构化错误并以非零状态退出，不发提醒。
 - **首次配置:**先创建或克隆经过 PRIVATE 验证的 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，
   再运行初始化。运行 DATA 留在这个私有仓内，纳入版本管理；无法验证的存储位置会被拒绝。
   ```bash
-  python scripts/init_config.py    # 生成符合规范的骨架(确定性)
   export EMAIL_MONITOR_CONFIG=<private-companion>    # 或给 init 传 --out <dir>
+  python scripts/init_config.py    # 在选定的私有仓生成配置骨架
   # 编辑 registry.json、把 app 口令录入 DPAPI(Mode B)、填 _personal_layer.json
   python scripts/verify_config.py   # doctor:逐项 PASS/FAIL,明确报缺什么
   ```

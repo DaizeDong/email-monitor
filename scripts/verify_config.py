@@ -5,7 +5,8 @@ PASS/FAIL per check naming exactly what is missing. Exit 0 = ready, 1 = not read
 
 Discovery order (config-spec E2):
   1. $EMAIL_MONITOR_CONFIG   2. $EMAIL_MONITOR_CONFIG_DIR
-  3. The pinned Guards companion-root convention, including sibling and legacy locations.
+  3. Existing EMAIL_MONITOR_DATA_DIR (data child selects parent), then sibling email-monitor-config,
+     ~/.email-monitor-config and ~/.email-monitor-data through pinned Guards.
 
 Usage:
   python verify_config.py [--config-dir <dir>]
@@ -250,6 +251,7 @@ def main():
 
     n_fail = sum(1 for _, ok, _ in results if not ok)
     report = {"status": "not_ready" if n_fail else "ready",
+              "ready": not n_fail, "resolved_root": os.path.abspath(cfg) if cfg else None,
               "checks": [{"name": name, "ok": ok, "detail": detail} for name, ok, detail in results]}
     summary = data.get("daily_summary")
     report["daily_summary"] = {"enabled": bool(summary.get("enabled", False)) if isinstance(summary, dict) else False,
