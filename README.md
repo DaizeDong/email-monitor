@@ -71,6 +71,7 @@ If your host supplies an approved llmcall wheel, use this alternate path instead
 command above. Replace the example wheel path with the actual file supplied by your host:
 
 ```bash
+python -m pip install ./guards
 python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
 python -m pip install "tzdata; sys_platform == 'win32'"
 python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"

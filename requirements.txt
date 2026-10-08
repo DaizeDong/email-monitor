@@ -1,3 +1,7 @@
+# Build the canonical runtime dependency from this checkout's reviewed Guards
+# submodule. A recursive checkout keeps it aligned with the existing gitlink.
+./guards
+
 # Installed llmcall owns model routing, timeout and fallback policy.
 # This source requires authorized repository access. For an approved host wheel,
 # use the alternate installation commands in README.md; do not use the PyPI namesake.

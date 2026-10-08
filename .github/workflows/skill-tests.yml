@@ -64,7 +64,8 @@ jobs:
           # Installing the declared file rather than naming the package here keeps one list. A
           # second copy in a workflow is how a dependency added later goes missing in CI only.
           python -m pip install --quiet -r requirements.txt
-          python -c "import llmcall" || { echo "::error::llmcall did not import after install; the suite would fail at collection, which reads as a code defect rather than a missing dependency"; exit 1; }
+          python -m pip check
+          python -c "from fleet_guards.runtime import companion_resolver; import llmcall" || { echo "::error::runtime dependencies did not import after install; the suite would fail at collection, which reads as a code defect rather than a missing dependency"; exit 1; }
           test -d skills/email-monitor/tests || { echo "::error::skills/email-monitor/tests is MISSING -- a suite that is not here is not a suite"; exit 1; }
           python -m pytest skills/email-monitor/tests/ -q -p no:cacheprovider -m "not integration" --reminder-source .test-deps/schedule-reminder/skills/schedule-reminder/scripts
           # The pytest summary above carries the deselected count, but a count with no name reads

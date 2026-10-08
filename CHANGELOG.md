@@ -5,6 +5,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [Unreleased]
 
 ### Configuration maintenance
+- Install the Guards runtime from the reviewed submodule during dependency setup, and check dependency consistency before the offline suite.
 - Run draft-template initialization tests against the shared generated PRIVATE companion fixture. Retain real storage admission and add missing/unversioned destination refusal controls.
 - Admit initializer leaves through the pinned source storage contract and PRIVATE versionability checks. Report the selected root in JSON doctor output.
 - State the complete discovery order, export the root before Chinese setup commands, and align retired mailbox evidence with source retention policy.

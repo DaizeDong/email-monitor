@@ -64,6 +64,7 @@ llmcall 的 Git 来源需要通过主机已有的凭据或 SSH 配置获得访�
 命令。请把示例路径换成主机实际提供的文件：
 
 ```bash
+python -m pip install ./guards
 python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
 python -m pip install "tzdata; sys_platform == 'win32'"
 python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"
