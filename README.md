@@ -51,37 +51,13 @@ After configuration and storage preflight passes, the heartbeat plans the config
 Several branches can apply to one message: alerts default to URGENT/ACTION, pool tracking covers
 URGENT/ACTION/FYI when schedule-reminder is available, and topic labels use an independent evidence
 gate. The dotted branch runs in the calling session when a reply is requested.
+If schedule-reminder is not installed, monitoring continues without pool tracking.
 
-```mermaid
-flowchart TD
-    watch["Read new mail and deduplicate<br/>UID + UIDVALIDITY"]
-    classify["Classify importance<br/>Agent or heuristic"]
-    intent["Save cursor and action keys<br/>PRIVATE companion"]
-    alert["Redacted Discord alert"]
-    pool["Track task or event<br/>Optional reminder pool"]
-    archive["Archive noise"]
-    topic["Add evidence-backed<br/>Topic labels"]
-    receipt{"Matching action confirmation?"}
-    complete["Record action as completed"]
-    recovery["Retain unresolved action<br/>Retry only with evidence"]
-    draft["Calling session: lint reply<br/>Create Gmail draft"]
-    review["User reviews and sends<br/>Manually in Gmail"]
+<p align="center">
+  <a href="docs/diagrams/workflow-en.png"><img src="docs/diagrams/workflow-en.png" width="760" alt="Email workflow: read and classify mail, save private intents, apply enabled actions, and confirm or reconcile; the caller drafts replies for manual sending."></a>
+</p>
 
-    watch --> classify
-    classify --> intent
-    intent -->|"Configured alert levels"| alert
-    intent -->|"URGENT / ACTION / FYI"| pool
-    intent -->|"NOISE and archive enabled"| archive
-    intent -->|"Topic labeling enabled"| topic
-    alert --> receipt
-    pool --> receipt
-    archive --> receipt
-    topic --> receipt
-    receipt -->|"Yes"| complete
-    receipt -->|"No"| recovery
-    classify -.->|"Reply requested"| draft
-    draft --> review
-```
+Editable [DOT source](docs/diagrams/workflow-en.dot) and [rendering helper](docs/diagrams/render.py).
 
 Observation and action completion have separate checkpoints. Uncertain actions wait for
 reconciliation; a retry reuses the same key only after evidence that the action was not applied.
