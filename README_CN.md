@@ -13,31 +13,29 @@
 
 ## ⭐ 设计哲学
 
-email-monitor 是一个**薄编排层 skill**。它不自建邮件存储、不自建调度、不自建推送,而是复用本机
-已有的三块基座 -- Gmail IMAP 工具链、schedule-reminder 事务池、Discord relay -- 只补上缺口:
-增量监控、分类/起草编排、归档/摘要钩子。**回复只生成草稿，由你审阅后发送。**默认的 agent
-分类会把邮件内容（包括正文）放入提示词，交给已安装的 `llmcall` 按当前策略路由；它可能调用
-外部提供方，因此默认配置不能保证模型处理留在本机。Discord 提醒使用脱敏后的简短摘要。
+email-monitor 使用 Gmail IMAP 工具链和 Discord relay，编排新邮件监控、分类、归档和回复草稿。
+可选的 schedule-reminder 提供事务记录和每日摘要。复用这些服务可以避免重复建设存储、调度和通知系统；
+每项已启用功能需要对应的服务可用。**回复只生成草稿，由你审阅后手动发送。**默认的 agent 分类会把
+邮件内容（包括正文）放入提示词，交给已安装的 `llmcall` 按当前策略路由；它可能调用外部提供方。
+Discord 提醒使用脱敏后的简短摘要。
 
 若要求模型处理只能在本地进行，在私有配置中设置 `runtime.local_only=true`、
 `classifier.mode="heuristic"` 和 `topic_labeling.enabled=false`。运行时会拒绝无法确认本地执行的
 agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各自的服务。
 
-复用现有基座减少重复账本，但需要这些依赖保持可用。重要性分类、主题标签和归档分别
-作决定，避免给邮件加标签时顺手隐藏它。默认模型路由以覆盖能力换取外部处理；
-本地启发式模式减少这种暴露，也会失去模型分类能力。
+重要性分类、主题标签和归档分别作决定，避免添加标签时隐藏邮件。
+本地启发式模式避免外部模型处理，同时放弃模型分类能力。
 
 📜 **[完整设计理念 -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
 ---
 
-## 它是什么(不是什么)
+<a id="它是什么不是什么"></a>
+## 功能范围
 
-- **是:**收件箱分诊回路：按 UID 水位线只读收取新邮件，默认用 agent 分类，也可选择启发式规则，
-  重要邮件推送提醒，噪音邮件按配置归档。可选的 schedule-reminder 基座提供事务池和每日摘要。
-  调用会话可以按配置中的签名和语言起草回复，交给你审阅。
-- **不是:**自动发信器(只起草)、第二个事务数据库(用 schedule-reminder)、批量收件箱清理器
-  (那个直接用 `gmail-imap-label.py`)。
+收件箱循环按 UID 水位线只读收取新邮件，使用选定的 agent 或启发式规则分类，
+为重要邮件发送提醒，并按配置归档噪音邮件。调用会话可以按配置中的签名和语言起草回复。
+批量收件箱清理直接使用 `gmail-imap-label.py`。
 
 ## 邮件处理流程
 
@@ -125,9 +123,9 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
   # 编辑 registry.json、把 app 口令录入 DPAPI(Mode B)、填 _personal_layer.json
   python scripts/verify_config.py   # doctor:逐项 PASS/FAIL,明确报缺什么
   ```
-- **切换 config(即插即用):** 把环境变量指向另一个 config 目录即可, config 自包含
-  (`cred_path` 用 `~`),无需任何别的改动:
-  `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`。
+- **切换配置：**用 `EMAIL_MONITOR_CONFIG` 选择另一个 PRIVATE 伴生仓，例如
+  `~/configs/work` 或 `~/configs/personal`，再运行对应的配置 doctor。
+  `cred_path` 使用 `~`；仍需检查选定的解释器、凭据和辅助脚本路径。
 - **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
   (`~/.local/secrets/gmail-<slug>.cred`),仓内只存指针。请用库外备份。
 
