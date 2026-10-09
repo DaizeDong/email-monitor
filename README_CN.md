@@ -44,37 +44,13 @@ agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各�
 配置和存储预检通过后，心跳任务规划已配置的邮件操作。一封邮件可以进入多个分支：默认对
 URGENT/ACTION 发提醒，安装了 schedule-reminder 时为 URGENT/ACTION/FYI 记录事务，
 主题标签则单独检查证据。虚线表示按需起草回复，由调用会话执行。
+未安装 schedule-reminder 时仍会继续监控，只跳过事务池记录。
 
-```mermaid
-flowchart TD
-    watch["读取新邮件并去重<br/>UID + UIDVALIDITY"]
-    classify["判断重要性<br/>Agent 或启发式规则"]
-    intent["保存游标和动作键<br/>PRIVATE 伴生仓"]
-    alert["发送脱敏的 Discord 提醒"]
-    pool["记录任务或事件<br/>可选事务池"]
-    archive["归档噪音邮件"]
-    topic["添加有证据支持的<br/>主题标签"]
-    receipt{"收到匹配的动作确认？"}
-    complete["将动作记录为已完成"]
-    recovery["保留未完成动作<br/>取得证据后才能重试"]
-    draft["调用会话：检查回复<br/>创建 Gmail 草稿"]
-    review["用户审阅后<br/>在 Gmail 手动发送"]
+<p align="center">
+  <a href="docs/diagrams/workflow-cn.png"><img src="docs/diagrams/workflow-cn.png" width="760" alt="邮件流程：读取分类、保存私有动作、执行已启用操作，再确认或核实；调用会话起草，由用户手动发送。"></a>
+</p>
 
-    watch --> classify
-    classify --> intent
-    intent -->|"配置的提醒级别"| alert
-    intent -->|"URGENT / ACTION / FYI"| pool
-    intent -->|"NOISE 且开启归档"| archive
-    intent -->|"开启主题标签"| topic
-    alert --> receipt
-    pool --> receipt
-    archive --> receipt
-    topic --> receipt
-    receipt -->|"是"| complete
-    receipt -->|"否"| recovery
-    classify -.->|"请求起草回复"| draft
-    draft --> review
-```
+可编辑的 [DOT 源文件](docs/diagrams/workflow-cn.dot)和[渲染脚本](docs/diagrams/render.py)。
 
 读取记录与动作完成状态分别保存。结果不明的动作先等待核实；只有证据表明动作未执行，
 才能用同一个键重试。回执要求和当前限制见

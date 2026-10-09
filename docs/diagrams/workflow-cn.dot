@@ -1,0 +1,30 @@
+// Public workflow documentation. Contains no runtime mail or account data.
+// Render both languages: python docs/diagrams/render.py
+digraph workflow {
+  graph [rankdir=LR, bgcolor="white", pad="0.16", nodesep="0.30", ranksep="0.32", fontname="Arial", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=16, fontcolor="#0f172a", penwidth=1.6, margin="0.16,0.12"];
+  edge [fontname="Arial", fontsize=12, color="#64748b", fontcolor="#475569", penwidth=1.4, arrowsize=0.75];
+  // Arial has no CJK glyphs; use the installed CJK sans-serif face for Chinese text.
+  node [fontname="Microsoft YaHei"];
+  edge [fontname="Microsoft YaHei"];
+
+  read [label=<<B>读取并分类</B><BR/><FONT POINT-SIZE="13">新邮件去重</FONT>>, fillcolor="#eef2ff", color="#6366f1"];
+  save [label=<<B>保存游标和动作</B><BR/><FONT POINT-SIZE="13">PRIVATE 伴生仓</FONT>>, fillcolor="#f1f5f9", color="#475569"];
+  actions [label=<<B>已启用的操作</B><BR/><FONT POINT-SIZE="13">提醒 · 事务池 · 归档 · 标签</FONT>>, fillcolor="#e0f2fe", color="#0284c7"];
+  confirm [label=<<B>逐项确认</B><BR/><FONT POINT-SIZE="13">回执与动作键匹配</FONT>>, fillcolor="#fef9c3", color="#ca8a04"];
+  done [label=<<B>记录完成</B>>, fillcolor="#dcfce7", color="#16a34a"];
+  unresolved [label=<<B>核实未完成动作</B><BR/><FONT POINT-SIZE="13">有未执行证据才重试</FONT>>, fillcolor="#fff1f2", color="#e11d48"];
+  draft [label=<<B>调用会话起草</B><BR/><FONT POINT-SIZE="13">检查并创建 Gmail 草稿</FONT>>, fillcolor="#e0f2fe", color="#0284c7"];
+  send [label=<<B>用户审阅</B><BR/><FONT POINT-SIZE="13">在 Gmail 手动发送</FONT>>, fillcolor="#dcfce7", color="#16a34a"];
+
+  read -> save -> actions -> confirm;
+  confirm -> done [label="是", color="#16a34a", fontcolor="#15803d"];
+  confirm -> unresolved [label="否", color="#e11d48", fontcolor="#be123c"];
+  read -> draft [label="按需请求", style=dashed, color="#0284c7", fontcolor="#0369a1"];
+  draft -> send [color="#0284c7"];
+
+  { rank=same; save; draft; }
+  { rank=same; actions; confirm; send; }
+  { rank=same; done; unresolved; }
+  confirm -> send [style=invis];
+}
