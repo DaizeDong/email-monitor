@@ -1,30 +1,29 @@
 # Step 5, Topic labeling: decide what a message is about, or refuse
 
-Add-only and opt-in. The kernel never removes a label and never touches `\Inbox`, so the worst
-case of a wrong verdict is one extra word on one message. That asymmetry is what lets the rest of
-this be aggressive about refusing.
-
-**Omission over commission.** A missing label costs a manual glance. A wrong label costs trust in
-every label, which is the defect this design exists to prevent. Every gate below is allowed to
-return nothing, and an empty answer is stated in the prompt as valid and often correct.
+Topic labeling is opt-in and add-only. The kernel never removes a label or changes `\Inbox`.
+A wrong verdict can still reduce label accuracy, so every gate may return no label. The prompt
+explicitly permits an empty answer when the input does not support a classification.
 
 ## Why an evidence gate rather than a confidence score
 
-A model's self-reported confidence is least reliable exactly where it has the least information.
-Requiring it to quote a span that actually occurs in the input is far harder to fake than a number,
-and it is checkable by a string operation instead of by trusting the model about itself.
+A self-reported confidence score does not provide independently checkable evidence. Requiring a
+quoted input span permits deterministic verification that the supporting text exists. The check
+establishes text presence; taxonomy interpretation still needs review.
 
 `evidence_holds()` normalizes case and collapses whitespace on both sides, then asks whether the
-quoted span occurs literally in `From + Subject`. Nothing else counts. Dropping is silent to the
-mailbox and never silent to the log: every dropped label carries its `drop_reason`.
+quoted span occurs literally in `From + Subject`. Model proposals and mapped address/domain
+evidence use this check. Deterministic `by_list_id` mappings have the separate identity check
+described below. Dropped labels leave the mailbox unchanged and carry a `drop_reason` in the log.
 
 ## Judgement inputs
 
-`From`, `Subject`, `Date`, `List-Id`. **Never the body.** This bounds how wrong a verdict can be:
-whatever the kernel decides, a human can re-derive from the same two visible lines.
+The kernel receives `From`, `Subject`, `Date` and `List-Id`; the body is excluded. `List-Id`
+supports the deterministic sender map. The model prompt includes `From`, `Subject` and `Date`,
+the private taxonomy, allowed labels and any settled source label. Model evidence must quote
+`From` or `Subject`; `Date` supplies context but cannot establish evidence.
 
-When `topic_labeling.enabled` is true, the heartbeat passes these headers and the private taxonomy
-to `llmcall.call(..., mode="judge")`. The installed routing policy may use external providers.
+When `topic_labeling.enabled` is true and model judgment is needed, the heartbeat passes that
+prompt to `llmcall.call(..., mode="judge")`. The installed routing policy may use external providers.
 This header-only topic route is separate from default agent importance classification, which
 includes body text. `runtime.local_only=true` rejects enabled topic models before reading mail.
 A dry tick may still make the configured topic judgment call, but it does not apply labels or
@@ -42,8 +41,10 @@ is this`, e.g. a receipt) is a property of the individual message, so a sender-k
 settle it: a shop sends both order confirmations and marketing from one address. Type labels
 therefore always reach the model, even on a pre-gate hit.
 
-Pre-gate hits are held to the same two checks as model output: a label outside this account's
-allowed set is dropped, and the mapped evidence must satisfy `evidence_holds`.
+Every pre-gate label must belong to this account's allowed set. Address and domain mappings
+must satisfy `evidence_holds`. A `by_list_id` mapping instead carries `source="map"` and
+`evidence_header="list_id"`; its nonempty normalized evidence must equal the normalized identity
+returned by `_list_identity(msg)`. Model proposals cannot use this List-Id exception.
 
 **2. Ask the model, as small a question as possible.** When the source is already settled, the
 prompt says so and asks only for the type labels, which narrows the surface on which it can be
@@ -51,7 +52,8 @@ wrong. Allowed labels are listed byte for byte; anything not on the list is disc
 forbids reasoning from sender habit ("this sender is usually X") and demands a verbatim span per
 label.
 
-**3. Verify (`verify_labels`).** Partition proposals into kept and dropped by `evidence_holds`.
+**3. Verify (`verify_labels`).** Partition proposals into kept and dropped using the header-span
+check or the narrow mapped List-Id check above. Model proposals require `evidence_holds`.
 A label the pre-gate already settled is not re-added.
 
 ## Three states, because two of them write nothing for different reasons
@@ -62,12 +64,9 @@ A label the pre-gate already settled is not re-added.
 | `unsure` | the model answered, nothing survived the gate | nothing written | normal; a recurring pattern means the standard needs an entry |
 | `failed` | the call itself broke (transport, unparseable reply) | nothing written | **investigate**; a tick full of `failed` looks identical to a quiet tick in the counters |
 
-Collapsing these into a boolean is the mistake this table exists to prevent.
-
-**A settled source label survives a broken transport.** If the map already established the source
-and the model is unreachable, the verdict is still `decided` with that label and a reason naming the
-failure. Losing what a deterministic rule already proved, because an unrelated call timed out, would
-be strictly worse than not calling at all.
+Keep the three states distinct even when two produce no mailbox write. If the map established a
+source label and the model is unreachable, the verdict remains `decided` with that label and a
+reason naming the failure. A model outage does not discard a verified deterministic source label.
 
 ## Writeback and the label-creation hazard
 

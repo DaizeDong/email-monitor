@@ -1,9 +1,8 @@
 # email-monitor, Config
 
-`email-monitor` is **config-bearing**: it reads per-user / per-machine state (account topology,
-classification rules, draft templates, and DPAPI credential pointers) from a **separate, private
-companion config repo** that you create and keep out of this public skill repo. Secrets never live
-here. This file is the authoritative config contract (config-spec E1).
+`email-monitor` reads account topology, classification rules, draft templates and DPAPI credential
+pointers from a separate PRIVATE companion repository. This file defines configuration behavior
+(config-spec E1); [DATA.md](DATA.md) defines storage, retention and recovery responsibilities.
 
 Operating mode: **Mode B**, the companion repo commits a zero-secret `registry.json`; real Gmail
 app passwords are stored machine-bound in DPAPI at `~/.local/secrets/gmail-<slug>.cred`, and the repo
@@ -29,10 +28,8 @@ Steps 3 through 6 select the first existing eligible directory through the pinne
 CONFIG and CONFIG_DIR are explicit selections and do not. The registry and its relative storage
 paths then use that one selected root.
 
-Explicit environment selections remain authoritative even when their directory is missing;
-runtime and doctor do not silently select a different companion. New initialization defaults to
-the sibling repository, or the selected environment path. Clone or initialize a verified PRIVATE
-repository there first. The public source repository never receives runtime DATA.
+New initialization defaults to the sibling repository or selected environment path. Clone or
+initialize a verified PRIVATE repository there first; the public source never receives runtime DATA.
 
 You may always override discovery with an explicit `--config <dir>/registry.json` on the runtime
 scripts (`em_tick.py`, `em_summary.py`); the explicit path wins over the env order. If nothing
@@ -95,6 +92,12 @@ Classifier CLI switches `--chain`, `--timeout`, `--codex-model`, `--codex-reason
 `--claude-model` report a migration error instead of silently choosing or ignoring a model.
 Nonmodel subprocess deadlines remain bounded independently.
 
+`runtime.local_only=true` permits heuristic classification with topic models disabled. A provider
+name or chain label does not establish locality. The current llmcall interface offers no
+enforceable local-transport proof, so agent and topic model modes fail before credentials, mail
+or model calls under that policy. The bundled summary is deterministic and uses no model. A
+custom summary worker cannot be verified under local_only.
+
 ### Topic labeling, `rules/taxonomy.md` + `rules/sender_map.json` + `rules/labels.json`
 
 These three files are what `topic_labeling.enabled: true` reads. Enabled topic judgments pass headers
@@ -139,6 +142,25 @@ judgment also drops such map hits, so model abstention or an outage cannot apply
 Filter exports report broader domain rules as uncompiled when they conflict with a narrower
 address or domain mapping. Gmail applies every matching filter, so exporting both positives
 would apply two labels even though the runtime chooses the more specific sender rule.
+
+### Draft configuration
+
+`draft.signature` is required and must be a nonempty single line; `draft.language` is `en`, `zh` or `any`.
+`draft.style` supports positive `max_lines` and `max_sentences` integers plus boolean
+`allow_markdown`. Malformed constraints fail visibly. Run the draft linter with the registry
+via `--config`; existing `--profile` and `--json` flags remain available. There is no implicit
+signature: the CLI reports invalid configuration when `--config` or `draft.signature` is missing,
+and the Python `lint(..., config=...)` API raises `ValueError` for missing or invalid settings.
+This intentionally changes callers that depended on a built-in identity. Valid configurations
+retain the same violation list and CLI JSON fields.
+
+The initializer stamps `Your Name` as a placeholder and renders new templates from the selected
+registry's signature. Set the intended `draft.signature` and keep template signatures in sync.
+Re-running without `--force` preserves existing registry and template bytes and fills only missing
+files; malformed or missing draft settings refuse before template creation. `--force` resets the
+skeleton, including custom registry and template content, so use it only for an intentional reset.
+Existing companions also retain their `.gitignore` on a normal rerun. Review any older DATA ignore
+rules and version those records in the PRIVATE companion; credential exclusions must remain.
 
 ### Companion-repo layout
 
@@ -254,29 +276,6 @@ SSH aliases and HTTPS routing/trust follow the shared Guards policy, read locall
 executing SSH or network commands. Every plausible SSH configuration chain must establish
 the same GitHub destination; ambiguous routing, proxy commands and weakened trust fail closed.
 There is no public-tree fallback.
-
-`runtime.local_only=true` permits heuristic classification with topic models disabled. A provider
-name or chain label does not establish locality. The current llmcall interface offers no
-enforceable local-transport proof, so agent and topic model modes fail before credentials, mail
-or model calls under that policy. The bundled summary is deterministic and uses no model. A
-custom summary worker cannot be verified under local_only.
-
-`draft.signature` is required and must be a nonempty single line; `draft.language` is `en`, `zh` or `any`.
-`draft.style` supports positive `max_lines` and `max_sentences` integers plus boolean
-`allow_markdown`. Malformed constraints fail visibly. Run the draft linter with the registry
-via `--config`; existing `--profile` and `--json` flags remain available. There is no implicit
-signature: the CLI reports invalid configuration when `--config` or `draft.signature` is missing,
-and the Python `lint(..., config=...)` API raises `ValueError` for missing or invalid settings.
-This intentionally changes callers that depended on a built-in identity. Valid configurations
-retain the same violation list and CLI JSON fields.
-
-The initializer stamps `Your Name` as a placeholder and renders new templates from the selected
-registry's signature. Set the intended `draft.signature` and keep template signatures in sync.
-Re-running without `--force` preserves existing registry and template bytes and fills only missing
-files; malformed or missing draft settings refuse before template creation. `--force` resets the
-skeleton, including custom registry and template content, so use it only for an intentional reset.
-Existing companions also retain their `.gitignore` on a normal rerun. Review any older DATA ignore
-rules and version those records in the PRIVATE companion; credential exclusions must remain.
 
 Read [delivery-state.md](skills/email-monitor/reference/delivery-state.md) before recovery or
 rollout. Doctor readiness covers configuration and runtime probes. Controlled-account delivery,

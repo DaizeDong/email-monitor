@@ -13,37 +13,33 @@ Incremental inbox triage with reviewable drafts and durable action tracking.
 
 ## ⭐ Design Philosophy
 
-email-monitor is a **thin orchestration skill**. It does not build a new mail store, a new scheduler,
-or a new notifier. It reuses three substrates already on the machine -- the Gmail IMAP toolchain, the
-schedule-reminder task pool, and the Discord relay -- and adds only the missing seam: an incremental
-watch, a classify/draft orchestrator, and archive/summary hooks. **Replies remain drafts for your
-review.** Default agent classification includes mail content, including the body, in prompts sent
-through the installed `llmcall` routing policy. That policy may use external providers; the default
-does not guarantee local model processing. Discord alerts contain a redacted one-line gist.
+email-monitor coordinates incremental Gmail triage, classification, archive actions and
+reviewable replies using the Gmail IMAP toolchain and Discord relay. The optional schedule-reminder
+base provides task tracking and daily summaries. Reusing these services avoids duplicate stores,
+schedulers and notifiers; each enabled feature depends on its corresponding service.
+**Replies remain drafts for your review and manual sending.** Default agent classification includes
+mail content, including the body, in prompts sent through the installed `llmcall` routing policy.
+That policy may use external providers. Discord alerts contain a redacted one-line gist.
 
 For enforced local-only model processing, set `runtime.local_only=true`,
 `classifier.mode="heuristic"`, and `topic_labeling.enabled=false` in the private registry.
 The runtime rejects agent classification and topic models when their locality cannot be verified.
 Mail access and explicitly configured notifications still use their respective services.
 
-Reusing these substrates avoids duplicate ledgers but makes their availability a
-prerequisite. Importance, topic labels and archive actions stay separate so adding
-a label cannot silently hide a message. Default model routing trades external
-processing for broader classification; local heuristics reduce that exposure and
-give up model classification.
+Importance, topic labels and archive actions are evaluated separately so adding a label cannot
+hide a message. Local heuristics avoid external model processing and give up model classification.
 
 📜 **[Read the full design philosophy -> PHILOSOPHY.md](PHILOSOPHY.md)**
 
 ---
 
-## What it is (and isn't)
+<a id="what-it-is-and-isnt"></a>
+## Scope
 
-- **It is:** an inbox triage loop: watch new mail with a read-only UID cursor, classify by importance
-  through the default agent route or a selected heuristic, alert important mail, and archive noise.
-  The optional schedule-reminder base adds pool tracking and daily summaries. The calling session
-  can draft replies using the configured signature and language for your review.
-- **It isn't:** an auto-sender (it only drafts), a second task database (it uses schedule-reminder),
-  or a bulk inbox cleaner (use `gmail-imap-label.py` directly for that).
+The inbox loop reads new mail with a UID cursor, classifies importance through the selected agent
+or heuristic route, alerts important mail and archives noise according to configuration. The
+calling session can draft replies using the configured signature and language. Use
+`gmail-imap-label.py` directly for bulk inbox cleanup.
 
 ## Mail processing flow
 
@@ -125,11 +121,13 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 classification rules, draft templates, DPAPI credential pointers) from a **separate, private**
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
-- **Mount (discovery order):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
-  the pinned Guards companion-root convention (including sibling and legacy locations),
-  then `<dir>/registry.json`. An
-  explicit `--config <registry.json>` overrides discovery. Missing configuration produces structured
-  failure and a nonzero exit without sending an alert.
+- **Discovery:** explicit `--config <registry.json>` wins, followed by `EMAIL_MONITOR_CONFIG`,
+  `EMAIL_MONITOR_CONFIG_DIR`, then the pinned Guards candidates: an existing
+  `EMAIL_MONITOR_DATA_DIR`, sibling `email-monitor-config`, `~/.email-monitor-config` and
+  `~/.email-monitor-data`. A final `data` component selects its parent as the companion root.
+  Missing CONFIG selections do not fall through; a missing DATA_DIR candidate can. The selected
+  root supplies `registry.json`. Failure produces structured output and a nonzero exit without
+  sending an alert. See [CONFIG.md](CONFIG.md) for eligibility requirements.
 - **First time:** create or clone a verified PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
   at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
   ```bash
@@ -138,9 +136,9 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
   # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
   python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
   ```
-- **Switch configs (hot-swap):** point the env var at another config dir, configs are
-  self-contained (`cred_path` uses `~`), no other change:
-  `export EMAIL_MONITOR_CONFIG=~/configs/work` ↔ `~/configs/personal`.
+- **Switch configurations:** select another PRIVATE companion with `EMAIL_MONITOR_CONFIG`,
+  for example `~/configs/work` or `~/configs/personal`, then run its configuration doctor.
+  `cred_path` uses `~`; validate the selected interpreter, credentials and helper paths separately.
 - **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay in
   DPAPI (`~/.local/secrets/gmail-<slug>.cred`), the repo keeps only pointers. Back up out-of-band.
 
@@ -184,8 +182,3 @@ English (`README.md`, authoritative) · 中文 (`README_CN.md`)
 ## Roadmap · Contributing · License
 
 See [ROADMAP.md](ROADMAP.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [LICENSE](LICENSE) (MIT).
-
-Discovery detail: after `EMAIL_MONITOR_CONFIG` and `EMAIL_MONITOR_CONFIG_DIR`, the existing
-`EMAIL_MONITOR_DATA_DIR` candidate precedes sibling `email-monitor-config`,
-`~/.email-monitor-config` and `~/.email-monitor-data`. A final `data` component selects its
-parent as the companion root. See [CONFIG.md](CONFIG.md) for missing-candidate behavior.

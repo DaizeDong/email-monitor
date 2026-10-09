@@ -9,15 +9,13 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - Run draft-template initialization tests against the shared generated PRIVATE companion fixture. Retain real storage admission and add missing/unversioned destination refusal controls.
 - Admit initializer leaves through the pinned source storage contract and PRIVATE versionability checks. Report the selected root in JSON doctor output.
 - State the complete discovery order, export the root before Chinese setup commands, and align retired mailbox evidence with source retention policy.
-- Limit process-ownership claims to the installed interface; no live mailbox, delivery or process-tree acceptance is implied.
 
 
 ### Process ownership
-- The tick delegates background process ownership to the installed llmcall interface without a separate declaration. Cleanup guarantees depend on that installed implementation and its receipts; import/callability checks alone do not prove that completed or timed-out calls leave no helpers.
+- The tick delegates background process ownership to installed llmcall without a separate declaration. Cleanup guarantees depend on that implementation and its receipts; import/callability checks do not prove cleanup after completion or timeout. No live mailbox, delivery or process-tree acceptance is implied.
 
 ### Documentation
-- Replace inline README flowcharts with compact English and Chinese PNGs, with editable DOT sources and a rendering helper.
-- Add matching English and Chinese mail-flow diagrams covering configured action branches, durable receipt tracking and the session-draft/user-send boundary.
+- Replace inline README flowcharts with compact English and Chinese PNGs covering configured action branches, durable receipt tracking and the session-draft/user-send boundary. Retain editable DOT sources and a rendering helper.
 - Extend storage ownership to historical filter candidates, configuration backups, private review notes and referenced recovery helpers. Preserve selected evidence and recovery obligations; helper validation and retirement remain separate work.
 - Declare source-owned PRIVATE storage families for runtime state, configured recovery helpers and selected filter/quality evidence. Historical development groups have conditional retirement holds; unknown paths remain failed coverage checks.
 - Apply a 64 MiB aggregate storage review threshold. Thresholds and retirement classes require dependency review and do not authorize removal.

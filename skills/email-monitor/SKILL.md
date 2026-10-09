@@ -5,11 +5,10 @@ description: "Auto-monitor Gmail: classify new mail by importance, alert importa
 
 # email-monitor, a thin orchestration skill for your inbox
 
-> Governing principle (full text in `PHILOSOPHY.md`): **reuse, never rebuild; and a reply is never
-> auto-sent.** Three substrates already exist on this machine (IMAP read/write toolchain, the
-> schedule-reminder task pool, the Discord relay). email-monitor only adds the *new* seam: an
-> incremental watch, a classify/draft orchestrator, and archive/summary hooks. It never builds a
-> second store, scheduler, or notifier, and it never sends mail for you.
+email-monitor adds incremental watch, classification, draft orchestration and archive/summary
+hooks to the Gmail IMAP toolchain and Discord relay. The optional schedule-reminder base supplies
+the shared task pool. Replies require user review and manual sending. Design rationale:
+[PHILOSOPHY.md](../../PHILOSOPHY.md).
 
 ## When to use / when to stop
 
@@ -22,7 +21,7 @@ description: "Auto-monitor Gmail: classify new mail by importance, alert importa
 ## Hard rules (never violate)
 
 1. **Never auto-send.** Replies land as Gmail drafts (`create_draft`) only; the user clicks Send.
-2. **The pool is the schedule-reminder base.** Only `reminder.py <verb> --json` via subprocess; never
+2. **The pool is the schedule-reminder base.** Only `reminder.py <verb>` via subprocess with JSON responses; never
    read its `.db`, build SQL, or import internals. ext keys are namespaced `x_email_monitor_*`.
 3. **Incremental correctness = UID + UIDVALIDITY.** Never sequence numbers, never `SEARCH SINCE`.
    Read-only `BODY.PEEK[]` (no `\Seen`), INBOX by default; durable keys bind account, mailbox,
@@ -64,14 +63,11 @@ without persistent writes or delivery. Preflight failures print JSON and exit no
 Delivery is complete only after a matching receipt. Uncertain actions require reconciliation;
 see `reference/delivery-state.md` for keys, retry behavior and live-readiness limits.
 
-**The pool step is an OPTIONAL co-op (plug-and-play).** With schedule-reminder installed, email-monitor
-tracks each actionable/FYI mail in its pool -- and, when the classifier extracts a concrete
-appointment/deadline, as a *dated* reminder (absolute dates normalized by `em_dates.py`, time-preserving;
-relative/English phrases like "by Friday" resolved by `em_duenorm.py` against the mail's own Date). With
-schedule-reminder ABSENT, email-monitor continues watch, classify and configured mail actions, while
-skipping the pool and daily summary. Its absence does not fail preflight (`em_pool.available()` gates
-the heartbeat's pool and summary steps). So
-the two skills interoperate when both are present, and each still stands alone.
+Pool integration is optional. When `em_pool.available()` finds schedule-reminder, the heartbeat
+tracks actionable/FYI mail and uses extracted dates for reminders. `em_dates.py` preserves the time
+in absolute dates; `em_duenorm.py` resolves relative English phrases against the mail's own Date.
+Without the base, watch, classification and configured mail actions continue, while pool tracking
+and daily summaries are skipped. Missing schedule-reminder does not fail preflight.
 
 ## Config lives in a private companion repo
 
@@ -79,19 +75,14 @@ Account topology, classification rules, the VIP/kill lists, draft templates, and
 project vocabulary are all externalized to a verified PRIVATE `email-monitor-config` Git repo, along
 with versioned runtime state, pending payloads, receipts and logs (Mode B keeps credentials separate
 in DPAPI). Relative storage paths resolve from that companion; there is no public-tool fallback. See
-`reference/summary-and-deploy.md` for the registry schema.
+[CONFIG.md](../../CONFIG.md) for discovery, initialization and the registry schema, and
+[DATA.md](../../DATA.md) for preservation and retention.
 
-Topic labeling (step 5) follows the same split: the taxonomy, sender map, and allowed-label set
-(`rules/taxonomy.md`, `rules/sender_map.json`, `rules/labels.json`) are DATA and live only in that
-private companion config, never in this public repo. See `CONFIG.md` for the schema. The skill
-ships the method (evidence-gated labeling that never de-inboxes); the operator's actual taxonomy
-is theirs alone.
+Topic labeling uses the private taxonomy, sender map and allowed-label set
+(`rules/taxonomy.md`, `rules/sender_map.json`, `rules/labels.json`). These are DATA governed by the
+same boundary. The public skill supplies the evidence-gated, add-only method.
 
 ## Progressive loading
 
 This `SKILL.md` is the only always-loaded file. Read one `reference/<shard>.md` at a time, for the step
 you are executing. Never load the whole `reference/` directory at once.
-
-Configuration discovery and initialization follow [CONFIG.md](../../CONFIG.md), including the
-DATA_DIR legacy candidate. Initialize only the selected PRIVATE companion; preserve unresolved
-state and the source-owned retention contract before any operational changes.

@@ -6,27 +6,19 @@ Current: **v0.2.0**
 
 The source includes explicit companion discovery, PRIVATE write admission, installed llmcall routing,
 and evidence-gated topic labeling with per-verdict diagnostics. Configuration and storage checks
-are separate from mailbox authentication, external delivery and process cleanup evidence. This
-maintenance work uses synthetic/offline checks; it does not establish configured live readiness
-or a published release. See [CONFIG.md](CONFIG.md) and [CHANGELOG.md](CHANGELOG.md).
+are separate from mailbox authentication, external delivery and process cleanup evidence. Synthetic/offline checks do not establish configured live readiness or a published release. See [CONFIG.md](CONFIG.md) and [CHANGELOG.md](CHANGELOG.md).
 
-## v0.2.0 (historical release baseline)
-- A concrete owner-facing date in a mail now becomes a *dated* reminder (`due_at` extracted by the
-  classifier, normalized in `em_dates.py`, passed through to the pool).
-- The skill runs standalone: the schedule-reminder pool integration is an optional downstream, so
-  with the base skill absent email-monitor still watches, classifies and alerts.
-- Test fixtures are generated rather than pasted, and the data boundary runs in both hooks and CI.
-- v0.1.4 through v0.1.9 are not itemized here; see [CHANGELOG.md](CHANGELOG.md).
+<a id="v020-historical-release-baseline"></a>
+The v0.2.0 baseline added dated reminders from classifier-extracted `due_at` values normalized
+by `em_dates.py`, optional schedule-reminder integration and generated fixtures checked by hooks
+and CI. Monitoring, classification and alerts remain available without the reminder base.
 
-## v0.1.3 (historical acceptance)
-- Incremental IMAP watch (UID + UIDVALIDITY watermark, read-only BODY.PEEK, X-GM-MSGID dedupe).
-- Three-tier classifier (L0 rules / L1 cheap scoring deterministic; L2 LLM hook).
-- Redacted Discord alerts + archive via existing label tool.
-- Task pool on the schedule-reminder base (idempotency + thread merge + ext namespace).
-- Deadline normalizer (NY -> UTC, DST-correct).
-- Draft compliance + AI-flavor linter (deterministic).
-- Daily summary worker (due=signal / worker=content) + EmailMonitorTick heartbeat template.
-- Program-judged acceptance suite (27 tests).
+<a id="v013-historical-acceptance"></a>
+The [CHANGELOG](CHANGELOG.md) retains the v0.1.3 baseline and intervening releases: UID/UIDVALIDITY
+watch with read-only BODY.PEEK and X-GM-MSGID deduplication, L0/L1 rules and an L2 hook, redacted
+alerts and archive actions, idempotent thread-based pool entries, DST-correct NY-to-UTC deadlines,
+draft linting, the daily-summary worker/heartbeat split and the original 27-test acceptance suite.
+These historical checks are not a current live-readiness result.
 
 ## Deferred from topic labeling
 
