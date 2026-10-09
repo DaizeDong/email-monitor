@@ -39,6 +39,49 @@ agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各�
 - **不是:**自动发信器(只起草)、第二个事务数据库(用 schedule-reminder)、批量收件箱清理器
   (那个直接用 `gmail-imap-label.py`)。
 
+## 邮件处理流程
+
+配置和存储预检通过后，心跳任务规划已配置的邮件操作。一封邮件可以进入多个分支：默认对
+URGENT/ACTION 发提醒，安装了 schedule-reminder 时为 URGENT/ACTION/FYI 记录事务，
+主题标签则单独检查证据。虚线表示按需起草回复，由调用会话执行。
+
+```mermaid
+flowchart TD
+    watch["读取新邮件并去重<br/>UID + UIDVALIDITY"]
+    classify["判断重要性<br/>Agent 或启发式规则"]
+    intent["保存游标和动作键<br/>PRIVATE 伴生仓"]
+    alert["发送脱敏的 Discord 提醒"]
+    pool["记录任务或事件<br/>可选事务池"]
+    archive["归档噪音邮件"]
+    topic["添加有证据支持的<br/>主题标签"]
+    receipt{"收到匹配的动作确认？"}
+    complete["将动作记录为已完成"]
+    recovery["保留未完成动作<br/>取得证据后才能重试"]
+    draft["调用会话：检查回复<br/>创建 Gmail 草稿"]
+    review["用户审阅后<br/>在 Gmail 手动发送"]
+
+    watch --> classify
+    classify --> intent
+    intent -->|"配置的提醒级别"| alert
+    intent -->|"URGENT / ACTION / FYI"| pool
+    intent -->|"NOISE 且开启归档"| archive
+    intent -->|"开启主题标签"| topic
+    alert --> receipt
+    pool --> receipt
+    archive --> receipt
+    topic --> receipt
+    receipt -->|"是"| complete
+    receipt -->|"否"| recovery
+    classify -.->|"请求起草回复"| draft
+    draft --> review
+```
+
+读取记录与动作完成状态分别保存。结果不明的动作先等待核实；只有证据表明动作未执行，
+才能用同一个键重试。回执要求和当前限制见
+[投递与恢复](skills/email-monitor/reference/delivery-state.md)，审阅步骤见
+[起草回复](skills/email-monitor/reference/drafting.md)。心跳任务不会创建或发送回复。
+可选的每日摘要使用独立流程。
+
 ## 安装
 
 ```
