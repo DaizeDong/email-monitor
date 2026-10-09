@@ -45,6 +45,51 @@ give up model classification.
 - **It isn't:** an auto-sender (it only drafts), a second task database (it uses schedule-reminder),
   or a bulk inbox cleaner (use `gmail-imap-label.py` directly for that).
 
+## Mail processing flow
+
+After configuration and storage preflight passes, the heartbeat plans the configured mail actions.
+Several branches can apply to one message: alerts default to URGENT/ACTION, pool tracking covers
+URGENT/ACTION/FYI when schedule-reminder is available, and topic labels use an independent evidence
+gate. The dotted branch runs in the calling session when a reply is requested.
+
+```mermaid
+flowchart TD
+    watch["Read new mail and deduplicate<br/>UID + UIDVALIDITY"]
+    classify["Classify importance<br/>Agent or heuristic"]
+    intent["Save cursor and action keys<br/>PRIVATE companion"]
+    alert["Redacted Discord alert"]
+    pool["Track task or event<br/>Optional reminder pool"]
+    archive["Archive noise"]
+    topic["Add evidence-backed<br/>Topic labels"]
+    receipt{"Matching action confirmation?"}
+    complete["Record action as completed"]
+    recovery["Retain unresolved action<br/>Retry only with evidence"]
+    draft["Calling session: lint reply<br/>Create Gmail draft"]
+    review["User reviews and sends<br/>Manually in Gmail"]
+
+    watch --> classify
+    classify --> intent
+    intent -->|"Configured alert levels"| alert
+    intent -->|"URGENT / ACTION / FYI"| pool
+    intent -->|"NOISE and archive enabled"| archive
+    intent -->|"Topic labeling enabled"| topic
+    alert --> receipt
+    pool --> receipt
+    archive --> receipt
+    topic --> receipt
+    receipt -->|"Yes"| complete
+    receipt -->|"No"| recovery
+    classify -.->|"Reply requested"| draft
+    draft --> review
+```
+
+Observation and action completion have separate checkpoints. Uncertain actions wait for
+reconciliation; a retry reuses the same key only after evidence that the action was not applied.
+See [delivery and recovery](skills/email-monitor/reference/delivery-state.md) for the receipt
+requirements and current limits, and [drafting](skills/email-monitor/reference/drafting.md) for
+the review workflow. The heartbeat does not create or send replies. Optional daily summaries
+use a separate workflow.
+
 ## Install
 
 ```

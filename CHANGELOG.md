@@ -16,6 +16,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - The tick delegates background process ownership to the installed llmcall interface without a separate declaration. Cleanup guarantees depend on that installed implementation and its receipts; import/callability checks alone do not prove that completed or timed-out calls leave no helpers.
 
 ### Documentation
+- Add matching English and Chinese mail-flow diagrams covering configured action branches, durable receipt tracking and the session-draft/user-send boundary.
 - Extend storage ownership to historical filter candidates, configuration backups, private review notes and referenced recovery helpers. Preserve selected evidence and recovery obligations; helper validation and retirement remain separate work.
 - Declare source-owned PRIVATE storage families for runtime state, configured recovery helpers and selected filter/quality evidence. Historical development groups have conditional retirement holds; unknown paths remain failed coverage checks.
 - Apply a 64 MiB aggregate storage review threshold. Thresholds and retirement classes require dependency review and do not authorize removal.
