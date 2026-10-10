@@ -91,11 +91,16 @@ checks the same PRIVATE storage boundary and keeps separate steps in
 `summary.state.json`: alert delivery, marking the current event done, and arming the
 next event. It checkpoints uncertainty before each step. An unconfirmed alert cannot
 mark an event done. Proven `not_applied` steps retain their receipt and retry with the same
-key; uncertain steps are not automatically replayed. A worker
+key; an uncertain alert step is not automatically replayed. The two pool steps are
+reconciled against the pool on the next run: a mark-done whose event is closed (done, or
+cancelled by the pool's own expiry) completes, one whose event is still open is retried; an
+arm-next whose key an item carries completes, otherwise it is retried (the keyed add is an
+upsert). An arm-next whose recorded time has already passed arms the next future slot
+instead, so a missed summary is not sent late. A worker
 failure, timeout or malformed completion report makes the heartbeat incomplete.
 
-This separate summary workflow is outside the four account-action ledger and has
-manual reconciliation only. The doctor reports its delivery as `not_measured`. Local
+This separate summary workflow is outside the four account-action ledger; its alert step
+has manual reconciliation only (em_catchup), its pool steps reconcile as above. The doctor reports its delivery as `not_measured`. Local
 synthetic tests cover control flow and interruption handling; they do not prove live
 Discord delivery, real reminder persistence or recovery on an installed scheduler.
 

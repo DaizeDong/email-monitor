@@ -242,8 +242,10 @@ def _companion_state(root):
         for profile in profiles:
             files |= {profile / '.gitconfig', profile / '.pii-guard' / 'visibility.json'}
         files |= _git_system_files(home)
+        # SSH files are only hashed here, never parsed: an HTTPS route must not interpret them.
         for config in sorted(files | {admin / 'config', common / 'config', admin / 'config.worktree'}, key=str):
-            files.update(_excludes_targets(config, home))
+            if config.name != 'ssh_config' and config.parent.name != '.ssh':
+                files.update(_excludes_targets(config, home))
         for path in sorted(files, key=str):
             parts.append((str(path), _file_state(path)))
     except (OSError, ValueError):

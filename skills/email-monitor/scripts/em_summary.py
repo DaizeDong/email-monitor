@@ -39,6 +39,14 @@ except Exception:  # pragma: no cover
     NY = timezone(timedelta(hours=-4))
 
 
+def _past(value):
+    try:
+        when = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return when.tzinfo is not None and when <= datetime.datetime.now(timezone.utc)
+
+
 def next_summary_utc(local_time="08:00", now=None):
     """Tomorrow's summary anchor at local_time NY, returned UTC RFC3339 (DST-correct)."""
     base = now or datetime.datetime.now(tz=NY)
@@ -86,6 +94,40 @@ def assemble(reminder, db, python=None):
     section("草稿已备,等你点发送", drafted)
     section("今日新增", newtoday)
     return "\n".join(lines).rstrip()
+
+
+TERMINAL = ("done", "cancelled")
+
+
+def reconcile_step(step, reminder, db, python=None):
+    """Prove an uncertain pool step's disposition from the pool itself; None when it cannot be read.
+
+    summary_mark_done: the event is closed (done, or cancelled by the pool's own expiry, which
+    `done` can never succeed on) -> confirmed; still open -> not_applied (no done landed).
+    summary_arm_next: an item carries the step key -> confirmed; none does -> not_applied (the
+    keyed add is an upsert, so retrying it cannot create a second event).
+    The alert step has no such source of truth and is never reconciled here.
+    """
+    adapter, key, payload = step["adapter"], step["key"], step["payload"]
+    receipt = {"idempotency_key": key, "adapter": adapter}
+    try:
+        if adapter == "summary_mark_done":
+            item = em_pool._run(reminder, db, "get", ["--id", payload["item_id"]], python=python)["item"]
+            if not isinstance(item, dict) or item.get("id") != payload["item_id"]:
+                return None
+            if item.get("state") in TERMINAL:
+                return dict(receipt, status="confirmed", receipt_id="%s:%s" % (item["id"], item["state"]))
+            return dict(receipt, status="not_applied",
+                        evidence="event %s is still %s" % (item["id"], item.get("state")))
+        if adapter == "summary_arm_next":
+            items = [item for item in em_pool.list_items(reminder, db, python=python)
+                     if isinstance(item, dict) and item.get("idempotency_key") == key]
+            if items:
+                return dict(receipt, status="confirmed", receipt_id=str(items[0]["id"]))
+            return dict(receipt, status="not_applied", evidence="no pool item carries the step key")
+    except Exception:
+        return None
+    return None
 
 
 def main():
@@ -151,7 +193,21 @@ def main():
                 if step["status"] == "completed":
                     continue
                 if step["status"] == "uncertain":
-                    break
+                    proof = reconcile_step(copy.deepcopy(step), a.reminder, storage["db"], python=runtime['python'])
+                    disposition = em_actions.receipt_status(proof, step["key"], step["adapter"])
+                    if disposition == "confirmed":
+                        step.update(status="completed", receipt=copy.deepcopy(proof))
+                        em_watch.save_state(state_path, state)
+                        continue
+                    if disposition != "not_applied":
+                        break
+                    step.update(status="failed", receipt=copy.deepcopy(proof))
+                    em_watch.save_state(state_path, state)
+                if step["adapter"] == "summary_arm_next" and _past(step["payload"].get("due_at")):
+                    # Missed summaries are not re-run: arm the next future slot instead of an
+                    # event that is already due (which would fire a stale summary at once).
+                    step["payload"]["due_at"] = next_summary_utc(
+                        cfg.get("daily_summary", {}).get("local_time", "08:00"))
                 step.update(status="uncertain", receipt=None)
                 em_watch.save_state(state_path, state)
                 possible_effect = True
