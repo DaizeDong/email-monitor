@@ -5,7 +5,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 ## [Unreleased]
 
 ### Tick progress
-- A tick classifies, plans and saves new mail in chunks of five messages, each saved with the cursor just past its last message and delivered before the next chunk starts. A tick stopped part way (the task's one hour limit) keeps every finished chunk; the next tick starts after them and sends no alert twice. A tick starts no new chunk after 40 minutes, and the topic retry queue is judged once per tick.
+- A tick classifies, plans and saves new mail in chunks of five messages, each saved with the cursor just past its last message and delivered before the next chunk starts. A tick stopped part way (the task's one hour limit) keeps every finished chunk; the next tick starts after them and sends no alert twice. A tick starts no new chunk and no new topic judgement after 40 minutes from process start, and the topic retry queue is judged once per tick. Each account gets an equal share of the time left when it starts, so one backlogged account can no longer use a whole tick and starve the accounts after it; topic records not reached stay queued in order. `max_batch` caps each monitored folder's fetch, so an account with two folders fetches up to twice it (CONFIG.md says so now).
 
 ### Configuration maintenance
 - Install the Guards runtime from the reviewed submodule during dependency setup, and check dependency consistency before the offline suite.

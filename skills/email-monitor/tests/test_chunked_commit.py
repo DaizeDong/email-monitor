@@ -206,19 +206,161 @@ def test_the_topic_retry_queue_is_judged_once_per_tick_not_once_per_chunk(harnes
 
 
 def test_a_refused_alert_is_retried_by_the_next_tick_not_by_the_next_chunk(harness, monkeypatch, mailbox):
+    """A relay refusal (not_applied) in the first chunk is answered by the next tick.
+
+    Three things together: the refused alert goes out with its own chunk, before the second chunk
+    is classified (chunked dispatch); the later chunks of the same tick do not send it again (each
+    open row is visited once per tick); and the next tick sends it exactly once more, which this
+    time the relay accepts, so that tick completes with nothing left open.
+    """
+    events = []
     _classifier(monkeypatch)
-    sent = _relay(monkeypatch, harness)
+    classify = tick.classify_records_parallel
+
+    def logged_classify(msgs, *a):
+        events.append(('classify', tuple(m['subject'] for m in msgs)))
+        return classify(msgs, *a)
+    monkeypatch.setattr(tick, 'classify_records_parallel', logged_classify)
     refused = _alert_key(mailbox[0])
+    relay = {'refuse': True}
+    sent = []
 
     def send(message, idempotency_key=None, **kw):
+        assert harness.stored['value']['actions'][idempotency_key]['status'] == 'uncertain'
         sent.append(idempotency_key)
-        if idempotency_key == refused:
+        events.append(('send', idempotency_key))
+        if idempotency_key == refused and relay['refuse']:
             return {'status': 'not_applied', 'idempotency_key': idempotency_key, 'adapter': 'alert',
                     'evidence': 'synthetic relay refused before sending'}
         return {'status': 'confirmed', 'idempotency_key': idempotency_key, 'adapter': 'alert',
                 'receipt_id': 'receipt-%d' % len(sent)}
     monkeypatch.setattr(tick.em_alert, 'send', send)
-    assert _run(harness)['status'] == 'incomplete'
+
+    first = _run(harness)
+    assert first['status'] == 'incomplete' and first['pending'] == 1
+    assert harness.stored['value']['actions'][refused]['status'] == 'failed'
+    first_send = events.index(('send', refused))
+    second_chunk = next(i for i, e in enumerate(events)
+                        if e[0] == 'classify' and 'Synthetic notice 5' in e[1])
+    assert first_send < second_chunk, 'the first chunk was not delivered before the next chunk was read'
     assert sent.count(refused) == 1, 'a later chunk in the same tick dispatched the refused alert again'
-    assert _run(harness)['status'] == 'completed'
-    assert sent.count(refused) == 2 and len(sent) == 13
+    assert len(sent) == 12
+
+    relay['refuse'] = False
+    second = _run(harness)
+    assert sent.count(refused) == 2, 'the next tick did not retry the refused alert exactly once'
+    assert sent[12:] == [refused] and second['new'] == 0
+    assert second['status'] == 'completed' and second['pending'] == 0
+    assert harness.stored['value']['actions'][refused]['status'] == 'completed'
+
+
+def _topics(monkeypatch, clock, cost):
+    """Topic judging enabled; each judgement takes `cost` seconds of the fake clock."""
+    judged = []
+    monkeypatch.setattr(tick.em_topic, 'load_config', lambda *a, **k: {
+        'taxonomy': {}, 'sender_map': {}, 'allowed_labels': [], 'type_labels': []})
+    monkeypatch.setattr(tick, '_make_transport', lambda **k: None)
+
+    def judge(message, *a, **k):
+        judged.append(message['subject'])
+        clock['now'] += cost
+        return {'state': 'unsure', 'labels': []}
+    monkeypatch.setattr(tick.em_topic, 'judge', judge)
+    return judged
+
+
+def test_account_deadline_is_an_equal_share_of_what_is_left():
+    assert tick.account_deadline(2400.0, 3, now=0.0) == 800.0
+    assert tick.account_deadline(2400.0, 2, now=1000.0) == 1700.0
+    assert tick.account_deadline(2400.0, 1, now=2000.0) == 2400.0   # the last account: the tick's own
+    assert tick.account_deadline(2400.0, 2, now=2500.0) == 2500.0   # already past: no new work at all
+
+
+def test_a_backlogged_account_cannot_starve_the_accounts_after_it(harness, monkeypatch):
+    """Three accounts, run in order inside one 40 minute tick; the first has a 40 message backlog.
+
+    Every message costs 70 s (one topic judgement). With one deadline for the whole tick the first
+    account would use all of it and the other two would read nothing, every tick. With a fair share
+    each, the first stops after its share and the other two read all their new mail.
+    """
+    clock = {'now': 0.0}
+    monkeypatch.setattr(tick.time, 'monotonic', lambda: clock['now'])
+    judged = _topics(monkeypatch, clock, 70.0)
+    users = ['user%d@example.com' % n for n in (1, 2, 3)]
+    mail = {users[0]: [_message(n) for n in range(40)],
+            users[1]: [_message(100 + n) for n in range(3)],
+            users[2]: [_message(200 + n) for n in range(3)]}
+    for user, messages in mail.items():
+        for m in messages:
+            m['message_id'] = '<%s-%s' % (user.split('@')[0], m['message_id'][1:])
+    states = {}
+
+    def load(path):
+        return states.setdefault(path, {'cursors': {user + '::INBOX': {'uidvalidity': GENERATION,
+                                                                       'last_uid': FIRST_UID - 1}
+                                                    for user in users}})
+
+    def save(path, value):
+        states[path] = copy.deepcopy(value)
+    monkeypatch.setattr(tick.em_watch, 'load_state', load)
+    monkeypatch.setattr(tick.em_watch, 'save_state', save)
+
+    def run_once(user, folder, cursor, max_batch=400, app_pw=None, info=None):
+        due = [m for m in mail[user] if m['uid'] > cursor['last_uid']][:max_batch]
+        if isinstance(info, dict):
+            info['caught_up'] = len(due) == len([m for m in mail[user] if m['uid'] > cursor['last_uid']])
+        last = due[-1]['uid'] if due else cursor['last_uid']
+        return copy.deepcopy(due), {'uidvalidity': GENERATION, 'last_uid': last}
+    monkeypatch.setattr(tick.em_watch, 'run_once', run_once)
+    _classifier(monkeypatch)
+    monkeypatch.setattr(tick.em_alert, 'send', lambda message, idempotency_key=None, **kw: {
+        'status': 'confirmed', 'idempotency_key': idempotency_key, 'adapter': 'alert', 'receipt_id': 'r'})
+    accounts = [{'slug': user.split('@')[0], 'user': user, 'monitored_folders': ['INBOX'], 'max_batch': 400}
+                for user in users]
+
+    def run_one(acct, deadline):
+        return tick.process_account(acct, {}, 'absent', None, None, str(harness.companion / 'state'), False,
+                                    agent_cfg={'mode': 'heuristic'}, pool_enabled=False, topic_enabled=True,
+                                    deadline=deadline)
+    results = tick.run_accounts(accounts, run_one, 2400.0, [])
+    first, second, third = results
+    assert first['stopped_early'] is True and 0 < first['new'] < 40
+    assert second['new'] == 3 and not second.get('stopped_early'), 'the second account was starved'
+    assert third['new'] == 3 and not third.get('stopped_early'), 'the third account was starved'
+    assert {'Synthetic notice %d' % n for n in (100, 101, 102, 200, 201, 202)} <= set(judged)
+    # The whole tick still ends inside its budget plus at most one judgement.
+    assert clock['now'] <= 2400.0 + 70.0
+
+
+def test_the_topic_retry_pass_stops_at_the_deadline_and_keeps_the_rest_queued(harness, monkeypatch, mailbox):
+    clock = {'now': 0.0}
+    monkeypatch.setattr(tick.time, 'monotonic', lambda: clock['now'])
+    judged = _topics(monkeypatch, clock, 60.0)
+    queued = [{'from': 'news@example.com', 'subject': 'Queued %d' % n, 'date': '', 'list_id': '',
+               'mailbox': 'INBOX', 'uidvalidity': GENERATION, 'message_id': '<queued%d@example.com>' % n}
+              for n in range(6)]
+    harness.stored['value']['topic_retry'] = copy.deepcopy(queued)
+    calls = _classifier(monkeypatch)
+    _relay(monkeypatch, harness)
+    result = _run(harness, topic_enabled=True, deadline=150.0)
+    assert judged == ['Queued 0', 'Queued 1', 'Queued 2'], 'the retry pass ignored the deadline'
+    assert [e['message_id'] for e in harness.stored['value']['topic_retry']] == \
+        [e['message_id'] for e in queued[3:]], 'the entries not reached were not kept in order'
+    assert calls == [] and result['stopped_early'] is True and result['new'] == 0
+    assert _cursor(harness) == FIRST_UID - 1
+
+
+def test_a_chunk_that_reaches_the_deadline_queues_its_unjudged_topics(harness, monkeypatch, mailbox):
+    clock = {'now': 0.0}
+    monkeypatch.setattr(tick.time, 'monotonic', lambda: clock['now'])
+    judged = _topics(monkeypatch, clock, 60.0)
+    calls = _classifier(monkeypatch)
+    sent = _relay(monkeypatch, harness)
+    result = _run(harness, topic_enabled=True, deadline=130.0)
+    assert judged == ['Synthetic notice %d' % n for n in range(3)], 'a judgement started after the deadline'
+    saved = harness.stored['value']
+    assert [e['message_id'] for e in saved['topic_retry']] == [m['message_id'] for m in mailbox[3:5]]
+    # The chunk itself is saved and delivered; nothing after it was read.
+    assert len(calls) == 1 and _cursor(harness) == mailbox[4]['uid'] and result['new'] == 5
+    assert sent == [_alert_key(m) for m in mailbox[:5]]
+    assert result['stopped_early'] is True
