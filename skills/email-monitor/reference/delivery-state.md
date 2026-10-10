@@ -38,6 +38,18 @@ returns uncertain because legacy downstream helpers cannot query prior dispositi
 This is an explicit limitation, not an exactly-once guarantee. An operator or future
 adapter must obtain independent delivery evidence before resolving uncertainty.
 
+Operator recovery after a helper defect is `em_catchup.py`. `alerts --before <ISO time
+with offset>` gathers every account alert row and daily-summary alert step left
+`uncertain` for mail dated before that time (pending rows belong to the running tick),
+journals the catch-up in `catchup.state.json`, and sends them as ONE consolidated message
+through the normal relay, most important first. Only a confirmed relay receipt marks the
+members `completed`; each member receipt carries `delivery: "catch_up"`, the
+`catchup_key` and the relay message ids. An interrupted catch-up is refused rather than
+resent, and a rerun only re-marks members of a completed catch-up. `requeue --action
+<adapter> --evidence <text>` turns uncertain rows of an idempotent adapter such as
+`topic_label` into `failed` with a `not_applied` receipt so the next tick dispatches
+them again; it refuses `alert` and `pool`. Neither archives mail or removes a label.
+
 State writes are atomic and flushed before dispatch. A failed intent or uncertainty
 checkpoint prevents the effect. A failed completion checkpoint leaves the earlier
 uncertain row authoritative. Use one heartbeat writer per state directory; scheduling
