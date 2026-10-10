@@ -4,6 +4,9 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+### Tick progress
+- A tick classifies, plans and saves new mail in chunks of five messages, each saved with the cursor just past its last message and delivered before the next chunk starts. A tick stopped part way (the task's one hour limit) keeps every finished chunk; the next tick starts after them and sends no alert twice. A tick starts no new chunk after 40 minutes, and the topic retry queue is judged once per tick.
+
 ### Configuration maintenance
 - Install the Guards runtime from the reviewed submodule during dependency setup, and check dependency consistency before the offline suite.
 - Run draft-template initialization tests against the shared generated PRIVATE companion fixture. Retain real storage admission and add missing/unversioned destination refusal controls.
