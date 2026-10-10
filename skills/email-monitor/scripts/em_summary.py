@@ -141,7 +141,8 @@ def main():
             plans = [("alert", {"message": assemble(a.reminder, storage["db"], python=runtime['python'])}),
                      ("summary_mark_done", {"item_id": item["id"]}),
                      ("summary_arm_next", {"due_at": next_at})]
-            runs[run_key] = {"steps": [{"key": run_key + ":" + adapter, "adapter": adapter,
+            runs[run_key] = {"scheduled_at": item.get("due_at") or item.get("created_at"),
+                             "steps": [{"key": run_key + ":" + adapter, "adapter": adapter,
                                         "status": "pending", "payload": payload, "receipt": None}
                                        for adapter, payload in plans]}
         em_watch.save_state(state_path, state)

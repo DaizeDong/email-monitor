@@ -7,6 +7,7 @@ DATA belongs to a verified PRIVATE Git companion. See reference/delivery-state.m
 for reconciliation limits and the separate optional daily-summary workflow.
 """
 import argparse
+import contextlib
 import datetime
 import copy
 import contextvars
@@ -577,6 +578,7 @@ def main():
     report = {"results": [], "status": "failed"}
     dry_token = _DRY.set(a.dry)
     log_token = None
+    writer = contextlib.ExitStack()
     try:
         config_path = resolve_config(a.config)
         if not config_path or not os.path.isfile(config_path):
@@ -599,6 +601,10 @@ def main():
         from em_lint_rules import draft_config
         draft_config(cfg.get("draft"))
         storage, proofs = em_runtime.storage_config(cfg, companion, a.state_dir, a.db)
+        if not a.dry:
+            # One writer per state directory for the whole run, the summary worker included:
+            # a refusal here (em_catchup or another tick holds it) changes nothing.
+            writer.enter_context(em_runtime.writer_lock(storage["state_dir"], "tick"))
         em_runtime.prove_private(config_path)
         ready, detail = em_runtime.probe_interpreter(runtime["python"])
         if not ready:
@@ -646,6 +652,7 @@ def main():
         report["status"] = "incomplete" if report["results"] else "failed"
         report["error"] = type(error).__name__ + ": " + str(error)
     finally:
+        writer.close()
         if log_token is not None:
             _LOG.reset(log_token)
         _DRY.reset(dry_token)
