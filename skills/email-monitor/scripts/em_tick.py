@@ -106,7 +106,8 @@ def _mail_effect(user, rfc_msgid, label, dry, action, app_pw=None,
     if action == "archive":
         args.append("--archive")
     if idempotency_key:
-        args += ["--idempotency-key", idempotency_key, "--json"]
+        # The label helper prints a JSON receipt for this key naming this adapter.
+        args += ["--idempotency-key", idempotency_key, "--receipt-adapter", action]
     env = dict(os.environ)
     if app_pw:
         env["GMAIL_APP_PW"] = app_pw
@@ -488,6 +489,12 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             return result
         # Cursor and durable intents are committed before the first effect.
         em_watch.save_state(state_path, state)
+        # A pool action's disposition can be proven from the pool itself, so an uncertain one is
+        # reconciled against one listing per tick instead of staying uncertain forever (which
+        # would keep every later tick incomplete). Keys are written
+        # only by their own action's write, so a listing taken before other writes in this loop
+        # still answers correctly for every remaining key.
+        pool_rows = None
         for row in state["actions"].values():
             if row["status"] == "completed":
                 continue
@@ -495,6 +502,10 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             if row["status"] == "uncertain":
                 try:
                     receipt = reconcile_action(copy.deepcopy(row))
+                    if action == "pool" and em_actions.receipt_status(receipt, key, action) == "uncertain":
+                        if pool_rows is None:
+                            pool_rows = em_pool.list_items(reminder, db, python=runtime.get("python"))
+                        receipt = em_pool.reconcile(copy.deepcopy(row), pool_rows)
                 except Exception:
                     receipt = None
                 disposition = em_actions.receipt_status(receipt, key, action)
