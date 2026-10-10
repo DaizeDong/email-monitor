@@ -22,6 +22,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 - Correct the initializer record: topic rules, templates and runtime DATA are versioned in the PRIVATE companion; only credential values follow the Mode-B exclusion policy.
 - Explain model-locality tradeoffs and keep importance, labeling, archive and draft approval decisions separate in both READMEs.
 ### Fixed
+- Add `em_catchup.py` for operator recovery of keyed actions a broken helper left uncertain: `alerts` delivers every stuck alert (and stuck daily-summary alert) as one consolidated catch-up message and marks each member completed with a `catch_up` receipt only after the relay confirms; `requeue` re-dispatches never-applied idempotent rows such as topic labels. Never resends alerts one by one, never archives or removes labels.
 - Use the pinned companion-root resolver across heartbeat, doctor, initialization and review defaults. Preserve explicit missing selections, refuse discovery without Guards, and prevent a cached resolver from another source choosing the companion. Backfill reads rules from that root; explicit review and credential-helper paths bypass unrelated discovery.
 - **The tick now counts topic verdicts, not just successes.** `topic_labeled=N` cannot separate
   "the gate is calibrated and this mail genuinely has no label" from "the gate refuses everything"
