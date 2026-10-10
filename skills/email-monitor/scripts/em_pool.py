@@ -137,23 +137,55 @@ def _account_aliases(ext):
     return aliases
 
 
-def _matches_reviewed(item, ext, text):
-    """Only explicit, time-bounded account/sender/subject/entity rules cross threads."""
+def _check_rule(rule):
+    if not isinstance(rule, dict) or not all(isinstance(rule.get(k), str) and rule[k].strip()
+                                              for k in ('account','sender','subject','until')):
+        raise PoolError('ERR_MERGE_RULE', 'Incomplete reviewed consolidation rule')
+    tokens = rule.get('contains', [])
+    if not isinstance(tokens, list) or not tokens or any(not isinstance(token, str) or not token.strip() for token in tokens):
+        raise PoolError('ERR_MERGE_RULE', 'Consolidation entity tokens must be a list of nonempty strings')
+    try:
+        date.fromisoformat(rule['until'])
+    except (TypeError, ValueError) as exc:
+        raise PoolError('ERR_MERGE_RULE', 'Invalid consolidation expiry') from exc
+
+
+def _rule_targets(rule, ext):
+    """Whether a rule's own account, sender and subject name this message.
+
+    A merge needs all three to match, so a rule that does not name this message (or names no
+    complete target at all) can never authorize merging it, whatever else is wrong with the rule.
+    """
+    if not isinstance(rule, dict) or not all(isinstance(rule.get(k), str) and rule[k].strip()
+                                              for k in ('account', 'sender', 'subject')):
+        return False
+    return (rule['account'] in _account_aliases(ext)
+            and _norm(rule['sender']) == _norm(parseaddr(ext.get('x_email_monitor_from', ''))[1])
+            and _norm(rule['subject']) == _norm(ext.get('x_email_monitor_subject_raw')))
+
+
+def _matches_reviewed(item, ext, text, skip_untargeted=False):
+    """Only explicit, time-bounded account/sender/subject/entity rules cross threads.
+
+    A defective rule is an error. With skip_untargeted (the write path), the error is raised only
+    for a message the defective rule names. Otherwise one item's rule with an empty `contains`
+    list makes every pool write for every account fail with ERR_MERGE_RULE. Skipping it for unrelated mail cannot lose a merge (it could not
+    match them), and mail it does name still fails closed until the rule is repaired.
+    """
     for rule in (item.get('ext') or {}).get('x_email_monitor_merge_rules', []):
-        if not isinstance(rule, dict) or not all(isinstance(rule.get(k), str) and rule[k].strip()
-                                                  for k in ('account','sender','subject','until')):
-            raise PoolError('ERR_MERGE_RULE', 'Incomplete reviewed consolidation rule')
-        tokens = rule.get('contains', [])
-        if not isinstance(tokens, list) or not tokens or any(not isinstance(token, str) or not token.strip() for token in tokens):
-            raise PoolError('ERR_MERGE_RULE', 'Consolidation entity tokens must be a list of nonempty strings')
         try:
-            expired = date.fromisoformat(rule['until']) < datetime.now(timezone.utc).date()
-        except (TypeError, ValueError) as exc:
-            raise PoolError('ERR_MERGE_RULE', 'Invalid consolidation expiry') from exc
-        if not expired and rule['account'] in _account_aliases(ext) and (
-                _norm(rule['sender']) == _norm(parseaddr(ext.get('x_email_monitor_from',''))[1])) and (
-                _norm(rule['subject']) == _norm(ext.get('x_email_monitor_subject_raw'))) and all(
-                _norm(token) in _norm(text) for token in tokens):
+            _check_rule(rule)
+        except PoolError:
+            if skip_untargeted and not _rule_targets(rule, ext):
+                # The scheduled tick runs under pythonw, where sys.stderr is None.
+                if sys.stderr is not None:
+                    sys.stderr.write('email-monitor: skipped defective consolidation rule on pool item %s '
+                                     '(it does not name this message)\n' % item.get('id'))
+                continue
+            raise
+        expired = date.fromisoformat(rule['until']) < datetime.now(timezone.utc).date()
+        if not expired and _rule_targets(rule, ext) and all(
+                _norm(token) in _norm(text) for token in rule['contains']):
             return True
     return False
 
@@ -232,6 +264,32 @@ def upsert(reminder, db, message_id, thread_key, title, kind="task", due_at=None
                        priority, tags, project, ext_extra, progress, draft_id, match_text, idempotency_key, python)
 
 
+def reconcile(action_record, rows):
+    """Prove a pool action's prior disposition from a listing of the pool itself.
+
+    confirmed: an item carries the action's key. Every keyed write records its key in the same
+    reminder.py call that creates or updates the item (`add`/`update` with the key in --ext), so an
+    item carrying the key is the write having landed.
+    not_applied: no item carries the key, so no keyed write landed. Retrying is safe on top of that:
+    the write is idempotent by source message, and a replay of a message the pool already retains
+    only records the key on the retained item (the replay branch of _upsert).
+    """
+    key = action_record['idempotency_key']
+    for row in rows:
+        ext = row.get('ext') or {}
+        if row.get('id') and key in [ext.get('x_email_monitor_action_key'),
+                                     *ext.get('x_email_monitor_action_keys', [])]:
+            return {'status': 'confirmed', 'idempotency_key': key, 'adapter': 'pool',
+                    'receipt_id': str(_canonical(row, rows)['id'])}
+    return {'status': 'not_applied', 'idempotency_key': key, 'adapter': 'pool',
+            'evidence': 'the pool lists %d items and none carries this action key' % len(rows)}
+
+
+def list_items(reminder, db, python=None):
+    """The whole pool, read only (one listing serves every reconciliation in a tick)."""
+    return _items(reminder, db, python=python)
+
+
 def _upsert(reminder, db, message_id, thread_key, title, kind, due_at, description,
             priority, tags, project, ext_extra, progress, draft_id, match_text, idempotency_key, python):
     if not message_id:
@@ -280,7 +338,8 @@ def _upsert(reminder, db, message_id, thread_key, title, kind, due_at, descripti
         prev = row.get('ext') or {}
         same_thread = thread_key and thread_key != 'ref:unknown' and any(
             (alias, thread_key) in _source_pairs(prev, 'thread') for alias in aliases)
-        if same_thread or _matches_reviewed(row, ext, match_text or title + '\n' + (description or '')):
+        if same_thread or _matches_reviewed(row, ext, match_text or title + '\n' + (description or ''),
+                                            skip_untargeted=True):
             canonical = _canonical(row, rows)
             matches[canonical['id']] = canonical
     if len(matches) > 1:

@@ -122,7 +122,9 @@ def send(message, idempotency_key=None, python=None):
         cmd[0] = python
     args = cmd + [message]
     if idempotency_key:
-        args += ["--idempotency-key", idempotency_key, "--json"]
+        # relay.py send prints its delivery receipt for this key and names the adapter given here.
+        # (A bare `--json` here would be read as relay.py's payload option and refused.)
+        args += ["--idempotency-key", idempotency_key, "--receipt-adapter", "alert"]
     p = subprocess.run(args,
                        capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
     receipt = None
