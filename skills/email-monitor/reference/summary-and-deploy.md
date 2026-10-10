@@ -15,7 +15,8 @@ exclude full bodies; the configured Discord destination receives that digest.
 For each due event, `summary.state.json` records three steps: alert, mark today's event done,
 and arm tomorrow's event. Only a matching alert confirmation permits the event changes. A valid
 `not_applied` receipt, including one from a nonzero helper exit, is retained and permits the same
-key to retry. Uncertain delivery stops that run for manual reconciliation without a blind resend.
+key to retry. Uncertain alert delivery stops that run for manual reconciliation without a blind
+resend; an uncertain mark-done or arm-next is reconciled against the pool on the next run.
 After a confirmed mark-done step, the worker arms tomorrow at `daily_summary.local_time`, using
 the America/New_York calendar across DST. See `delivery-state.md` for receipt and crash boundaries.
 
