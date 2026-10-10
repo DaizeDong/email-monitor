@@ -14,6 +14,10 @@ Each heartbeat connects read-only and reconciles a persisted watermark.
 - INBOX is the default. `monitored_folders` selects additional mailboxes. The durable identity
   binds canonical account, mailbox, UIDVALIDITY and RFC Message-ID; action keys also include
   the action and, for topic labels, the target label. Repeated fetches reuse those keys.
+- Mailbox names are sent to SELECT and STATUS as IMAP quoted strings, so names with spaces or
+  brackets such as `[Gmail]/All Mail` work. INBOX is read first. A message that appears in more
+  than one monitored mailbox (every inbox message is also in All Mail) is handled once per
+  account, in the first mailbox that showed it, and only recorded as observed in the others.
 - Resolve credentials at runtime and pass the password to the watcher without putting it in
   argv or logs. Label helpers receive it in a child environment, without mutating the parent.
 

@@ -4,7 +4,45 @@ import hashlib
 import json
 
 ACTIONS = {'alert', 'pool', 'archive', 'topic_label'}
-STATES = {'pending', 'failed', 'uncertain', 'completed'}
+STATES = {'pending', 'failed', 'uncertain', 'completed', 'message_gone'}
+# A mail action whose message no longer exists anywhere in the mailbox: after GONE_AFTER
+# consecutive not_applied receipts that matched no message, the row stops being retried and no
+# longer counts as pending work. Only mail effects can end this way.
+GONE_ACTIONS = {'topic_label', 'archive'}
+GONE_AFTER = 3
+
+
+def matched_nothing(receipt):
+    """A not_applied receipt whose search matched no message at all (structured, not by wording)."""
+    return (isinstance(receipt, dict) and receipt.get('status') == 'not_applied'
+            and type(receipt.get('matched')) is int and receipt['matched'] == 0)
+
+
+def record_outcome(row, receipt, disposition):
+    """Apply a dispatch outcome to `row`, counting consecutive "matched no message" answers.
+
+    Returns the row's new status. confirmed -> completed; not_applied -> failed, or message_gone
+    once GONE_AFTER consecutive not_applied receipts of a mail action matched no message;
+    anything else leaves the status as it is (uncertain).
+    """
+    if disposition == 'confirmed':
+        row.pop('gone_checks', None)
+        row.update(status='completed', receipt=copy.deepcopy(receipt))
+    elif disposition == 'not_applied':
+        if row['action'] in GONE_ACTIONS and matched_nothing(receipt):
+            row['gone_checks'] = int(row.get('gone_checks') or 0) + 1
+        else:
+            row.pop('gone_checks', None)
+        gone = row['action'] in GONE_ACTIONS and row.get('gone_checks', 0) >= GONE_AFTER
+        row.update(status='message_gone' if gone else 'failed', receipt=copy.deepcopy(receipt))
+    else:
+        row.pop('gone_checks', None)
+    return row['status']
+
+
+def open_work(row):
+    """True while a row still owes work: neither completed nor proven message_gone."""
+    return row['status'] not in ('completed', 'message_gone')
 
 
 def identity(account, mailbox, uidvalidity, message_id, action='', label=''):
@@ -67,4 +105,9 @@ def load_state(raw, account):
             raise ValueError('invalid durable action identity or payload')
         if row['status'] == 'completed' and receipt_status(row['receipt'], key, row['action']) != 'confirmed':
             raise ValueError('completed action has no matching acknowledgement')
+        if row['status'] == 'message_gone' and (
+                row['action'] not in GONE_ACTIONS or not matched_nothing(row['receipt'])
+                or receipt_status(row['receipt'], key, row['action']) != 'not_applied'
+                or int(row.get('gone_checks') or 0) < GONE_AFTER):
+            raise ValueError('message_gone action has no matching proof that the message is gone')
     return state

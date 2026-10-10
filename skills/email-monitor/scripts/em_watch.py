@@ -209,18 +209,38 @@ def _x_attr(item_bytes, name):
     return m.group(1).decode() if m else None
 
 
-def run_once(user, folder, cursor, max_batch=400, app_pw=None):
-    """Connect read-only, fetch new headers, return (records, new_cursor). Live side effects only."""
+def quote_mailbox(name):
+    """A mailbox name as an IMAP quoted string.
+
+    imaplib sends mailbox arguments verbatim, so a name with a space or a bracket (Gmail's
+    "[Gmail]/All Mail") reaches the server as several tokens and is refused with "BAD Could not
+    parse command". A quoted string is valid for every name, INBOX included. A name that is
+    already quoted passes through unchanged.
+    """
+    if not isinstance(name, str) or not name:
+        raise ValueError("mailbox name must be a nonempty string")
+    if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
+        return name
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def run_once(user, folder, cursor, max_batch=400, app_pw=None, info=None):
+    """Connect read-only, fetch new headers, return (records, new_cursor). Live side effects only.
+
+    When `info` is a dict, info["caught_up"] says whether this fetch reached the mailbox tip
+    (False when max_batch cut the range short and more mail is waiting).
+    """
     pw = app_pw if app_pw is not None else os.environ.get("GMAIL_APP_PW")
     if not pw:
         raise RuntimeError("GMAIL_APP_PW not set (DPAPI-resolved at runtime; never on argv)")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
     try:
         M.login(user, pw)
-        typ, data = M.select(folder, readonly=True)  # readonly -> no \\Seen
+        mailbox = quote_mailbox(folder)
+        typ, data = M.select(mailbox, readonly=True)  # readonly -> no \\Seen
         if typ != "OK":
             raise RuntimeError("select %s failed: %r" % (folder, data))
-        status, sd = M.status(folder, "(UIDVALIDITY UIDNEXT)")
+        status, sd = M.status(mailbox, "(UIDVALIDITY UIDNEXT)")
         if status != "OK":
             raise RuntimeError("IMAP STATUS failed")
         sd0 = sd[0].decode() if sd and sd[0] else ""
@@ -254,6 +274,8 @@ def run_once(user, folder, cursor, max_batch=400, app_pw=None):
         if lo is not None:
             # Successful FETCH has observed the entire bounded range, including expunged UIDs.
             new_cursor["last_uid"] = max(new_cursor["last_uid"], hi)
+        if isinstance(info, dict):
+            info["caught_up"] = new_cursor["last_uid"] >= uidnext - 1
         return records, new_cursor
     finally:
         try:
@@ -271,8 +293,19 @@ def main():
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
 
-    from em_runtime import prove_private
+    from em_runtime import WriterBusy, prove_private, writer_lock
     prove_private(a.state)
+    # The same writer lock as the tick and em_catchup: this CLI rewrites the state file, so a
+    # run beside a tick would let one of them write back a stale copy.
+    try:
+        with writer_lock(os.path.dirname(os.path.abspath(a.state)), "watch"):
+            return _locked_main(a)
+    except WriterBusy as busy:
+        sys.stderr.write("em_watch refused: %s\n" % busy)
+        return 3
+
+
+def _locked_main(a):
     state = load_state(a.state)
     key = "%s::%s" % (a.user, a.folder)
     cursor = state["cursors"].get(key, {"uidvalidity": None, "last_uid": 0})

@@ -13,12 +13,13 @@ worker is deterministic and calls no model. Titles may contain private context e
 exclude full bodies; the configured Discord destination receives that digest.
 
 For each due event, `summary.state.json` records three steps: alert, mark today's event done,
-and arm tomorrow's event. Only a matching alert confirmation permits the event changes. A valid
+and arm the next event. Only a matching alert confirmation permits the event changes. A valid
 `not_applied` receipt, including one from a nonzero helper exit, is retained and permits the same
 key to retry. Uncertain alert delivery stops that run for manual reconciliation without a blind
 resend; an uncertain mark-done or arm-next is reconciled against the pool on the next run.
-After a confirmed mark-done step, the worker arms tomorrow at `daily_summary.local_time`, using
-the America/New_York calendar across DST. See `delivery-state.md` for receipt and crash boundaries.
+After a confirmed mark-done step, the worker arms the next `daily_summary.local_time` slot that
+is still ahead (today's when the run happens before it, otherwise tomorrow's), using the
+America/New_York calendar across DST. See `delivery-state.md` for receipt and crash boundaries.
 
 The standalone summary `--dry` validates config and PRIVATE storage, then prints the intended
 step names without reading due items, assembling content, writing state or sending anything.
@@ -34,8 +35,9 @@ can return the doctor's JSON output. A missing interpreter or failed doctor stop
 
 The task repeats every `IntervalMinutes` (default 5), with no repetition duration,
 `StartWhenAvailable`, `IgnoreNew` and battery operation enabled. The next ordinary tick resumes
-the stored cursor after downtime, subject to the first-run and UIDVALIDITY baseline rules. Keep
-one writer per state directory; the task setting does not serialize separate manual invocations.
+the stored cursor after downtime, subject to the first-run and UIDVALIDITY baseline rules. The task
+setting does not serialize manual invocations; the state directory's writer lock does (see
+`delivery-state.md`).
 
 Each tick checks config, draft settings, storage privacy, interpreter imports, the label helper,
 the configured standalone notifier file, and an explicit credential resolver if supplied. The

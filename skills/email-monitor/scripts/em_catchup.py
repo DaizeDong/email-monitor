@@ -132,10 +132,14 @@ def _sender(value):
     return name or domain or "发件人未知"
 
 
-def render(entries, now=None):
+RELAY_INTRO = "补发:以下 %d 条邮件提醒当时没有送达(中继故障),按重要程度排列。"
+BACKLOG_INTRO = "补发:以下 %d 条邮件提醒来自监控中断期间积压的旧邮件,合并为一条发出,按重要程度排列。"
+
+
+def render(entries, now=None, intro=RELAY_INTRO):
     """The consolidated catch-up text. Subjects pass the same redaction as normal alerts."""
     entries = order(entries)
-    lines = ["补发:以下 %d 条邮件提醒当时没有送达(中继故障),按重要程度排列。" % len(entries)]
+    lines = [intro % len(entries)]
     for entry in entries:
         when = _when(entry)
         stamp = when.strftime("%m-%d %H:%M") if when is not None else "时间未知"
@@ -346,6 +350,91 @@ def apply_marks(journal, account_paths, summary_path, load=None, save=None):
                 done = _rmw(summary_path, lambda state: _mark_summary(state, one, key, record), load, save)
             marked += bool(done)
     return marked
+
+
+def backlog_rows(state):
+    """Alert rows the tick held back as backlog and has not sent yet (pending, or proven unsent)."""
+    return [row for row in (state.get("actions") or {}).values()
+            if row.get("action") == "alert" and (row.get("payload") or {}).get("backlog")
+            and row.get("status") in ("pending", "failed")]
+
+
+def deliver_backlog(state, state_path, journal_path, send, save=None, load=None, now=None):
+    """Send every held-back backlog alert of one account as ONE catch-up message, inside a tick.
+
+    Used by the tick for alerts on mail that was already old when it was first observed (an
+    account that could not be read for days): one consolidated message through the same relay
+    and journal as the `alerts` catch-up, instead of one push per stale message. The journal
+    entry and the members' `uncertain` status are saved before the send. Only a confirmed relay
+    receipt marks the members `completed` (with `catch_up` receipts); a proven non-delivery makes
+    them `failed` so a later tick tries again; anything else leaves them `uncertain` for the
+    operator, like any interrupted catch-up. `state` is changed in place and saved through `save`.
+    Returns a report with the member count by level.
+    """
+    save = save or em_watch.save_state
+    load = load or em_watch.load_state
+    rows = backlog_rows(state)
+    if not rows:
+        return {"status": "nothing_pending", "members": 0}
+    journal = load(journal_path) if os.path.isfile(journal_path) else {"catchups": {}}
+    journal.setdefault("catchups", {})
+    levels = {}
+    entries = []
+    for row in rows:
+        origin = row["payload"].get("origin") or {}
+        entry = {"scope": ("account", row["account"]), "key": row["idempotency_key"], "adapter": "alert",
+                 "account": row["account"], "message_id": row["message_id"],
+                 "message": row["payload"].get("message", ""),
+                 "level": level_of(row["payload"].get("message", "")),
+                 "date": origin.get("date", ""), "from": origin.get("from", ""),
+                 "subject": origin.get("subject", "")}
+        levels[entry["level"]] = levels.get(entry["level"], 0) + 1
+        entries.append(entry)
+    members = sorted(e["key"] for e in entries)
+    key = catchup_key(members)
+    if any(r.get("status") != "completed" for r in journal["catchups"].values()):
+        return {"status": "blocked", "members": len(rows), "levels": levels,
+                "error": "an earlier catch-up was interrupted; resolve it with em_catchup first"}
+    if key in journal["catchups"]:  # already delivered; this state copy only missed the marks
+        marked = _mark_account(state, set(members), key, journal["catchups"][key])
+        save(state_path, state)
+        return {"status": "completed", "members": len(rows), "levels": levels, "marked": marked,
+                "catchup_key": key, "remarked": True}
+    text = render(entries, now, intro=BACKLOG_INTRO)
+    journal["catchups"][key] = {"status": "uncertain", "members": members, "receipt": None,
+                                "kind": "backlog"}
+    save(journal_path, journal)
+    for row in rows:
+        row.update(status="uncertain", receipt=None)
+    save(state_path, state)
+    try:
+        receipt = send(text, key)
+    except Exception:
+        receipt = None
+    disposition = em_actions.receipt_status(receipt, key, "alert")
+    report = {"members": len(rows), "levels": levels, "catchup_key": key}
+    if disposition == "confirmed":
+        delivered_at = (now or datetime.datetime.now(datetime.timezone.utc)).isoformat()
+        record = {"status": "completed", "members": members, "receipt": receipt,
+                  "delivered_at": delivered_at, "kind": "backlog"}
+        journal["catchups"][key] = record
+        save(journal_path, journal)
+        report.update(status="completed", marked=_mark_account(state, set(members), key, record),
+                      relay_receipt=receipt["receipt_id"])
+        save(state_path, state)
+        return report
+    if disposition == "not_applied":
+        del journal["catchups"][key]
+        save(journal_path, journal)
+        for row in rows:
+            row.update(status="failed", receipt={
+                "status": "not_applied", "idempotency_key": row["idempotency_key"], "adapter": "alert",
+                "evidence": "backlog catch-up %s was not applied: %s" % (key, receipt.get("evidence", ""))})
+        save(state_path, state)
+        report.update(status="not_delivered")
+        return report
+    report.update(status="uncertain")
+    return report
 
 
 def _check_requeue(action, evidence):

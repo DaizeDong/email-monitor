@@ -11,6 +11,7 @@ import contextlib
 import datetime
 import copy
 import contextvars
+import email.utils
 from pathlib import Path
 import json
 import os
@@ -33,6 +34,7 @@ import em_dates           # noqa: E402
 import em_topic            # noqa: E402
 import em_retry            # noqa: E402
 import em_actions
+import em_catchup
 import em_runtime
 # Module import (not `from llmcall import call`): the transport closure below reaches
 # llmcall.call at call time, so tests can monkeypatch em_tick.llmcall.call directly.
@@ -47,6 +49,11 @@ LABEL_TOOL = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
+# An alert for mail that was already this old when the tick first saw it (the account could not
+# be read for a while) is not pushed on its own: it is held as backlog and delivered with the
+# account's other backlog alerts as ONE catch-up message once the account's mailboxes are read up
+# to their tips. Classification, labels and pool items are unaffected.
+BACKLOG_AFTER = datetime.timedelta(hours=12)
 _DRY = contextvars.ContextVar("email_monitor_dry", default=False)
 _LOG = contextvars.ContextVar("email_monitor_log", default=None)
 
@@ -330,8 +337,19 @@ def reconcile_action(action_record):
             "adapter": action_record["action"]}
 
 
+def _is_backlog(record, now):
+    """True when the message's Date is older than BACKLOG_AFTER at `now`; undated mail is not."""
+    try:
+        sent = email.utils.parsedate_to_datetime(record.get("date") or "")
+    except (TypeError, ValueError, IndexError):
+        return False
+    if sent is None or sent.tzinfo is None:
+        return False
+    return now - sent > BACKLOG_AFTER
+
+
 def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled,
-                 archive_enabled):
+                 archive_enabled, now=None):
     user = acct["user"].strip().lower()
     slug = acct.get("slug", user.split("@")[0])
     priority, semantic = verdict["priority"], verdict["label"]
@@ -341,8 +359,12 @@ def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled
     def add(action, payload):
         plans.append(em_actions.new_action(user, mailbox, generation, record, action, payload))
     if priority in set(rules.get("discord_push_levels", ["URGENT", "ACTION"])):
-        add("alert", {"message": em_alert.build_title(priority, slug, record.get("subject", ""),
-             summary=verdict.get("summary_zh", ""), account_label=acct.get("display_zh"))})
+        alert = {"message": em_alert.build_title(priority, slug, record.get("subject", ""),
+                 summary=verdict.get("summary_zh", ""), account_label=acct.get("display_zh"))}
+        if now is not None and _is_backlog(record, now):
+            # Held for the account's consolidated backlog catch-up (em_catchup.deliver_backlog).
+            alert.update(backlog=True, origin={key: record.get(key, "") for key in ("date", "from", "subject")})
+        add("alert", alert)
     if pool_enabled and priority in ("URGENT", "ACTION", "FYI"):
         add("pool", {"thread_key": record.get("thread_key", record["message_id"]),
             "match_text": record.get("subject", "") + "\n" + record.get("body", ""),
@@ -450,10 +472,32 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             raise ValueError("no app password resolved")
         fresh = []
         observed = set(state["observed_messages"])
-        for folder in dict.fromkeys("INBOX" if f.upper() == "INBOX" else f for f in folders):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        caught_up = True
+        # INBOX first. A message can sit in several monitored mailboxes at once (INBOX and
+        # "[Gmail]/All Mail" both hold every inbox message); it is handled once per account, in
+        # the first mailbox that showed it, and skipped in every other one.
+        ordered = list(dict.fromkeys("INBOX" if f.upper() == "INBOX" else f for f in folders))
+        ordered.sort(key=lambda f: f != "INBOX")
+        tick_mids = set()
+
+        def seen_elsewhere(folder, mid):
+            if mid.strip() in tick_mids:
+                return True
+            for other in ordered:
+                generation = state["cursors"].get(user + "::" + other, {}).get("uidvalidity")
+                if other != folder and generation is not None and \
+                        em_actions.identity(user, other, generation, mid) in observed:
+                    return True
+            return False
+
+        for folder in ordered:
             cursor_key = user + "::" + folder
             cursor = copy.deepcopy(state["cursors"].get(cursor_key, {"uidvalidity": None, "last_uid": 0}))
-            records, new_cursor = em_watch.run_once(user, folder, cursor, acct.get("max_batch", 400), app_pw=password)
+            info = {}
+            records, new_cursor = em_watch.run_once(user, folder, cursor, acct.get("max_batch", 400),
+                                                    app_pw=password, info=info)
+            caught_up = caught_up and info.get("caught_up", True)
             generation = new_cursor.get("uidvalidity")
             for record in records:
                 record = copy.deepcopy(record)
@@ -463,7 +507,11 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                 identity = em_actions.identity(user, folder, generation, mid)
                 if identity in observed:
                     continue
+                duplicate = seen_elsewhere(folder, mid)
                 observed.add(identity)
+                tick_mids.add(mid.strip())
+                if duplicate:
+                    continue
                 record.update(mailbox=folder, uidvalidity=generation)
                 fresh.append(record)
             state["cursors"][cursor_key] = copy.deepcopy(new_cursor)
@@ -476,7 +524,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             raise ValueError("classifier omitted a required message verdict")
         for record, verdict in zip(fresh, verdicts):
             for row in _plan_record(acct, record["mailbox"], record["uidvalidity"], record,
-                                    verdict, rules, pool_enabled, archive_enabled):
+                                    verdict, rules, pool_enabled, archive_enabled, now=now):
                 state["actions"].setdefault(row["idempotency_key"], row)
             if verdict["priority"] == "NOISE" and not archive_enabled:
                 result["kept"] += 1
@@ -485,7 +533,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         result["new"] = len(fresh)
         if dry:
             result.update(status="planned", planned_actions=copy.deepcopy([
-                row for row in state["actions"].values() if row["status"] != "completed"]))
+                row for row in state["actions"].values() if em_actions.open_work(row)]))
             result["pending_topics"] = len(state["topic_retry"])
             return result
         # Cursor and durable intents are committed before the first effect.
@@ -497,9 +545,11 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         # still answers correctly for every remaining key.
         pool_rows = None
         for row in state["actions"].values():
-            if row["status"] == "completed":
+            if not em_actions.open_work(row):
                 continue
             key, action = row["idempotency_key"], row["action"]
+            if action == "alert" and row["payload"].get("backlog") and row["status"] in ("pending", "failed"):
+                continue  # sent below, with the account's other backlog alerts, as one catch-up
             if row["status"] == "uncertain":
                 try:
                     receipt = reconcile_action(copy.deepcopy(row))
@@ -527,16 +577,27 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             except Exception:
                 receipt = None
             disposition = em_actions.receipt_status(receipt, key, action)
-            if disposition == "confirmed":
-                row.update(status="completed", receipt=copy.deepcopy(receipt))
-            elif disposition == "not_applied":
-                row.update(status="failed", receipt=copy.deepcopy(receipt))
+            em_actions.record_outcome(row, receipt, disposition)
             em_watch.save_state(state_path, state)
+            if row["status"] == "message_gone":
+                log("ACCOUNT %s: %s gave up after %d consecutive answers that the message no longer exists"
+                    % (slug, action, row.get("gone_checks", 0)))
             if row["status"] == "completed":
                 counter = {"alert": "alert", "archive": "archived", "topic_label": "topic_labeled"}.get(action)
                 if counter:
                     result[counter] += 1
-        pending = sum(row["status"] != "completed" for row in state["actions"].values()) + len(state["topic_retry"])
+        if caught_up and em_catchup.backlog_rows(state):
+            possible_effect = True
+            journal_path = os.path.join(state_dir, em_catchup.JOURNAL)
+            backlog = em_catchup.deliver_backlog(
+                state, state_path, journal_path,
+                lambda text, key: em_alert.send(text, idempotency_key=key, python=runtime.get("python")),
+                save=em_watch.save_state, now=now)
+            result["backlog"] = {k: backlog[k] for k in ("status", "members", "levels") if k in backlog}
+            log("ACCOUNT %s: backlog catch-up %s, %d alert(s) %s" % (
+                slug, backlog["status"], backlog.get("members", 0),
+                json.dumps(backlog.get("levels", {}), sort_keys=True)))
+        pending = sum(em_actions.open_work(row) for row in state["actions"].values()) + len(state["topic_retry"])
         result.update(status="incomplete" if pending else "completed", pending=pending)
         return result
     except Exception as error:
