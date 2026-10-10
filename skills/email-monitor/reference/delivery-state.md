@@ -28,6 +28,16 @@ its key, complete scope, payload, status and receipt. Its lifecycle is:
    `gone_checks` count, is never dispatched again and no longer counts as pending work. Any
    other answer restarts the count. Alerts and pool rows never end this way.
 
+New mail is handled in chunks of `SAVE_EVERY` (5) messages. Each chunk is classified,
+planned and saved together with the observation cursor just past its last message and the
+identities of every fetched message up to it; its actions are then dispatched before the next
+chunk is classified. A tick that ends part way through a fetch (killed by the task time limit)
+therefore keeps every chunk it saved, and the next tick fetches from just after the last one.
+Each open row is visited at most once per tick, whichever chunk's pass reaches it first, so a
+`not_applied` row is retried by the next tick, as before. The topic retry queue is judged once,
+before any new mail. A tick starts no new chunk once `TICK_BUDGET` (40 minutes) of the task's
+one hour limit is spent; the rest of the fetch waits for the next tick.
+
 A confirmation must contain `status: confirmed`, the dispatched `idempotency_key`,
 the matching `adapter` and a nonempty verifiable `receipt_id`. A `not_applied` receipt
 must instead provide nonempty `evidence`. Booleans, empty output, process exit code

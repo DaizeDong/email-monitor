@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 # On Windows, child console apps (powershell, python) flash a console window even
 # when the parent runs under pythonw. CREATE_NO_WINDOW keeps every tick invisible.
@@ -58,6 +59,15 @@ BACKLOG_AFTER = datetime.timedelta(hours=12)
 # for all of it: once the oldest has been held this long, the held alerts go out as one catch-up
 # anyway, so the delay is bounded and there is still at most one catch-up message per period.
 BACKLOG_FLUSH_AFTER = datetime.timedelta(hours=6)
+# New mail is classified, planned and saved in chunks of this many messages, each chunk with the
+# cursor just past its last message, so a tick stopped part way (the scheduled task's time limit)
+# keeps every chunk it finished and the next tick starts after them. One message costs about a
+# minute of model time, so a lost chunk is a few minutes of work at most.
+SAVE_EVERY = 5
+# The scheduled task stops a tick after one hour. A tick starts no new chunk once this much of
+# that hour is spent, which leaves room for the chunk in progress, its deliveries and the summary
+# worker; the mail it did not reach waits for the next tick.
+TICK_BUDGET = datetime.timedelta(minutes=40)
 _DRY = contextvars.ContextVar("email_monitor_dry", default=False)
 _LOG = contextvars.ContextVar("email_monitor_log", default=None)
 
@@ -385,11 +395,16 @@ def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled
     return plans
 
 
-def _plan_topics(state, acct, records, timeout, enabled, config_dir=None):
-    """Retain unjudged legacy headers; a cursor is never proof of a topic verdict."""
-    pending = list(state["topic_retry"])
+def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=True):
+    """Retain unjudged legacy headers; a cursor is never proof of a topic verdict.
+
+    With retry=False only `records` are judged: the retry queue is left for the once-per-tick
+    retry pass, and records that cannot be judged now join it.
+    """
+    queued = list(state["topic_retry"])
+    pending = list(queued) if retry else []
     if enabled:
-        known = {(r.get("mailbox", "INBOX"), r.get("uidvalidity"), r["message_id"]) for r in pending}
+        known = {(r.get("mailbox", "INBOX"), r.get("uidvalidity"), r["message_id"]) for r in queued}
         for record in records:
             key = (record["mailbox"], record["uidvalidity"], record["message_id"])
             if key not in known:
@@ -400,8 +415,9 @@ def _plan_topics(state, acct, records, timeout, enabled, config_dir=None):
         return
     options = {"config_dir": config_dir} if config_dir else {}
     cfg = em_topic.load_config(acct.get("slug", acct["user"].split("@")[0]), log=log, **options)
+    held = [] if retry else queued
     if cfg is None:
-        state["topic_retry"] = pending
+        state["topic_retry"] = held + pending
         return
     em_runtime.reject_model_overrides(timeout=timeout)
     call = _make_transport(log=log)
@@ -428,7 +444,7 @@ def _plan_topics(state, acct, records, timeout, enabled, config_dir=None):
                 state["actions"].setdefault(row["idempotency_key"], row)
         except Exception:
             kept.append(record)
-    state["topic_retry"] = kept
+    state["topic_retry"] = held + kept
 
 
 def _dispatch(row, reminder, db, password, python):
@@ -445,8 +461,12 @@ def _dispatch(row, reminder, db, password, python):
 
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
                     archive_enabled=True, pool_enabled=True, topic_enabled=False,
-                    topic_timeout=None, runtime=None, log_path=None):
-    """Plan, checkpoint intent, then dispatch only work with known disposition."""
+                    topic_timeout=None, runtime=None, log_path=None, deadline=None):
+    """Plan, checkpoint intent, then dispatch only work with known disposition.
+
+    New mail is handled in chunks of SAVE_EVERY messages (see commit below). `deadline` is a
+    time.monotonic() value after which no new chunk is started.
+    """
     token = _DRY.set(bool(dry))
     log_token = _LOG.set(log_path or _LOG.get())
     result = {"account": acct.get("slug", ""), "status": "failed", "new": 0,
@@ -475,7 +495,6 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         password = resolve_app_pw(resolve_cred, acct.get("cred_path", ""))
         if not password:
             raise ValueError("no app password resolved")
-        fresh = []
         observed = set(state["observed_messages"])
         now = datetime.datetime.now(datetime.timezone.utc)
         caught_up = True
@@ -485,6 +504,10 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         ordered = list(dict.fromkeys("INBOX" if f.upper() == "INBOX" else f for f in folders))
         ordered.sort(key=lambda f: f != "INBOX")
         tick_mids = set()
+        # Keys this tick has already reconciled or dispatched: every open row is visited at most
+        # once per tick, however many chunks start a dispatch pass.
+        visited = set()
+        pool_rows = []   # [listing] once a pass needed it; reused by later passes
 
         def seen_elsewhere(folder, mid):
             if mid.strip() in tick_mids:
@@ -496,7 +519,107 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                     return True
             return False
 
+        def dispatch_open_work():
+            nonlocal possible_effect
+            # A pool action's disposition can be proven from the pool itself, so an uncertain one is
+            # reconciled against one listing per tick instead of staying uncertain forever (which
+            # would keep every later tick incomplete). Keys are written only by their own action's
+            # write, and a row this tick made uncertain is never visited again in this tick, so a
+            # listing taken by an earlier pass still answers correctly for every key it is asked.
+            for row in list(state["actions"].values()):
+                if not em_actions.open_work(row) or row["idempotency_key"] in visited:
+                    continue
+                key, action = row["idempotency_key"], row["action"]
+                if action == "alert" and row["payload"].get("backlog") and row["status"] in ("pending", "failed"):
+                    continue  # sent below, with the account's other backlog alerts, as one catch-up
+                visited.add(key)
+                if row["status"] == "uncertain":
+                    try:
+                        receipt = reconcile_action(copy.deepcopy(row))
+                        if action == "pool" and em_actions.receipt_status(receipt, key, action) == "uncertain":
+                            if not pool_rows:
+                                pool_rows.append(em_pool.list_items(reminder, db, python=runtime.get("python")))
+                            receipt = em_pool.reconcile(copy.deepcopy(row), pool_rows[0])
+                    except Exception:
+                        receipt = None
+                    disposition = em_actions.receipt_status(receipt, key, action)
+                    if disposition == "confirmed":
+                        row.update(status="completed", receipt=copy.deepcopy(receipt))
+                        em_watch.save_state(state_path, state)
+                        continue
+                    if disposition != "not_applied":
+                        continue
+                    row.update(status="failed", receipt=copy.deepcopy(receipt))
+                # A failed save here must stop dispatch. The last persisted status
+                # remains authoritative, including after a crash during the adapter.
+                row.update(status="uncertain", receipt=None)
+                em_watch.save_state(state_path, state)
+                possible_effect = True
+                try:
+                    receipt = _dispatch(copy.deepcopy(row), reminder, db, password, runtime.get("python"))
+                except Exception:
+                    receipt = None
+                disposition = em_actions.receipt_status(receipt, key, action)
+                em_actions.record_outcome(row, receipt, disposition)
+                em_watch.save_state(state_path, state)
+                if row["status"] == "message_gone":
+                    log("ACCOUNT %s: %s gave up after %d consecutive answers that the message no longer exists"
+                        % (slug, action, row.get("gone_checks", 0)))
+                if row["status"] == "completed":
+                    counter = {"alert": "alert", "archive": "archived", "topic_label": "topic_labeled"}.get(action)
+                    if counter:
+                        result[counter] += 1
+
+        # Context variables do not automatically cross thread-pool boundaries.
+        effective_agent = {**agent_cfg, "max_parallel": 1} if dry else agent_cfg
+
+        def commit(cursor_key, cursor, chunk, seen):
+            """Classify and plan one chunk, then persist it together with the cursor that covers it.
+
+            `seen` holds the identities of every fetched record up to the chunk's last one (skipped
+            duplicates included). They and the cursor reach the state file only together with the
+            chunk's planned actions, so a tick killed later keeps this chunk, and the next tick
+            fetches from just after it. Dispatch follows the save, as before.
+            """
+            if chunk:
+                messages = [{"from": r.get("from", ""), "subject": r.get("subject", ""), "account": slug,
+                             "list_unsubscribe": r.get("list_unsubscribe", False),
+                             "body": r.get("body", "")} for r in chunk]
+                verdicts = classify_records_parallel(messages, rules, effective_agent)
+                if len(verdicts) != len(chunk):
+                    raise ValueError("classifier omitted a required message verdict")
+                for record, verdict in zip(chunk, verdicts):
+                    for row in _plan_record(acct, record["mailbox"], record["uidvalidity"], record,
+                                            verdict, rules, pool_enabled, archive_enabled, now=now):
+                        state["actions"].setdefault(row["idempotency_key"], row)
+                    if verdict["priority"] == "NOISE" and not archive_enabled:
+                        result["kept"] += 1
+                _plan_topics(state, acct, chunk, topic_timeout, topic_enabled, runtime.get("config_dir"),
+                             retry=False)
+            observed.update(seen)
+            state["observed_messages"] = sorted(observed)
+            state["cursors"][cursor_key] = copy.deepcopy(cursor)
+            result["new"] += len(chunk)
+            if dry:
+                return
+            # Cursor and durable intents are committed before the first effect.
+            em_watch.save_state(state_path, state)
+            dispatch_open_work()
+
+        # Topic verdicts still owed from earlier ticks go first, as they always have; their rows are
+        # saved and dispatched before any new mail is read.
+        if state["topic_retry"]:
+            _plan_topics(state, acct, [], topic_timeout, topic_enabled, runtime.get("config_dir"))
+            if not dry:
+                em_watch.save_state(state_path, state)
+        if not dry:
+            dispatch_open_work()
+
+        stopped = False
         for folder in ordered:
+            if deadline is not None and time.monotonic() >= deadline:
+                stopped = True
+                break
             cursor_key = user + "::" + folder
             cursor = copy.deepcopy(state["cursors"].get(cursor_key, {"uidvalidity": None, "last_uid": 0}))
             info = {}
@@ -504,93 +627,48 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                                                     app_pw=password, info=info)
             caught_up = caught_up and info.get("caught_up", True)
             generation = new_cursor.get("uidvalidity")
-            for record in records:
-                record = copy.deepcopy(record)
+            records = [copy.deepcopy(record) for record in records]
+            # A partial cursor needs UID order in an unchanged mailbox generation; a fetch without
+            # usable UIDs is committed only whole.
+            by_uid = generation is not None and generation == cursor.get("uidvalidity") and \
+                all(type(r.get("uid")) is int for r in records)
+            if by_uid:
+                records.sort(key=lambda r: r["uid"])
+            chunk, seen = [], set()
+            for index, record in enumerate(records):
                 mid = record.get("message_id", "")
                 if not isinstance(mid, str) or not mid.strip() or generation is None:
                     raise ValueError("fetched message has no durable message identity")
                 identity = em_actions.identity(user, folder, generation, mid)
-                if identity in observed:
+                if identity not in observed and identity not in seen:
+                    duplicate = seen_elsewhere(folder, mid)
+                    seen.add(identity)
+                    tick_mids.add(mid.strip())
+                    if not duplicate:
+                        record.update(mailbox=folder, uidvalidity=generation)
+                        chunk.append(record)
+                if len(chunk) < SAVE_EVERY or index == len(records) - 1 or not by_uid:
                     continue
-                duplicate = seen_elsewhere(folder, mid)
-                observed.add(identity)
-                tick_mids.add(mid.strip())
-                if duplicate:
-                    continue
-                record.update(mailbox=folder, uidvalidity=generation)
-                fresh.append(record)
-            state["cursors"][cursor_key] = copy.deepcopy(new_cursor)
-        messages = [{"from": r.get("from", ""), "subject": r.get("subject", ""), "account": slug,
-                     "list_unsubscribe": r.get("list_unsubscribe", False), "body": r.get("body", "")} for r in fresh]
-        # Context variables do not automatically cross thread-pool boundaries.
-        effective_agent = {**agent_cfg, "max_parallel": 1} if dry else agent_cfg
-        verdicts = classify_records_parallel(messages, rules, effective_agent)
-        if len(verdicts) != len(fresh):
-            raise ValueError("classifier omitted a required message verdict")
-        for record, verdict in zip(fresh, verdicts):
-            for row in _plan_record(acct, record["mailbox"], record["uidvalidity"], record,
-                                    verdict, rules, pool_enabled, archive_enabled, now=now):
-                state["actions"].setdefault(row["idempotency_key"], row)
-            if verdict["priority"] == "NOISE" and not archive_enabled:
-                result["kept"] += 1
-        state["observed_messages"] = sorted(observed)
-        _plan_topics(state, acct, fresh, topic_timeout, topic_enabled, runtime.get("config_dir"))
-        result["new"] = len(fresh)
+                commit(cursor_key, {**new_cursor, "last_uid": record["uid"]}, chunk, seen)
+                chunk, seen = [], set()
+                if deadline is not None and time.monotonic() >= deadline:
+                    # The rest of this fetch waits for the next tick: nothing after this chunk is
+                    # recorded as observed, and the cursor stays just after it.
+                    stopped = True
+                    break
+            if stopped:
+                break
+            commit(cursor_key, new_cursor, chunk, seen)
+        if stopped:
+            caught_up = False
+            result["stopped_early"] = True
+            log("ACCOUNT %s: tick time budget spent; the rest of the fetched mail waits for the next tick"
+                % slug)
         if dry:
             result.update(status="planned", planned_actions=copy.deepcopy([
                 row for row in state["actions"].values() if em_actions.open_work(row)]))
             result["pending_topics"] = len(state["topic_retry"])
             return result
-        # Cursor and durable intents are committed before the first effect.
-        em_watch.save_state(state_path, state)
-        # A pool action's disposition can be proven from the pool itself, so an uncertain one is
-        # reconciled against one listing per tick instead of staying uncertain forever (which
-        # would keep every later tick incomplete). Keys are written
-        # only by their own action's write, so a listing taken before other writes in this loop
-        # still answers correctly for every remaining key.
-        pool_rows = None
-        for row in state["actions"].values():
-            if not em_actions.open_work(row):
-                continue
-            key, action = row["idempotency_key"], row["action"]
-            if action == "alert" and row["payload"].get("backlog") and row["status"] in ("pending", "failed"):
-                continue  # sent below, with the account's other backlog alerts, as one catch-up
-            if row["status"] == "uncertain":
-                try:
-                    receipt = reconcile_action(copy.deepcopy(row))
-                    if action == "pool" and em_actions.receipt_status(receipt, key, action) == "uncertain":
-                        if pool_rows is None:
-                            pool_rows = em_pool.list_items(reminder, db, python=runtime.get("python"))
-                        receipt = em_pool.reconcile(copy.deepcopy(row), pool_rows)
-                except Exception:
-                    receipt = None
-                disposition = em_actions.receipt_status(receipt, key, action)
-                if disposition == "confirmed":
-                    row.update(status="completed", receipt=copy.deepcopy(receipt))
-                    em_watch.save_state(state_path, state)
-                    continue
-                if disposition != "not_applied":
-                    continue
-                row.update(status="failed", receipt=copy.deepcopy(receipt))
-            # A failed save here must stop dispatch. The last persisted status
-            # remains authoritative, including after a crash during the adapter.
-            row.update(status="uncertain", receipt=None)
-            em_watch.save_state(state_path, state)
-            possible_effect = True
-            try:
-                receipt = _dispatch(copy.deepcopy(row), reminder, db, password, runtime.get("python"))
-            except Exception:
-                receipt = None
-            disposition = em_actions.receipt_status(receipt, key, action)
-            em_actions.record_outcome(row, receipt, disposition)
-            em_watch.save_state(state_path, state)
-            if row["status"] == "message_gone":
-                log("ACCOUNT %s: %s gave up after %d consecutive answers that the message no longer exists"
-                    % (slug, action, row.get("gone_checks", 0)))
-            if row["status"] == "completed":
-                counter = {"alert": "alert", "archive": "archived", "topic_label": "topic_labeled"}.get(action)
-                if counter:
-                    result[counter] += 1
         if em_catchup.backlog_rows(state) and (
                 caught_up or em_catchup.backlog_held_since(state, now) >= BACKLOG_FLUSH_AFTER):
             possible_effect = True
@@ -689,12 +767,13 @@ def main():
         if not isinstance(accounts, list) or not accounts or any(not isinstance(acct, dict) for acct in accounts):
             raise ValueError("accounts must be a nonempty list")
         pool_enabled = em_pool.available(a.reminder)
+        deadline = time.monotonic() + TICK_BUDGET.total_seconds()
         for acct in accounts:
             report["results"].append(process_account(
                 acct, rules, a.reminder, storage["db"], a.resolve_cred, storage["state_dir"],
                 a.dry, agent_cfg, archive_enabled=bool(cfg.get("archive", {}).get("enabled", True)),
                 pool_enabled=pool_enabled, topic_enabled=topic_enabled,
-                runtime=runtime, log_path=storage["log"]))
+                runtime=runtime, log_path=storage["log"], deadline=deadline))
         statuses = {result["status"] for result in report["results"]}
         report["status"] = "failed" if "failed" in statuses else "incomplete" if "incomplete" in statuses else "planned" if a.dry else "completed"
         report["storage_checks"] = proofs
