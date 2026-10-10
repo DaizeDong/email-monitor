@@ -54,6 +54,10 @@ ENV_VAR = "EMAIL_MONITOR_CONFIG"
 # account's other backlog alerts as ONE catch-up message once the account's mailboxes are read up
 # to their tips. Classification, labels and pool items are unaffected.
 BACKLOG_AFTER = datetime.timedelta(hours=12)
+# A long backlog (days of mail on a busy account) takes many ticks to read. Held alerts do not wait
+# for all of it: once the oldest has been held this long, the held alerts go out as one catch-up
+# anyway, so the delay is bounded and there is still at most one catch-up message per period.
+BACKLOG_FLUSH_AFTER = datetime.timedelta(hours=6)
 _DRY = contextvars.ContextVar("email_monitor_dry", default=False)
 _LOG = contextvars.ContextVar("email_monitor_log", default=None)
 
@@ -363,7 +367,8 @@ def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled
                  summary=verdict.get("summary_zh", ""), account_label=acct.get("display_zh"))}
         if now is not None and _is_backlog(record, now):
             # Held for the account's consolidated backlog catch-up (em_catchup.deliver_backlog).
-            alert.update(backlog=True, origin={key: record.get(key, "") for key in ("date", "from", "subject")})
+            alert.update(backlog=True, held_at=now.isoformat(),
+                         origin={key: record.get(key, "") for key in ("date", "from", "subject")})
         add("alert", alert)
     if pool_enabled and priority in ("URGENT", "ACTION", "FYI"):
         add("pool", {"thread_key": record.get("thread_key", record["message_id"]),
@@ -586,7 +591,8 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                 counter = {"alert": "alert", "archive": "archived", "topic_label": "topic_labeled"}.get(action)
                 if counter:
                     result[counter] += 1
-        if caught_up and em_catchup.backlog_rows(state):
+        if em_catchup.backlog_rows(state) and (
+                caught_up or em_catchup.backlog_held_since(state, now) >= BACKLOG_FLUSH_AFTER):
             possible_effect = True
             journal_path = os.path.join(state_dir, em_catchup.JOURNAL)
             backlog = em_catchup.deliver_backlog(

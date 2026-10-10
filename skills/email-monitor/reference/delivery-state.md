@@ -68,7 +68,8 @@ tick still classifies, labels and pools every message as usual, but an alert for
 whose `Date` was already more than 12 hours old when the tick saw it is held as backlog
 (`payload.backlog`, with the message's date, sender and subject in `payload.origin`) instead
 of being pushed on its own. Once every monitored mailbox of the account has been read to its
-tip, the tick sends all held alerts of that account as ONE consolidated catch-up message
+tip, or once the oldest held alert has waited 6 hours (a backlog of thousands of messages takes
+many ticks), the tick sends all held alerts of that account as ONE consolidated catch-up message
 through the normal relay, most important first, journaled in `catchup.state.json` like an
 `em_catchup.py alerts` catch-up. The members are saved `uncertain` before the send; only a
 confirmed relay receipt marks them `completed` with `catch_up` receipts. A proven

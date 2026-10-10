@@ -224,6 +224,33 @@ def quote_mailbox(name):
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+SPECIAL_USE = {"\\All", "\\Archive", "\\Drafts", "\\Flagged", "\\Important", "\\Junk", "\\Sent", "\\Trash"}
+
+
+def resolve_mailbox(M, folder):
+    """The server's name for `folder`; a special-use token such as "\\All" is looked up by LIST.
+
+    Gmail localizes its system mailboxes to the account's display language ("[Gmail]/All Mail"
+    exists only for English; a Chinese account names it in modified UTF-7), so a configured
+    English name can be refused with "NO Failure". A special-use token (RFC 6154) names the
+    mailbox by its attribute and works in every language. Any other name is used as given.
+    """
+    if folder not in SPECIAL_USE:
+        return folder
+    typ, lines = M.list()
+    for line in (lines or []) if typ == "OK" else []:
+        if not isinstance(line, bytes):
+            continue
+        match = re.match(rb'\(([^)]*)\)\s+(?:"[^"]*"|NIL)\s+(.+)$', line.strip())
+        if not match or folder.encode().lower() not in match.group(1).lower().split():
+            continue
+        name = match.group(2).decode("ascii", "replace")
+        if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
+            name = name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        return name
+    raise RuntimeError("no mailbox carries the special-use attribute %s" % folder)
+
+
 def run_once(user, folder, cursor, max_batch=400, app_pw=None, info=None):
     """Connect read-only, fetch new headers, return (records, new_cursor). Live side effects only.
 
@@ -236,7 +263,7 @@ def run_once(user, folder, cursor, max_batch=400, app_pw=None, info=None):
     M = imaplib.IMAP4_SSL("imap.gmail.com")
     try:
         M.login(user, pw)
-        mailbox = quote_mailbox(folder)
+        mailbox = quote_mailbox(resolve_mailbox(M, folder))
         typ, data = M.select(mailbox, readonly=True)  # readonly -> no \\Seen
         if typ != "OK":
             raise RuntimeError("select %s failed: %r" % (folder, data))

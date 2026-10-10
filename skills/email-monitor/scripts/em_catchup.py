@@ -359,6 +359,19 @@ def backlog_rows(state):
             and row.get("status") in ("pending", "failed")]
 
 
+def backlog_held_since(state, now):
+    """How long the oldest held backlog alert has waited (a zero timedelta when none says)."""
+    oldest = None
+    for row in backlog_rows(state):
+        try:
+            held = datetime.datetime.fromisoformat(str(row["payload"].get("held_at", "")))
+        except ValueError:
+            continue
+        if held.tzinfo is not None and (oldest is None or held < oldest):
+            oldest = held
+    return now - oldest if oldest is not None else datetime.timedelta(0)
+
+
 def deliver_backlog(state, state_path, journal_path, send, save=None, load=None, now=None):
     """Send every held-back backlog alert of one account as ONE catch-up message, inside a tick.
 
