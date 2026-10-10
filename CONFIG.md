@@ -248,6 +248,10 @@ version history. Source-tree, nested-repository, ignored and unversioned outputs
 mail access. Filesystem aliases and hardlinked output files are rejected before resolution.
 State, report and filter exports use exclusive temporary files and repeat the PRIVATE proof
 before writing and publishing. Git configuration changes during publication abort the write.
+Within one process a successful proof is reused for at most 60 s while a fingerprint of everything
+it reads (companion Git administration and configuration, HEAD, global, system and SSH
+configuration, the visibility receipt, the environment and the Guards implementation) is
+unchanged; any change, an expired entry or a refusal proves in full again.
 
 ### Companion layout and preservation
 

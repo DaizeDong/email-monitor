@@ -1,5 +1,8 @@
-"""Runtime configuration, PRIVATE DATA proofs and atomic publication."""
+"""Runtime configuration, PRIVATE DATA proofs, the state writer lock and atomic publication."""
+from contextlib import contextmanager
+import datetime
 from functools import lru_cache
+import hashlib
 import importlib.util
 import json
 import os
@@ -9,6 +12,8 @@ import stat
 import tempfile
 import subprocess
 import sys
+import threading
+import time
 
 SOURCE_ROOT = Path(__file__).resolve().parents[3]
 
@@ -101,12 +106,221 @@ def _plain_path(destination):
     return path
 
 
+# A full PRIVATE proof runs dozens of Git queries (3.7 to 4.9 s each on the live companion), and
+# atomic_write proves five times per save, so a tick that saves after every row spent about 20 s
+# per save on proofs alone (about one row a minute while draining a backlog). A successful proof
+# is therefore reused within this process while everything it depends on is unchanged, the same
+# rule as schedule-reminder's private_data memo: the companion root and its Git administration,
+# the companion's own Git configuration (remote URLs), HEAD and the ref it names, info/exclude,
+# the global and system Git configuration (including the files GIT_CONFIG_GLOBAL /
+# GIT_CONFIG_SYSTEM name and literal core.excludesFile targets), the SSH client configuration the
+# proof attests, the local visibility receipt, the process environment and the proof
+# implementation. Any change is a miss and proves in full. A refusal is never stored, so it is
+# proved again next time. Entries expire after PROOF_TTL_SECONDS. Bounded only by that TTL:
+# configuration reached only through include directives, the receipt ageing past its maximum age
+# and changes inside the Git installation itself. Ignore status is checked per destination with
+# the proof's own read-only Git query, and again whenever a .gitignore that can decide it changes.
+# The memo is not used under GIT_CEILING_DIRECTORIES. The path checks (_plain_path, nested and
+# bare boundaries) run on every call.
+PROOF_TTL_SECONDS = 60.0
+_PROOF_LOCK = threading.RLock()
+_PROOF_MEMO = {}
+_RELATIVES_CAP = 256
+_UNREADABLE = object()
+
+
+def clear_proof_memo():
+    """Forget every reused PRIVATE proof in this process."""
+    with _PROOF_LOCK:
+        _PROOF_MEMO.clear()
+
+
+def _clock():
+    return time.monotonic()
+
+
+def _file_state(path, digest=True):
+    try:
+        if digest:
+            with open(path, 'rb') as stream:
+                return hashlib.sha256(stream.read()).hexdigest()
+        info = os.stat(path)
+        return (info.st_mtime_ns, info.st_size)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return _UNREADABLE
+
+
+def _admin_dirs(root):
+    marker = root / '.git'
+    if marker.is_dir():
+        admin = marker
+    elif marker.is_file():
+        text = marker.read_text(encoding='utf-8').strip()
+        if not text.startswith('gitdir:'):
+            return None
+        admin = Path(text[7:].strip())
+        admin = (admin if admin.is_absolute() else root / admin).resolve()
+    else:
+        return None
+    common = admin
+    if (admin / 'commondir').is_file():
+        common = (admin / (admin / 'commondir').read_text(encoding='utf-8').strip()).resolve()
+    return admin, common
+
+
+def _excludes_targets(path, home):
+    """Literal core.excludesFile values in one config file (include chains are TTL-bounded)."""
+    try:
+        text = Path(path).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return []
+    targets = []
+    for line in text.splitlines():
+        name, separator, value = line.strip().partition('=')
+        if separator and name.strip().casefold() == 'excludesfile':
+            value = value.strip().strip('"')
+            if value.startswith('~/') or value == '~':
+                value = str(home) + value[1:]
+            if value:
+                targets.append(Path(value))
+    return targets
+
+
+def _git_system_files(home):
+    """System Git and SSH configuration files the proof may read; a superset is fine."""
+    import shutil
+    paths = set()
+    for name in ('GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM'):
+        if os.environ.get(name):
+            paths.add(Path(os.environ[name]))
+    profiles = {str(home), os.environ.get('HOME'), os.environ.get('USERPROFILE')}
+    paths.update(Path(profile) / '.ssh' / 'config' for profile in profiles if profile)
+    if os.name == 'nt':
+        program_data = os.environ.get('ProgramData')
+        if program_data:
+            paths.add(Path(program_data) / 'ssh' / 'ssh_config')
+            paths.add(Path(program_data) / 'Git' / 'config')
+        git = shutil.which('git')
+        if git:
+            for installation in list(Path(git).resolve().parents)[:4]:
+                paths.update({installation / 'etc' / 'gitconfig', installation / 'etc' / 'ssh' / 'ssh_config',
+                              installation / 'mingw64' / 'etc' / 'gitconfig'})
+    else:
+        paths.update({Path('/etc/gitconfig'), Path('/etc/ssh/ssh_config')})
+    return paths
+
+
+def _companion_state(root):
+    """Cheap local fingerprint of what a proof depends on; None when it cannot be read."""
+    try:
+        dirs = _admin_dirs(root)
+        if dirs is None:
+            return None
+        admin, common = dirs
+        parts = [str(root), str(admin), str(common),
+                 _file_state(SOURCE_ROOT / 'guards/tools/data_boundary.py'),
+                 hashlib.sha256(json.dumps(sorted(os.environ.items())).encode('utf-8')).hexdigest(),
+                 _file_state(admin / 'HEAD')]
+        try:
+            text = (admin / 'HEAD').read_text(encoding='utf-8').strip()
+        except FileNotFoundError:
+            text = ''
+        if text.startswith('ref:'):
+            ref = text[4:].strip()
+            if '..' in ref.split('/'):
+                return None
+            parts += [_file_state(admin / ref), _file_state(common / ref)]
+        parts += [_file_state(admin / 'config'), _file_state(common / 'config'),
+                  _file_state(admin / 'config.worktree'), _file_state(common / 'info' / 'exclude'),
+                  _file_state(common / 'packed-refs', digest=False)]
+        home = Path(os.path.expanduser('~'))
+        xdg = Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config')
+        profiles = {home, Path(os.environ.get('HOME') or home), Path(os.environ.get('USERPROFILE') or home)}
+        files = {xdg / 'git' / 'config', xdg / 'git' / 'ignore'}
+        for profile in profiles:
+            files |= {profile / '.gitconfig', profile / '.pii-guard' / 'visibility.json'}
+        files |= _git_system_files(home)
+        for config in sorted(files | {admin / 'config', common / 'config', admin / 'config.worktree'}, key=str):
+            files.update(_excludes_targets(config, home))
+        for path in sorted(files, key=str):
+            parts.append((str(path), _file_state(path)))
+    except (OSError, ValueError):
+        return None
+    if any(part is _UNREADABLE or isinstance(part, tuple) and part[-1] is _UNREADABLE for part in parts):
+        return None
+    return hashlib.sha256(repr(parts).encode('utf-8')).hexdigest()
+
+
+def _ignore_state(root, relative):
+    """Fingerprint the .gitignore files that can decide check-ignore for ``relative``."""
+    directory, states = root, [_file_state(root / '.gitignore')]
+    for part in relative.rstrip('/').split('/')[:-1]:
+        if part in ('', '.'):
+            continue
+        directory = directory / part
+        states.append(_file_state(directory / '.gitignore'))
+    if any(state is _UNREADABLE for state in states):
+        return None
+    return hashlib.sha256(repr(states).encode('utf-8')).hexdigest()
+
+
+def _implementation(boundary):
+    return (boundary.prove_private_companion, boundary.read_private_companion_git,
+            getattr(boundary, '_ssh_config_sources', None))
+
+
+def _proof_result(path, proof):
+    return {'path': str(path), 'root': proof.root, 'repositories': list(proof.repositories),
+            'repository': ', '.join(proof.repositories), 'visibility': 'PRIVATE',
+            'proof': 'local-receipt', 'signature': proof.signature}
+
+
+def _memo_lookup(path, root):
+    """A result from a still-valid memo entry, or None to prove in full."""
+    if os.environ.get('GIT_CEILING_DIRECTORIES'):
+        return None
+    key = os.path.normcase(str(root))
+    entry = _PROOF_MEMO.get(key)
+    if entry is None:
+        return None
+    boundary = _storage_api()
+    if (_clock() - entry['proved_at'] > PROOF_TTL_SECONDS
+            or any(a is not b for a, b in zip(entry['implementation'], _implementation(boundary)))
+            or _companion_state(root) != entry['state']):
+        _PROOF_MEMO.pop(key, None)
+        return None
+    relative = path.relative_to(root).as_posix()
+    if relative != '.':
+        ignore = _ignore_state(root, relative)
+        if ignore is None:
+            return None
+        if entry['relatives'].get(relative) != ignore:
+            try:
+                ignored = boundary.read_private_companion_git(
+                    entry['proof'], 'check-ignore', '--no-index', '-q', '--', relative)
+            except (boundary.GitError, OSError, ValueError):
+                _PROOF_MEMO.pop(key, None)
+                return None
+            if ignored.returncode == 0:
+                raise ValueError('DATA must remain eligible for private version history')
+            if ignored.returncode != 1 or _ignore_state(root, relative) != ignore:
+                return None
+            if len(entry['relatives']) >= _RELATIVES_CAP:
+                entry['relatives'].clear()
+            entry['relatives'][relative] = ignore
+    return _proof_result(path, entry['proof'])
+
+
 def prove_private(destination):
     """Require an unaliased, history-backed, unignored PRIVATE companion path.
 
     Guards attests every physical and effective publication route using the local
     fresh visibility receipt. No remote command or visibility refresh is executed.
-    This read-only snapshot must be repeated immediately before a later write.
+    This read-only snapshot must be repeated immediately before a later write. A
+    successful proof is reused within this process for an unchanged companion (see
+    PROOF_TTL_SECONDS), so a repeat is a fingerprint check; a refusal is never reused.
     """
     path = _plain_path(destination)
     containing = path if path.is_dir() else path.parent
@@ -122,13 +336,26 @@ def prove_private(destination):
         raise ValueError('DATA destination requires a PRIVATE Git companion')
     if root.is_relative_to(SOURCE_ROOT) or SOURCE_ROOT.is_relative_to(root):
         raise ValueError('DATA requires a separate PRIVATE worktree')
+    with _PROOF_LOCK:
+        reused = _memo_lookup(path, root)
+        if reused is not None:
+            _plain_path(path)
+            return reused
+        return _prove_and_remember(path, root)
+
+
+def _prove_and_remember(path, root):
+    started = _clock()  # an entry's age counts from before the proof, never after it
+    state_before = _companion_state(root)
     boundary = _storage_api()
+    implementation = _implementation(boundary)
     try:
         proof = boundary.prove_private_companion(root)
         if Path(proof.root) != root or not path.is_relative_to(root):
             raise ValueError('Git did not establish the nearest DATA worktree')
         boundary.read_private_companion_git(proof, 'rev-parse', '--verify', 'HEAD')
         relative = path.relative_to(root).as_posix()
+        ignore_before = _ignore_state(root, relative) if relative != '.' else None
         # The root is a container, not a relative DATA entry. Git's dot path
         # can match a blank ignore rule; verify each DATA destination separately.
         if relative != '.':
@@ -141,9 +368,77 @@ def prove_private(destination):
     except (boundary.GitError, OSError) as exc:
         raise ValueError('DATA destination is not in a verifiable PRIVATE Git companion: ' + str(exc)) from exc
     _plain_path(path)
-    return {'path': str(path), 'root': proof.root, 'repositories': list(proof.repositories),
-            'repository': ', '.join(proof.repositories), 'visibility': 'PRIVATE',
-            'proof': 'local-receipt', 'signature': proof.signature}
+    # Remember only what this proof established, and only if nothing it depends on moved while
+    # it ran. The result is returned either way.
+    if (not os.environ.get('GIT_CEILING_DIRECTORIES') and state_before is not None
+            and _companion_state(root) == state_before):
+        entry = {'proof': proof, 'implementation': implementation, 'proved_at': started,
+                 'state': state_before, 'relatives': {}}
+        if relative != '.' and ignore_before is not None and _ignore_state(root, relative) == ignore_before:
+            entry['relatives'][relative] = ignore_before
+        _PROOF_MEMO[os.path.normcase(str(root))] = entry
+    return _proof_result(path, proof)
+
+
+# One heartbeat writer per state directory. Every process that rewrites account or summary state
+# holds this lock for its whole run: the tick (including the summary worker it starts) and
+# em_catchup. The OS releases it when the holder exits, so a crash never leaves it stale. Byte 0
+# is the lock; the holder's role, pid and start time follow it so a refused writer can name it.
+WRITER_LOCK = '.writer.lock'
+
+
+class WriterBusy(RuntimeError):
+    """Another email-monitor writer holds the state directory."""
+
+
+def _lock_byte(stream, unlock=False):
+    stream.seek(0)
+    if sys.platform == 'win32':
+        import msvcrt
+        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK if unlock else msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(stream, fcntl.LOCK_UN if unlock else fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def writer_holder(state_dir):
+    """What the current holder recorded, or None. Reads past the locked byte, so it never blocks."""
+    try:
+        with open(Path(state_dir) / WRITER_LOCK, 'rb') as stream:
+            stream.seek(1)
+            holder = json.loads(stream.read().decode('utf-8') or 'null')
+        return holder if isinstance(holder, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+@contextmanager
+def writer_lock(state_dir, role):
+    """Hold the state directory's writer lock, or raise WriterBusy at once (never waits)."""
+    directory = Path(state_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / WRITER_LOCK
+    with open(path, 'a+b') as stream:
+        stream.seek(0, os.SEEK_END)
+        if stream.tell() == 0:
+            stream.write(b'0')
+            stream.flush()
+        try:
+            _lock_byte(stream)
+        except OSError:
+            holder = writer_holder(directory) or {}
+            raise WriterBusy('another email-monitor writer (%s, pid %s, since %s) holds the state directory '
+                             '%s; run again after it exits' % (
+                                 holder.get('role', 'unknown'), holder.get('pid', '?'),
+                                 holder.get('since', '?'), directory)) from None
+        try:
+            stream.truncate(1)
+            stream.write(json.dumps({'role': role, 'pid': os.getpid(), 'since': datetime.datetime.now(
+                datetime.timezone.utc).isoformat(timespec='seconds')}).encode('utf-8'))
+            stream.flush()
+            yield str(path)
+        finally:
+            _lock_byte(stream, unlock=True)
 
 
 def atomic_write(destination, content):

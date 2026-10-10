@@ -49,12 +49,20 @@ resent, and a rerun only re-marks members of a completed catch-up. `requeue --ac
 <adapter> --evidence <text>` turns uncertain rows of an idempotent adapter such as
 `topic_label` into `failed` with a `not_applied` receipt so the next tick dispatches
 them again; it refuses `alert` and `pool`. Neither archives mail or removes a label.
+Both take the state directory's writer lock and exit 3 with the holder's role, pid and
+start time while a tick holds it. Each member row is written by re-reading its state file,
+changing that one row and saving, so a row another writer advanced is never reverted. A
+daily summary in a catch-up is dated by its run's `scheduled_at` (recorded by the summary
+worker for new runs) or, for older runs, by its pool event's due time.
 
 State writes are atomic and flushed before dispatch. A failed intent or uncertainty
 checkpoint prevents the effect. A failed completion checkpoint leaves the earlier
-uncertain row authoritative. Use one heartbeat writer per state directory; scheduling
-uses IgnoreNew, while manually running concurrent writers is not covered by this
-protocol's guarantees.
+uncertain row authoritative. There is one heartbeat writer per state directory: a
+non-dry tick holds `<state_dir>/.writer.lock` (byte 0, released by the OS when the holder
+exits) for its whole run, including the summary worker it starts, and fails with
+`WriterBusy` without touching state when another writer holds it. Scheduling also uses
+IgnoreNew. A summary worker started by hand outside a tick does not take the lock and is
+not covered by this protocol's guarantees.
 
 Legacy topic headers are preserved and keep the mailbox generation from their old
 cursor. Missing scope, damaged queues or unrecognized legacy pending shapes fail
