@@ -35,8 +35,14 @@ chunk is classified. A tick that ends part way through a fetch (killed by the ta
 therefore keeps every chunk it saved, and the next tick fetches from just after the last one.
 Each open row is visited at most once per tick, whichever chunk's pass reaches it first, so a
 `not_applied` row is retried by the next tick, as before. The topic retry queue is judged once,
-before any new mail. A tick starts no new chunk once `TICK_BUDGET` (40 minutes) of the task's
-one hour limit is spent; the rest of the fetch waits for the next tick.
+before any new mail. A tick starts no new chunk and no new topic judgement once `TICK_BUDGET`
+(40 minutes from process start) of the task's one hour limit is spent; the rest waits for the
+next tick, and topic records not reached stay in `topic_retry` in order. Accounts run one after
+another, and each gets an equal share of the time left when it starts (`account_deadline`), so a
+backlogged account stops at its share and the accounts after it still read their mail every tick;
+time a quiet account leaves unused passes to the ones after it. After the budget only the chunk
+in progress (one classification, at most one topic judgement), its deliveries, a catch-up send and
+the summary worker can still run, which is minutes, not the twenty left in the hour.
 
 A confirmation must contain `status: confirmed`, the dispatched `idempotency_key`,
 the matching `adapter` and a nonempty verifiable `receipt_id`. A `not_applied` receipt

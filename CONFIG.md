@@ -55,7 +55,7 @@ Committed, **zero secrets**. Fields:
       "cred_path": "~/.local/secrets/gmail-primary.cred", // OPTIONAL str — DPAPI pointer; MUST use ~ (portable, E5)
       "monitored_folders": ["INBOX"],  // OPTIONAL str[] — folders to watch; a system mailbox by special-use token, e.g. "\\All"
       "label_scheme": "EM/{priority}/{semantic}", // OPTIONAL str — Gmail label template
-      "max_batch": 200,                // OPTIONAL int — max msgs fetched per tick per account (saved in chunks of 5; no new chunk after 40 min)
+      "max_batch": 200,                // OPTIONAL int — max UIDs fetched per tick per MONITORED FOLDER (an account with two folders fetches up to twice this); saved in chunks of 5. Size it so (sum over accounts of max_batch x folders) x ~70 s per message fits the 40 min tick budget
       "health_last": "",               // OPTIONAL str — last healthy poll (runtime-stamped)
       "app_pw_rotated": ""             // OPTIONAL date — last app-password rotation
     }

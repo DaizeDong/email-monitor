@@ -64,10 +64,43 @@ BACKLOG_FLUSH_AFTER = datetime.timedelta(hours=6)
 # keeps every chunk it finished and the next tick starts after them. One message costs about a
 # minute of model time, so a lost chunk is a few minutes of work at most.
 SAVE_EVERY = 5
-# The scheduled task stops a tick after one hour. A tick starts no new chunk once this much of
-# that hour is spent, which leaves room for the chunk in progress, its deliveries and the summary
-# worker; the mail it did not reach waits for the next tick.
+# The scheduled task stops a tick after one hour, counted from process start. A tick starts no new
+# chunk and no new topic judgement once this much of that hour is spent; the mail it did not reach
+# waits for the next tick. What can still run after it: the classification of the chunk in
+# progress (at most SAVE_EVERY messages), one topic judgement already started, that chunk's
+# deliveries, a catch-up send and the summary worker (180 s timeout). At about 70 s per message
+# that is under 10 minutes, so 40 leaves at least 10 minutes of the hour unused.
 TICK_BUDGET = datetime.timedelta(minutes=40)
+# Measured from here, not from the account loop: proofs and preflight count against the hour too.
+_STARTED = time.monotonic()
+
+
+def account_deadline(tick_deadline, accounts_left, now=None):
+    """This account's share of what is left of the tick budget.
+
+    Accounts run one after another. Each gets an equal share of the time remaining when it starts,
+    so one backlogged account stops at its share and the accounts after it still get theirs every
+    tick; the time a quiet account does not use passes on to the ones after it. The last account's
+    deadline is the tick's own.
+    """
+    now = time.monotonic() if now is None else now
+    return now + max(0.0, tick_deadline - now) / max(1, accounts_left)
+
+
+def _past(deadline):
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def run_accounts(accounts, run_one, tick_deadline, results):
+    """Append `run_one(acct, deadline)` for each account, in order, each with its fair deadline.
+
+    Results are appended one by one, so a failure part way still reports the accounts already run.
+    """
+    for index, acct in enumerate(accounts):
+        results.append(run_one(acct, account_deadline(tick_deadline, len(accounts) - index)))
+    return results
+
+
 _DRY = contextvars.ContextVar("email_monitor_dry", default=False)
 _LOG = contextvars.ContextVar("email_monitor_log", default=None)
 
@@ -395,11 +428,12 @@ def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled
     return plans
 
 
-def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=True):
+def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=True, deadline=None):
     """Retain unjudged legacy headers; a cursor is never proof of a topic verdict.
 
     With retry=False only `records` are judged: the retry queue is left for the once-per-tick
-    retry pass, and records that cannot be judged now join it.
+    retry pass, and records that cannot be judged now join it. No judgement starts after
+    `deadline` (time.monotonic()); the records not reached stay queued, in order, for a later tick.
     """
     queued = list(state["topic_retry"])
     pending = list(queued) if retry else []
@@ -423,6 +457,9 @@ def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=
     call = _make_transport(log=log)
     kept = []
     for record in pending:
+        if _past(deadline):
+            kept.append(record)
+            continue
         mailbox = record.get("mailbox", "INBOX")
         generation = record.get("uidvalidity")
         if generation is None:
@@ -464,8 +501,9 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                     topic_timeout=None, runtime=None, log_path=None, deadline=None):
     """Plan, checkpoint intent, then dispatch only work with known disposition.
 
-    New mail is handled in chunks of SAVE_EVERY messages (see commit below). `deadline` is a
-    time.monotonic() value after which no new chunk is started.
+    New mail is handled in chunks of SAVE_EVERY messages (see commit below). `deadline` is this
+    account's time.monotonic() deadline (account_deadline): after it no new chunk and no new topic
+    judgement is started.
     """
     token = _DRY.set(bool(dry))
     log_token = _LOG.set(log_path or _LOG.get())
@@ -595,7 +633,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                     if verdict["priority"] == "NOISE" and not archive_enabled:
                         result["kept"] += 1
                 _plan_topics(state, acct, chunk, topic_timeout, topic_enabled, runtime.get("config_dir"),
-                             retry=False)
+                             retry=False, deadline=deadline)
             observed.update(seen)
             state["observed_messages"] = sorted(observed)
             state["cursors"][cursor_key] = copy.deepcopy(cursor)
@@ -609,7 +647,8 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         # Topic verdicts still owed from earlier ticks go first, as they always have; their rows are
         # saved and dispatched before any new mail is read.
         if state["topic_retry"]:
-            _plan_topics(state, acct, [], topic_timeout, topic_enabled, runtime.get("config_dir"))
+            _plan_topics(state, acct, [], topic_timeout, topic_enabled, runtime.get("config_dir"),
+                         deadline=deadline)
             if not dry:
                 em_watch.save_state(state_path, state)
         if not dry:
@@ -617,7 +656,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
 
         stopped = False
         for folder in ordered:
-            if deadline is not None and time.monotonic() >= deadline:
+            if _past(deadline):
                 stopped = True
                 break
             cursor_key = user + "::" + folder
@@ -651,7 +690,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                     continue
                 commit(cursor_key, {**new_cursor, "last_uid": record["uid"]}, chunk, seen)
                 chunk, seen = [], set()
-                if deadline is not None and time.monotonic() >= deadline:
+                if _past(deadline):
                     # The rest of this fetch waits for the next tick: nothing after this chunk is
                     # recorded as observed, and the cursor stays just after it.
                     stopped = True
@@ -662,7 +701,7 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         if stopped:
             caught_up = False
             result["stopped_early"] = True
-            log("ACCOUNT %s: tick time budget spent; the rest of the fetched mail waits for the next tick"
+            log("ACCOUNT %s: its share of the tick time budget is spent; the rest of its mail waits for the next tick"
                 % slug)
         if dry:
             result.update(status="planned", planned_actions=copy.deepcopy([
@@ -767,13 +806,12 @@ def main():
         if not isinstance(accounts, list) or not accounts or any(not isinstance(acct, dict) for acct in accounts):
             raise ValueError("accounts must be a nonempty list")
         pool_enabled = em_pool.available(a.reminder)
-        deadline = time.monotonic() + TICK_BUDGET.total_seconds()
-        for acct in accounts:
-            report["results"].append(process_account(
-                acct, rules, a.reminder, storage["db"], a.resolve_cred, storage["state_dir"],
-                a.dry, agent_cfg, archive_enabled=bool(cfg.get("archive", {}).get("enabled", True)),
-                pool_enabled=pool_enabled, topic_enabled=topic_enabled,
-                runtime=runtime, log_path=storage["log"], deadline=deadline))
+        run_accounts(accounts, lambda acct, deadline: process_account(
+            acct, rules, a.reminder, storage["db"], a.resolve_cred, storage["state_dir"],
+            a.dry, agent_cfg, archive_enabled=bool(cfg.get("archive", {}).get("enabled", True)),
+            pool_enabled=pool_enabled, topic_enabled=topic_enabled,
+            runtime=runtime, log_path=storage["log"], deadline=deadline),
+            _STARTED + TICK_BUDGET.total_seconds(), report["results"])
         statuses = {result["status"] for result in report["results"]}
         report["status"] = "failed" if "failed" in statuses else "incomplete" if "incomplete" in statuses else "planned" if a.dry else "completed"
         report["storage_checks"] = proofs
