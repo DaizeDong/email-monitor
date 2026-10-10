@@ -305,10 +305,12 @@ def test_actions_distinguish_mailboxes_and_rotated_generations(harness):
         assert len(harness.effects) == 2
     finally:
         tick.em_watch.run_once = original
+    # The same message in a second monitored mailbox is the same mail, not new work: it is handled
+    # once per account (INBOX first), so it cannot raise a second alert.
     account = {**FIX['account'], 'monitored_folders': ['INBOX', 'Review']}
     assert tick.process_account(account, {}, 'absent', None, None, str(harness.companion/'state'),
                                 False, agent_cfg={'mode': 'heuristic'}, pool_enabled=False)['status'] == 'completed'
-    assert len(harness.effects) == 3 and len(set(harness.effects)) == 3
+    assert len(harness.effects) == 2 and len(set(harness.effects)) == 2
 
 def test_summary_uncertain_alert_never_marks_done_or_resends(harness, monkeypatch, capsys):
     import em_summary
