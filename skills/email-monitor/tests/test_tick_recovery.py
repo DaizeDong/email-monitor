@@ -86,7 +86,42 @@ def test_quotes_and_backslashes_inside_a_name_are_escaped():
     assert em_watch.quote_mailbox('"INBOX"') == '"INBOX"'
 
 
-@pytest.mark.parametrize('uidnext,max_batch,caught_up', [(1005, 200, True), (1500, 200, False)])
+LOCALIZED_ALL = '[Gmail]/&YkBnCZCuTvY-'   # a non-English account's All Mail, in modified UTF-7
+
+
+class LocalizedServer(StrictServer):
+    """A Gmail account whose display language is not English: "[Gmail]/All Mail" does not exist."""
+
+    def list(self, *args):
+        return 'OK', [b'(\\HasNoChildren) "/" "INBOX"',
+                      b'(\\HasNoChildren \\Junk) "/" "[Gmail]/&V4NXPpCuTvY-"',
+                      b'(\\All \\HasNoChildren) "/" "%s"' % LOCALIZED_ALL.encode()]
+
+    def select(self, mailbox, readonly):
+        if mailbox not in ('"INBOX"', '"%s"' % LOCALIZED_ALL):
+            return 'NO', [b'Failure']
+        return super().select(mailbox, readonly)
+
+
+def test_the_all_mail_special_use_resolves_to_the_localized_name(monkeypatch):
+    server = LocalizedServer()
+    monkeypatch.setattr(em_watch.imaplib, 'IMAP4_SSL', lambda *a: server)
+    records, cursor = em_watch.run_once(ACCOUNT, '\\All', {'uidvalidity': 3, 'last_uid': 1000}, 200,
+                                        app_pw='synthetic-auth')
+    assert server.selected == server.statused == ['"%s"' % LOCALIZED_ALL]
+    assert [r['uid'] for r in records] == [1004]
+
+
+def test_a_missing_special_use_mailbox_fails_by_name(monkeypatch):
+    server = LocalizedServer()
+    monkeypatch.setattr(server, 'list', lambda *a: ('OK', [b'(\\HasNoChildren) "/" "INBOX"']))
+    monkeypatch.setattr(em_watch.imaplib, 'IMAP4_SSL', lambda *a: server)
+    with pytest.raises(RuntimeError, match=r'\\All'):
+        em_watch.run_once(ACCOUNT, '\\All', {'uidvalidity': 3, 'last_uid': 1000}, 200, app_pw='synthetic-auth')
+    assert not server.selected
+
+
+@pytest.mark.parametrize('uidnext,max_batch,caught_up',[(1005, 200, True), (1500, 200, False)])
 def test_fetch_reports_whether_it_reached_the_mailbox_tip(monkeypatch, uidnext, max_batch, caught_up):
     server = StrictServer(uidnext)
     monkeypatch.setattr(em_watch.imaplib, 'IMAP4_SSL', lambda *a: server)
@@ -246,6 +281,27 @@ def test_backlog_waits_until_every_mailbox_is_read_to_its_tip(harness, monkeypat
     result = _run(harness, _account())
     assert result['status'] == 'completed' and len(sent) == 1
     assert result['backlog']['members'] == 2
+
+
+def test_a_long_backlog_flushes_held_alerts_after_six_hours_without_waiting_for_the_tip(
+        harness, monkeypatch, real_files):
+    state_path, journal_path = real_files
+    _mailboxes(monkeypatch, {'INBOX': [_message(1, 5), _message(2, 4)]}, caught_up={'INBOX': False})
+    _verdicts(monkeypatch)
+    sent = _relay(monkeypatch)
+    assert _run(harness, _account())['status'] == 'incomplete' and not sent
+    # The account is still far behind, but the held alerts have now waited past the flush period.
+    state = json.loads(state_path.read_text(encoding='utf-8'))
+    earlier = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=6, minutes=1)).isoformat()
+    for row in _alerts(state):
+        row['payload']['held_at'] = earlier
+    state_path.write_text(json.dumps(state), encoding='utf-8')
+    _mailboxes(monkeypatch, {'INBOX': [_message(3, 3)]}, caught_up={'INBOX': False})
+    result = _run(harness, _account())
+    assert len(sent) == 1 and result['backlog']['members'] == 3, 'held alerts waited for the tip forever'
+    # A newly held alert starts a new period and waits again.
+    _mailboxes(monkeypatch, {'INBOX': [_message(4, 2)]}, caught_up={'INBOX': False})
+    assert _run(harness, _account())['status'] == 'incomplete' and len(sent) == 1
 
 
 def test_backlog_refused_by_the_relay_is_retried_as_one_message(harness, monkeypatch, real_files):

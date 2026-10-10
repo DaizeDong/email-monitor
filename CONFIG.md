@@ -53,7 +53,7 @@ Committed, **zero secrets**. Fields:
       "role": "primary",               // REQUIRED enum — primary | secondary | academic
       "imap_host": "imap.gmail.com",   // OPTIONAL str — default imap.gmail.com
       "cred_path": "~/.local/secrets/gmail-primary.cred", // OPTIONAL str — DPAPI pointer; MUST use ~ (portable, E5)
-      "monitored_folders": ["INBOX"],  // OPTIONAL str[] — folders to watch
+      "monitored_folders": ["INBOX"],  // OPTIONAL str[] — folders to watch; a system mailbox by special-use token, e.g. "\\All"
       "label_scheme": "EM/{priority}/{semantic}", // OPTIONAL str — Gmail label template
       "max_batch": 200,                // OPTIONAL int — max msgs per tick per account
       "health_last": "",               // OPTIONAL str — last healthy poll (runtime-stamped)
