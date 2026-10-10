@@ -16,6 +16,7 @@ Usage:
 Stdlib only.
 """
 import argparse
+import contextlib
 import datetime
 import copy
 import hashlib
@@ -48,14 +49,22 @@ def _past(value):
 
 
 def next_summary_utc(local_time="08:00", now=None):
-    """Tomorrow's summary anchor at local_time NY, returned UTC RFC3339 (DST-correct)."""
+    """The next summary slot strictly after `now` at local_time NY, as UTC RFC3339 (DST-correct).
+
+    Today's slot when it is still ahead (arming at 02:46 must not skip today's 08:00), otherwise
+    tomorrow's. The day is stepped on the local calendar, never by adding 24 hours.
+    """
     base = now or datetime.datetime.now(tz=NY)
     if base.tzinfo is None:
         base = base.replace(tzinfo=NY)
     base = base.astimezone(NY)
     hh, mm = (int(x) for x in local_time.split(":"))
-    tomorrow = (base + timedelta(days=1)).replace(hour=hh, minute=mm, second=0, microsecond=0)
-    return tomorrow.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    day = base.date()
+    while True:
+        slot = datetime.datetime(day.year, day.month, day.day, hh, mm, tzinfo=NY)
+        if slot > base:
+            return slot.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        day += timedelta(days=1)
 
 
 def assemble(reminder, db, python=None):
@@ -97,6 +106,8 @@ def assemble(reminder, db, python=None):
 
 
 TERMINAL = ("done", "cancelled")
+# Summary steps use the base action states only; message_gone belongs to mail actions.
+STEP_STATES = {"pending", "failed", "uncertain", "completed"}
 
 
 def reconcile_step(step, reminder, db, python=None):
@@ -141,6 +152,43 @@ def main():
     a = ap.parse_args()
 
     report = {"status": "failed", "delivery": "not_measured", "reconciliation": "manual"}
+    with contextlib.ExitStack() as writer:
+        if not a.dry:
+            try:
+                _hold_writer(writer, a.config, a.db)
+            except em_runtime.WriterBusy as busy:
+                report.update(status="refused", error=str(busy))
+                print(json.dumps(report, ensure_ascii=False))
+                return 3
+            except Exception as error:
+                report.update(error=str(error))
+                print(json.dumps(report, ensure_ascii=False))
+                return 1
+        return _locked_main(a, report)
+
+
+def _hold_writer(stack, config, db):
+    """Take the state directory's writer lock, unless the tick that started this worker holds it.
+
+    The tick holds the lock for its whole run and starts this worker as its child, which then
+    works under the tick's lock. That is accepted only when the lock is really held (taking it
+    fails) and its recorded holder is a tick whose pid is this process's parent. A worker
+    started by hand takes the lock itself and is refused while any other writer holds it.
+    """
+    em_runtime.prove_private(config)
+    with open(config, encoding="utf-8-sig") as handle:
+        cfg = json.load(handle)
+    storage, _ = em_runtime.storage_config(cfg, os.path.dirname(os.path.abspath(config)), db=db)
+    try:
+        stack.enter_context(em_runtime.writer_lock(storage["state_dir"], "summary"))
+    except em_runtime.WriterBusy:
+        holder = em_runtime.writer_holder(storage["state_dir"]) or {}
+        if holder.get("role") == "tick" and holder.get("pid") == os.getppid():
+            return
+        raise
+
+
+def _locked_main(a, report):
     possible_effect = False
     try:
         em_runtime.prove_private(a.config)
@@ -168,7 +216,7 @@ def main():
             for step in run["steps"]:
                 if not isinstance(step, dict) or not {"key", "adapter", "status", "payload", "receipt"}.issubset(step):
                     raise ValueError("malformed summary step")
-                if step["status"] not in em_actions.STATES:
+                if step["status"] not in STEP_STATES:
                     raise ValueError("invalid summary step status")
                 if step["status"] == "completed" and em_actions.receipt_status(step["receipt"], step["key"], step["adapter"]) != "confirmed":
                     raise ValueError("summary completion is missing its receipt")

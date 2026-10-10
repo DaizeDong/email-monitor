@@ -382,9 +382,10 @@ def _prove_and_remember(path, root):
     return _proof_result(path, proof)
 
 
-# One heartbeat writer per state directory. Every process that rewrites account or summary state
-# holds this lock for its whole run: the tick (including the summary worker it starts) and
-# em_catchup. The OS releases it when the holder exits, so a crash never leaves it stale. Byte 0
+# One writer per state directory. Every process that rewrites account or summary state holds this
+# lock for its whole run: the tick, em_catchup, the standalone em_watch CLI and a hand-started
+# em_summary. The summary worker a tick starts works under the tick's lock instead (it checks the
+# lock is held by the tick that is its parent). The OS releases it when the holder exits, so a crash never leaves it stale. Byte 0
 # is the lock; the holder's role, pid and start time follow it so a refused writer can name it.
 WRITER_LOCK = '.writer.lock'
 

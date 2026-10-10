@@ -22,6 +22,11 @@ its key, complete scope, payload, status and receipt. Its lifecycle is:
 3. `completed`: saved only after the adapter returns a matching confirmation.
 4. `failed`: a matching `not_applied` receipt proves the action did not occur and can
    be retried using the same key. The failed checkpoint retains that receipt and its evidence.
+5. `message_gone`: a `topic_label` or `archive` row whose last three dispatches in a row each
+   answered `not_applied` with `matched: 0` (the search found the message nowhere in the
+   mailbox, for example after it was deleted). The row keeps that receipt and its
+   `gone_checks` count, is never dispatched again and no longer counts as pending work. Any
+   other answer restarts the count. Alerts and pool rows never end this way.
 
 A confirmation must contain `status: confirmed`, the dispatched `idempotency_key`,
 the matching `adapter` and a nonempty verifiable `receipt_id`. A `not_applied` receipt
@@ -55,14 +60,32 @@ changing that one row and saving, so a row another writer advanced is never reve
 daily summary in a catch-up is dated by its run's `scheduled_at` (recorded by the summary
 worker for new runs) or, for older runs, by its pool event's due time.
 
+## Backlog of old mail
+
+An account that could not be read for a while (a failing mailbox, an expired credential)
+resumes from its stored cursor, so its first good ticks observe days of mail at once. The
+tick still classifies, labels and pools every message as usual, but an alert for a message
+whose `Date` was already more than 12 hours old when the tick saw it is held as backlog
+(`payload.backlog`, with the message's date, sender and subject in `payload.origin`) instead
+of being pushed on its own. Once every monitored mailbox of the account has been read to its
+tip, the tick sends all held alerts of that account as ONE consolidated catch-up message
+through the normal relay, most important first, journaled in `catchup.state.json` like an
+`em_catchup.py alerts` catch-up. The members are saved `uncertain` before the send; only a
+confirmed relay receipt marks them `completed` with `catch_up` receipts. A proven
+non-delivery makes them `failed`, so a later tick sends them again as one message; any other
+outcome leaves them `uncertain` with an unfinished journal entry, which no tick resends and
+which `em_catchup.py` refuses until an operator has checked the channel. Undated mail is never
+treated as backlog.
+
 State writes are atomic and flushed before dispatch. A failed intent or uncertainty
 checkpoint prevents the effect. A failed completion checkpoint leaves the earlier
-uncertain row authoritative. There is one heartbeat writer per state directory: a
-non-dry tick holds `<state_dir>/.writer.lock` (byte 0, released by the OS when the holder
-exits) for its whole run, including the summary worker it starts, and fails with
-`WriterBusy` without touching state when another writer holds it. Scheduling also uses
-IgnoreNew. A summary worker started by hand outside a tick does not take the lock and is
-not covered by this protocol's guarantees.
+uncertain row authoritative. There is one writer per state directory, enforced by
+`<state_dir>/.writer.lock` (byte 0, released by the OS when the holder exits). A non-dry
+tick holds it for its whole run and fails with `WriterBusy` without touching state when
+another writer holds it; the summary worker the tick starts works under the tick's lock (it
+checks that the lock is held and that its recorded holder is the tick that is its parent).
+`em_catchup.py`, the standalone `em_watch.py` CLI and a summary worker started by hand take
+the lock themselves and exit 3 while another writer holds it. Scheduling also uses IgnoreNew.
 
 Legacy topic headers are preserved and keep the mailbox generation from their old
 cursor. Missing scope, damaged queues or unrecognized legacy pending shapes fail
