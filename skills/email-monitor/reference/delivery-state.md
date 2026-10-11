@@ -2,9 +2,13 @@
 
 A heartbeat has two separate facts: which messages were observed, and which actions
 were confirmed. A moved IMAP cursor does not establish delivery. `process_account`
-returns `planned`, `completed`, `incomplete` or `failed`; the CLI emits a final JSON
-object containing `results` and the aggregate `status`. Required incomplete or failed
-work causes a nonzero exit code.
+returns `planned`, `completed`, `held`, `incomplete` or `failed`; the CLI emits a final JSON
+object containing `results` and the aggregate `status`, and writes the same outcome as one
+`TICK <status> rc=<code>` line to the log. Required incomplete or failed work causes exit
+code 1. `held` means the only open work is backlog alerts still inside their hold window
+(see Backlog of old mail); it exits 0. Any other open row (`pending`, `uncertain` or
+`failed`, a topic still queued, or a held alert whose window has passed) makes the account
+`incomplete` and the exit code 1.
 
 ## Account actions
 
@@ -93,6 +97,15 @@ non-delivery makes them `failed`, so a later tick sends them again as one messag
 outcome leaves them `uncertain` with an unfinished journal entry, which no tick resends and
 which `em_catchup.py` refuses until an operator has checked the channel. Undated mail is never
 treated as backlog.
+
+While an alert is held it stays `pending` and undelivered; nothing about the hold marks it
+sent. Because waiting is its intended state, a `pending` backlog alert whose `held_at` is less
+than 6 hours old does not count as open work for the exit code: an account whose only open
+work is such alerts reports `held`, with `held` (the count) and `held_until` (when the earliest
+one's catch-up is due at the latest), and the aggregate report carries `held_backlog`
+(`alerts`, `until`). A held alert past its 6 hours that is still `pending` (its flush should
+have sent it) is counted as open work again and reported as `overdue_backlog`, so the tick exits
+1; so is a backlog alert the catch-up already tried (`failed` or `uncertain`).
 
 State writes are atomic and flushed before dispatch. A failed intent or uncertainty
 checkpoint prevents the effect. A failed completion checkpoint leaves the earlier

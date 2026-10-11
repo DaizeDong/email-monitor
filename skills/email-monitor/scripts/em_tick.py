@@ -395,6 +395,41 @@ def _is_backlog(record, now):
     return now - sent > BACKLOG_AFTER
 
 
+def held_backlog(state, now):
+    """Backlog alerts still inside their hold window at `now`: (their keys, earliest window end).
+
+    Only `pending` rows with a readable, zone-aware `held_at` less than BACKLOG_FLUSH_AFTER before
+    `now` qualify; a row the catch-up already tried (`failed`, `uncertain`) or one without a usable
+    hold time is ordinary open work. `now` is the time the tick's flush decision used, so a row is
+    held exactly when that decision said its catch-up is not due yet.
+    """
+    keys, until = set(), None
+    for row in em_catchup.backlog_rows(state):
+        if row.get("status") != "pending":
+            continue
+        try:
+            held_at = datetime.datetime.fromisoformat(str(row["payload"].get("held_at", "")))
+        except ValueError:
+            continue
+        if held_at.tzinfo is None or held_at + BACKLOG_FLUSH_AFTER <= now:
+            continue
+        keys.add(row["idempotency_key"])
+        end = held_at + BACKLOG_FLUSH_AFTER
+        until = end if until is None or end < until else until
+    return keys, until
+
+
+def tick_line(report, code):
+    """The one log line a tick ends with: aggregate status, exit code, accounts, held backlog."""
+    accounts = ", ".join("%s %s" % (r.get("account", "?"), r.get("status", "?"))
+                         for r in report.get("results", []))
+    line = "TICK %s rc=%d (%s)" % (report.get("status"), code, accounts or "no accounts")
+    held = report.get("held_backlog")
+    if held:
+        line += "; %d backlog alert(s) held until %s, not sent yet" % (held["alerts"], held["until"])
+    return line
+
+
 def _plan_record(acct, mailbox, generation, record, verdict, rules, pool_enabled,
                  archive_enabled, now=None):
     user = acct["user"].strip().lower()
@@ -720,8 +755,24 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
             log("ACCOUNT %s: backlog catch-up %s, %d alert(s) %s" % (
                 slug, backlog["status"], backlog.get("members", 0),
                 json.dumps(backlog.get("levels", {}), sort_keys=True)))
-        pending = sum(em_actions.open_work(row) for row in state["actions"].values()) + len(state["topic_retry"])
-        result.update(status="incomplete" if pending else "completed", pending=pending)
+        # A backlog alert still inside its hold window is waiting on purpose, so it does not make
+        # the account incomplete (and the tick's exit code nonzero). It stays pending and undelivered
+        # and is reported as held, with the time its catch-up is due. Every other open row counts,
+        # a held alert past its window (its flush should have sent it) included.
+        held, held_until = held_backlog(state, now)
+        pending = sum(em_actions.open_work(row) and row["idempotency_key"] not in held
+                      for row in state["actions"].values()) + len(state["topic_retry"])
+        overdue = sum(row["status"] == "pending" and row["idempotency_key"] not in held
+                      for row in em_catchup.backlog_rows(state))
+        result.update(status="incomplete" if pending else "held" if held else "completed",
+                      pending=pending, held=len(held))
+        if held:
+            result["held_until"] = held_until.astimezone(datetime.timezone.utc).isoformat()
+            log("ACCOUNT %s: %d backlog alert(s) held until %s for one catch-up (not sent yet)"
+                % (slug, len(held), result["held_until"]))
+        if overdue:
+            result["overdue_backlog"] = overdue
+            log("ACCOUNT %s: %d backlog alert(s) still unsent after their hold window" % (slug, overdue))
         return result
     except Exception as error:
         # Do not log failure text to an unverified output or expose credentials.
@@ -813,7 +864,12 @@ def main():
             runtime=runtime, log_path=storage["log"], deadline=deadline),
             _STARTED + TICK_BUDGET.total_seconds(), report["results"])
         statuses = {result["status"] for result in report["results"]}
-        report["status"] = "failed" if "failed" in statuses else "incomplete" if "incomplete" in statuses else "planned" if a.dry else "completed"
+        report["status"] = "failed" if "failed" in statuses else "incomplete" if "incomplete" in statuses \
+            else "planned" if a.dry else "held" if "held" in statuses else "completed"
+        held = [r for r in report["results"] if r.get("held")]
+        if held:
+            report["held_backlog"] = {"alerts": sum(r["held"] for r in held),
+                                      "until": min(r["held_until"] for r in held)}
         report["storage_checks"] = proofs
         if cfg.get("daily_summary", {}).get("enabled", False) and pool_enabled:
             if a.dry:
@@ -836,12 +892,19 @@ def main():
         report["status"] = "incomplete" if report["results"] else "failed"
         report["error"] = type(error).__name__ + ": " + str(error)
     finally:
+        # Backlog alerts held inside their window are not a failure: the tick did all it should.
+        code = 0 if report["status"] in ("planned", "completed", "held") else 1
+        try:
+            if log_token is not None and not a.dry:
+                log(tick_line(report, code))
+        except Exception:
+            pass   # the JSON report below still carries the result
         writer.close()
         if log_token is not None:
             _LOG.reset(log_token)
         _DRY.reset(dry_token)
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if report["status"] in ("planned", "completed") else 1
+    return code
 
 
 if __name__ == "__main__":

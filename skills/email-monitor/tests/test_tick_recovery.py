@@ -5,6 +5,7 @@ backlog of old mail whose alerts go out as ONE catch-up; topic labels whose mess
 exists; the next daily-summary slot; and the writer lock in em_watch's CLI and a hand-started
 summary worker. Synthetic data only.
 """
+import contextlib
 import copy
 import datetime
 import email.utils
@@ -23,6 +24,7 @@ from test_writer_lock import lock_state
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import em_actions
 import em_catchup
+import em_lint_rules
 import em_runtime
 import em_summary
 import em_tick as tick
@@ -276,7 +278,9 @@ def test_backlog_waits_until_every_mailbox_is_read_to_its_tip(harness, monkeypat
     _verdicts(monkeypatch)
     sent = _relay(monkeypatch)
     result = _run(harness, _account())
-    assert result['status'] == 'incomplete' and not sent, 'a backlog was sent before the account caught up'
+    # Held, not incomplete: the alert waits on purpose and stays pending (undelivered).
+    assert result['status'] == 'held' and result['pending'] == 0 and not sent, \
+        'a backlog was sent before the account caught up'
     _mailboxes(monkeypatch, {'INBOX': [_message(2, 4)]})
     result = _run(harness, _account())
     assert result['status'] == 'completed' and len(sent) == 1
@@ -289,7 +293,7 @@ def test_a_long_backlog_flushes_held_alerts_after_six_hours_without_waiting_for_
     _mailboxes(monkeypatch, {'INBOX': [_message(1, 5), _message(2, 4)]}, caught_up={'INBOX': False})
     _verdicts(monkeypatch)
     sent = _relay(monkeypatch)
-    assert _run(harness, _account())['status'] == 'incomplete' and not sent
+    assert _run(harness, _account())['status'] == 'held' and not sent
     # The account is still far behind, but the held alerts have now waited past the flush period.
     state = json.loads(state_path.read_text(encoding='utf-8'))
     earlier = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=6, minutes=1)).isoformat()
@@ -301,7 +305,7 @@ def test_a_long_backlog_flushes_held_alerts_after_six_hours_without_waiting_for_
     assert len(sent) == 1 and result['backlog']['members'] == 3, 'held alerts waited for the tip forever'
     # A newly held alert starts a new period and waits again.
     _mailboxes(monkeypatch, {'INBOX': [_message(4, 2)]}, caught_up={'INBOX': False})
-    assert _run(harness, _account())['status'] == 'incomplete' and len(sent) == 1
+    assert _run(harness, _account())['status'] == 'held' and len(sent) == 1
 
 
 def test_backlog_refused_by_the_relay_is_retried_as_one_message(harness, monkeypatch, real_files):
@@ -332,6 +336,97 @@ def test_backlog_with_an_unknown_outcome_is_never_sent_again(harness, monkeypatc
     assert {row['status'] for row in rows} == {'uncertain'}
     (entry,) = json.loads(journal_path.read_text(encoding='utf-8'))['catchups'].values()
     assert entry['status'] == 'uncertain'
+
+
+# ---------- the exit code while backlog alerts are held ----------
+
+def _tick_main(harness, monkeypatch, capsys, account):
+    """Run em_tick.main() for one account on the harness state; returns (exit code, final report).
+
+    Configuration, the interpreter probe and the writer lock are stubbed; process_account and the
+    state files are real.
+    """
+    registry = harness.companion / 'registry.json'
+    registry.write_text(json.dumps({'schema_version': 1, 'accounts': [account]}), encoding='utf-8')
+    state_dir = str(harness.companion / 'state')
+    monkeypatch.setattr(tick.em_runtime, 'runtime_config', lambda cfg, companion: {'python': sys.executable})
+    monkeypatch.setattr(tick.em_runtime, 'check_local_route', lambda *a: None)
+    monkeypatch.setattr(tick.em_runtime, 'storage_config', lambda *a: (
+        {'state_dir': state_dir, 'db': None, 'log': str(harness.companion / 'log.txt')}, {}))
+    monkeypatch.setattr(tick.em_runtime, 'writer_lock', lambda *a: contextlib.nullcontext())
+    monkeypatch.setattr(tick.em_runtime, 'probe_interpreter', lambda *a: (True, 'synthetic'))
+    monkeypatch.setattr(tick, 'preflight', lambda *a: [])
+    monkeypatch.setattr(tick.em_pool, 'available', lambda *a: False)
+    monkeypatch.setattr(em_lint_rules, 'draft_config', lambda *a: None)
+    real = tick.process_account
+    monkeypatch.setattr(tick, 'process_account', lambda acct, *a, **k: real(
+        acct, {}, 'absent', None, None, state_dir, False, agent_cfg={'mode': 'heuristic'},
+        pool_enabled=False, deadline=k.get('deadline')))
+    monkeypatch.setattr(sys, 'argv', ['em_tick.py', '--config', str(registry)])
+    capsys.readouterr()
+    code = tick.main()
+    return code, json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+
+def test_alerts_held_inside_their_hold_window_do_not_fail_the_tick(harness, monkeypatch, capsys, real_files):
+    state_path, journal_path = real_files
+    _mailboxes(monkeypatch, {'INBOX': [_message(1, 5), _message(2, 4)]}, caught_up={'INBOX': False})
+    _verdicts(monkeypatch)
+    sent = _relay(monkeypatch)
+    started = datetime.datetime.now(datetime.timezone.utc)
+    code, report = _tick_main(harness, monkeypatch, capsys, _account())
+    assert not sent, 'a held backlog alert was sent before its hold ended'
+    rows = _alerts(json.loads(state_path.read_text(encoding='utf-8')))
+    assert len(rows) == 2 and {row['status'] for row in rows} == {'pending'}, 'held alerts must stay undelivered'
+    assert code == 0, 'alerts deliberately held for the catch-up failed the tick (rc %d)' % code
+    assert report['status'] == 'held' and report['results'][0]['status'] == 'held'
+    held = report['held_backlog']
+    assert held['alerts'] == 2
+    until = datetime.datetime.fromisoformat(held['until'])
+    assert started + tick.BACKLOG_FLUSH_AFTER <= until <= started + tick.BACKLOG_FLUSH_AFTER + datetime.timedelta(minutes=5)
+    assert report['results'][0]['pending'] == 0 and report['results'][0]['held'] == 2
+    assert 'held until' in (harness.companion / 'log.txt').read_text(encoding='utf-8')
+
+
+def test_a_held_alert_past_its_hold_window_that_was_not_sent_fails_the_tick(
+        harness, monkeypatch, capsys, real_files):
+    state_path, journal_path = real_files
+    _mailboxes(monkeypatch, {'INBOX': [_message(1, 5)]}, caught_up={'INBOX': False})
+    _verdicts(monkeypatch)
+    sent = _relay(monkeypatch)
+    assert _run(harness, _account())['status'] != 'failed' and not sent
+    state = json.loads(state_path.read_text(encoding='utf-8'))
+    for row in _alerts(state):
+        row['payload']['held_at'] = (datetime.datetime.now(datetime.timezone.utc)
+                                     - datetime.timedelta(hours=6, minutes=1)).isoformat()
+    state_path.write_text(json.dumps(state), encoding='utf-8')
+    # The flush that should have sent it does not happen (a defect, or a send that never ran).
+    monkeypatch.setattr(tick.em_catchup, 'deliver_backlog', lambda *a, **k: {'status': 'not_run', 'members': 0})
+    _mailboxes(monkeypatch, {'INBOX': []}, caught_up={'INBOX': False})
+    code, report = _tick_main(harness, monkeypatch, capsys, _account())
+    (row,) = _alerts(json.loads(state_path.read_text(encoding='utf-8')))
+    assert row['status'] == 'pending' and not sent
+    assert code == 1, 'an alert held past its window and never sent passed as healthy'
+    assert report['status'] == 'incomplete' and report['results'][0]['pending'] == 1
+    assert report['results'][0]['held'] == 0 and report['results'][0]['overdue_backlog'] == 1
+    assert 'held_backlog' not in report
+
+
+def test_an_undelivered_alert_next_to_a_held_one_still_fails_the_tick(harness, monkeypatch, capsys, real_files):
+    state_path, journal_path = real_files
+    old, fresh = _message(1, 5), _message(2, 0, subject='Fresh synthetic notice')
+    _mailboxes(monkeypatch, {'INBOX': [old, fresh]}, caught_up={'INBOX': False})
+    _verdicts(monkeypatch)
+    sent = _relay(monkeypatch, 'not_applied')
+    code, report = _tick_main(harness, monkeypatch, capsys, _account())
+    rows = _alerts(json.loads(state_path.read_text(encoding='utf-8')))
+    by_backlog = {bool(row['payload'].get('backlog')): row['status'] for row in rows}
+    assert by_backlog == {True: 'pending', False: 'failed'}
+    assert len(sent) == 1, 'only the fresh alert is attempted'
+    assert code == 1, 'a refused fresh alert was hidden behind a held one'
+    assert report['status'] == 'incomplete'
+    assert report['results'][0]['pending'] == 1 and report['results'][0]['held'] == 1
+    assert report['held_backlog']['alerts'] == 1
 
 
 def test_dry_run_plans_the_backlog_without_sending(harness, monkeypatch):
