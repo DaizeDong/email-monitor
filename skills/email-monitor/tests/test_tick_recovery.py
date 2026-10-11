@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 import pytest
 
@@ -362,6 +363,9 @@ def _tick_main(harness, monkeypatch, capsys, account):
     monkeypatch.setattr(tick, 'process_account', lambda acct, *a, **k: real(
         acct, {}, 'absent', None, None, state_dir, False, agent_cfg={'mode': 'heuristic'},
         pool_enabled=False, deadline=k.get('deadline')))
+    # The tick budget counts from em_tick's import (one tick per process in production). A test
+    # process outlives that budget, so start this tick's budget now instead.
+    monkeypatch.setattr(tick, '_STARTED', time.monotonic())
     monkeypatch.setattr(sys, 'argv', ['em_tick.py', '--config', str(registry)])
     capsys.readouterr()
     code = tick.main()
@@ -386,6 +390,19 @@ def test_alerts_held_inside_their_hold_window_do_not_fail_the_tick(harness, monk
     assert started + tick.BACKLOG_FLUSH_AFTER <= until <= started + tick.BACKLOG_FLUSH_AFTER + datetime.timedelta(minutes=5)
     assert report['results'][0]['pending'] == 0 and report['results'][0]['held'] == 2
     assert 'held until' in (harness.companion / 'log.txt').read_text(encoding='utf-8')
+
+
+def test_a_driven_tick_gets_a_fresh_budget_in_a_long_test_process(harness, monkeypatch, capsys, real_files):
+    # A suite that has run longer than TICK_BUDGET since em_tick was imported: the driven tick must
+    # still read and hold its mail instead of stopping at a deadline that passed before it began.
+    monkeypatch.setattr(tick, '_STARTED', time.monotonic() - 2 * tick.TICK_BUDGET.total_seconds())
+    state_path, journal_path = real_files
+    _mailboxes(monkeypatch, {'INBOX': [_message(1, 5)]}, caught_up={'INBOX': False})
+    _verdicts(monkeypatch)
+    sent = _relay(monkeypatch)
+    code, report = _tick_main(harness, monkeypatch, capsys, _account())
+    assert state_path.exists(), 'the driven tick stopped at a budget spent before it started'
+    assert code == 0 and report['status'] == 'held' and not sent
 
 
 def test_a_held_alert_past_its_hold_window_that_was_not_sent_fails_the_tick(
