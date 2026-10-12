@@ -9,7 +9,7 @@ available headers support the label.
 Review is manual and opt-in through quality_review.enabled. Findings can require
 a sender-map or taxonomy change; removing a label without correcting its rule can
 recreate the same error. Disabled review and a review with no findings are
-reported separately. Reports and sampled headers belong in a verified PRIVATE
+reported separately. Reports and sampled headers belong in a PRIVATE
 companion, under version control. --force overrides only the enabled switch;
 PRIVATE paths and the installed model policy are always checked before mail access.
 
@@ -249,7 +249,7 @@ def main(argv=None):
                     help="comma-separated subset; default is every allowed label")
     ap.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
                     help="messages sampled per label (default %d)" % DEFAULT_SAMPLE)
-    ap.add_argument("--json", default=None, help="write findings inside a verified PRIVATE companion")
+    ap.add_argument("--json", default=None, help="write findings inside a PRIVATE companion")
     ap.add_argument("--registry", default=None)
     ap.add_argument("--force", action="store_true",
                     help="run even when quality_review.enabled is false")
@@ -273,10 +273,10 @@ def main(argv=None):
         return 0
 
     try:
-        registry = Path(em_runtime.prove_private(registry)['path'])
+        registry = em_runtime.private_path(registry)
         output = None
         if a.json:
-            output = em_runtime.prove_private(a.json)['path']
+            output = str(em_runtime.private_path(a.json))
         with registry.open(encoding='utf-8-sig') as handle:
             settings = json.load(handle)
         if not isinstance(settings, dict):
@@ -295,7 +295,7 @@ def main(argv=None):
             print('llmcall dependency unavailable; nothing was reviewed.', file=sys.stderr)
             return 5
         for name in ('taxonomy.md', 'sender_map.json', 'labels.json'):
-            em_runtime.prove_private(registry.parent/'rules'/name)
+            em_runtime.private_path(registry.parent/'rules'/name)
     except (OSError, ValueError, RuntimeError) as exc:
         print('quality review preflight failed: '+str(exc), file=sys.stderr)
         return 1

@@ -5,7 +5,7 @@
 Each heartbeat connects read-only and reconciles a persisted watermark.
 
 - The cursor is `(UIDVALIDITY, last_uid)` per account and mailbox. State, pending payloads,
-  receipts and logs are versioned DATA in a verified PRIVATE Git companion. Never place them
+  receipts and logs are versioned DATA in a PRIVATE Git companion. Never place them
   in this public tool or treat gitignore as a substitute for private storage.
 - `SELECT(readonly=True)` and `BODY.PEEK[]` fetch the message without setting the Seen flag.
   The watcher extracts body text for classification; it is not a header-only fetch.

@@ -97,7 +97,7 @@ membership separately; a successful STORE response is insufficient.
 ## Configuration lives elsewhere
 
 `rules/taxonomy.md` (the only judgement standard), `rules/sender_map.json`, and `rules/labels.json`
-are versioned DATA and live only in the verified PRIVATE companion config. Pending topic headers
+are versioned DATA and live only in the PRIVATE companion config. Pending topic headers
 and delivery receipts belong in that companion's action state as well. `labels.json` is keyed by the **account slug
 from `registry.json`**, not by any shorter nickname: `load_config` does a plain lookup and returns
 `None` on a miss, which makes the whole capability inert while the flag still reads enabled. The

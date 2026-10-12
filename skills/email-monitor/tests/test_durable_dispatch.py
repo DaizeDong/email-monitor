@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import pytest
-from private_storage_helpers import make_repository, make_linked_worktree, write_visibility
+from private_storage_helpers import make_repository, make_linked_worktree
 sys.path.insert(0, str(Path(__file__).parent.parent / 'scripts'))
 import em_tick as tick
 import em_draft_lint
@@ -20,7 +20,6 @@ def ack(key, adapter='alert', status='confirmed'):
 def harness(tmp_path, monkeypatch):
     companion = tmp_path / 'companion'
     make_repository(companion)
-    write_visibility(tmp_path)
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
     monkeypatch.setattr(tick, 'LOG', str(companion / 'log.txt'))
@@ -93,10 +92,15 @@ def test_failed_intent_save_prevents_effect(harness, monkeypatch):
     assert harness.run()['status'] == 'failed'
     assert not harness.effects
 
-def test_unversioned_storage_fails_before_credentials(harness, monkeypatch):
-    (harness.companion / '.git' / 'config').unlink()
+def test_unversioned_storage_fails_before_credentials(harness, monkeypatch, capsys):
+    import shutil
+    _configured_registry(harness, monkeypatch)
+    shutil.rmtree(harness.companion / '.git')
     monkeypatch.setattr(tick, 'resolve_app_pw', lambda *a: pytest.fail('credentials reached'))
-    assert harness.run()['status'] == 'failed'
+    monkeypatch.setattr(sys, 'argv', ['em_tick.py', '--config', str(harness.companion/'registry.json')])
+    assert tick.main() != 0
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result['status'] == 'failed' and 'Git companion' in result['error']
     assert not harness.effects
 
 def test_local_only_agent_fails_before_credentials(harness, monkeypatch):
@@ -124,13 +128,12 @@ def test_main_dry_config_failure_never_logs_or_alerts(monkeypatch, capsys, tmp_p
     assert json.loads(capsys.readouterr().out.splitlines()[-1])['status'] == 'failed'
 
 @pytest.mark.parametrize('linked', [False, True])
-def test_private_normal_and_linked_storage_proof(harness, tmp_path, linked):
+def test_private_normal_and_linked_storage_path(harness, tmp_path, linked):
     import em_runtime
     root = harness.companion
     if linked:
         make_linked_worktree(root, tmp_path / 'common')
-    proof = em_runtime.prove_private(root/'data'/'state')
-    assert proof['visibility'] == 'PRIVATE'
+    assert em_runtime.private_path(root/'data'/'state') == root/'data'/'state'
 
 @pytest.mark.parametrize('draft', [{'language': 'invalid'}, {'style': {'max_lines': 0}},
                                   {'style': {'allow_markdown': 'false'}}, {'signature': ''}])
@@ -272,7 +275,7 @@ def test_doctor_private_config_accepts_absolute_runtime_resource(harness, monkey
     assert verify_config.main() == 0
     report = json.loads(capsys.readouterr().out)
     assert report['status'] == 'ready'
-    assert calls[0][0][0] == sys.executable and 0 < calls[0][1]['timeout'] <= 30
+    assert calls == []   # the selected interpreter is this one, so it is probed in process
 
 
 def test_main_dry_uses_companion_relative_paths_without_disk_effects(harness, monkeypatch, capsys):
@@ -287,7 +290,6 @@ def test_main_dry_uses_companion_relative_paths_without_disk_effects(harness, mo
     assert tick.main() == 0
     result = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert result['status'] == 'planned' and result['results'][0]['planned_actions']
-    assert result['storage_checks']['state_dir']['path'] == str(harness.companion/'data'/'state')
     after = {str(p.relative_to(harness.companion)): p.read_bytes()
              for p in harness.companion.rglob('*') if p.is_file()}
     assert before == after and not harness.effects and not harness.saves
@@ -363,10 +365,11 @@ def test_legacy_topic_retry_keeps_its_original_mailbox_generation(harness, monke
 _REAL_SAVE_STATE = tick.em_watch.save_state
 
 
-def test_state_writer_rejects_unversioned_destination_before_mkdir(tmp_path):
+def test_unversioned_state_destination_is_refused_before_mkdir(tmp_path):
+    import em_runtime
     destination = tmp_path/'unversioned'/'state.json'
     with pytest.raises(ValueError):
-        _REAL_SAVE_STATE(str(destination), {'cursors': {}})
+        em_runtime.private_path(destination)
     assert not destination.parent.exists()
 
 

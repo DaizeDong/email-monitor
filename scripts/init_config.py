@@ -215,9 +215,9 @@ def write(path, content, force, *, root=None):
         return
     if root is None:
         raise ValueError("Configuration writes require an explicit PRIVATE companion root")
-    em_runtime.authorize_config_write(root, path)
+    if not em_runtime.private_path(path).is_relative_to(Path(root).expanduser().absolute()):
+        raise ValueError("Configuration write is outside the companion root: %s" % path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    em_runtime.authorize_config_write(root, path)
     # Check the opened file before truncation so hardlink aliases keep their bytes.
     flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
     descriptor = os.open(path, flags, 0o666)
@@ -251,7 +251,7 @@ def main():
         print("Cannot initialize draft templates: invalid configuration: " + str(error))
         return 1
     try:
-        em_runtime.authorize_config_write(out, registry_path)
+        em_runtime.private_path(registry_path)
     except (OSError, ValueError, RuntimeError) as error:
         print("Cannot initialize PRIVATE configuration: " + str(error))
         return 1

@@ -221,8 +221,8 @@ def main():
     if gi_ok:
         check(".gitignore blocks secret path probes (secrets/* + *.env + *.cred)",
               secret_ignore_ready(cfg), "requires Git and effective, non-negated .gitignore rules")
-        # Nonsecret DATA is versioned in the PRIVATE companion. The enclosing
-        # repository and every runtime destination receive visibility checks below.
+        # Nonsecret DATA is versioned in the PRIVATE companion. The runtime
+        # destinations receive the local path checks below.
 
     try:
         selected = em_runtime.runtime_config(data, cfg)
@@ -241,13 +241,12 @@ def main():
     except ValueError as error:
         check("draft signature, language and style", False, str(error))
     try:
-        proof = em_runtime.prove_private(cfg)
-        check("config PRIVATE companion", True, proof["repository"] + ' (' + proof['proof'] + ')')
-        _, proofs = em_runtime.storage_config(data, cfg)
-        for name, proof in proofs.items():
-            check("PRIVATE DATA destination " + name, True, proof["repository"] + ' (' + proof['proof'] + ')')
+        em_runtime.private_path(cfg)
+        check("config in a Git companion outside the source tree", True)
+        for name, path in em_runtime.storage_config(data, cfg).items():
+            check("DATA destination " + name, True, path)
     except Exception as error:
-        check("PRIVATE DATA destinations", False, str(error))
+        check("DATA destinations", False, str(error))
 
     n_fail = sum(1 for _, ok, _ in results if not ok)
     report = {"status": "not_ready" if n_fail else "ready",

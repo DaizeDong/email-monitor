@@ -1,7 +1,7 @@
 {
   "name": "email-monitor",
   "version": "0.2.0",
-  "description": "Use when you want unattended inbox triage. Monitor Gmail with incremental read-only IMAP observation, importance classification, redacted alerts, optional topic labels and review-only drafts. Installed llmcall owns model routing, timeout and fallback policy; agent classification includes message content and may use external providers. Enforced local-only model processing requires heuristic classification and topic models disabled. Runtime state, pending actions and delivery receipts remain versioned in a verified PRIVATE companion repository. The optional schedule-reminder integration preserves account-scoped message identity, reviewed thread consolidation and completed obligations. Replies are never auto-sent; live mail delivery and scheduled operation require separate acceptance.",
+  "description": "Use when you want unattended inbox triage. Monitor Gmail with incremental read-only IMAP observation, importance classification, redacted alerts, optional topic labels and review-only drafts. Installed llmcall owns model routing, timeout and fallback policy; agent classification includes message content and may use external providers. Enforced local-only model processing requires heuristic classification and topic models disabled. Runtime state, pending actions and delivery receipts remain versioned in a PRIVATE companion repository. The optional schedule-reminder integration preserves account-scoped message identity, reviewed thread consolidation and completed obligations. Replies are never auto-sent; live mail delivery and scheduled operation require separate acceptance.",
   "author": {
     "name": "DaizeDong"
   },

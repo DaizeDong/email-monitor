@@ -128,7 +128,7 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
   Missing CONFIG selections do not fall through; a missing DATA_DIR candidate can. The selected
   root supplies `registry.json`. Failure produces structured output and a nonzero exit without
   sending an alert. See [CONFIG.md](CONFIG.md) for eligibility requirements.
-- **First time:** create or clone a verified PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
+- **First time:** create or clone a PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
   at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
   ```bash
   export EMAIL_MONITOR_CONFIG=<private-companion>

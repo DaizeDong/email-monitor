@@ -12,7 +12,6 @@ import sys
 import tempfile
 import types
 import importlib.util
-import json
 import shutil
 from pathlib import Path
 
@@ -50,22 +49,16 @@ os.environ.pop("GMAIL_APP_PW", None)
 os.environ.pop("EMAIL_MONITOR_REMINDER_CLI", None)
 sys.dont_write_bytecode = True
 
-# Synthetic PRIVATE Git metadata makes ordinary logger tests exercise the actual
-# storage proof. The generator, rather than a copied operator account, owns it.
+# Synthetic Git metadata lets ordinary logger tests pass the DATA path check.
+# The generator, rather than a copied operator account, owns it.
 _SOURCE = Path(__file__).resolve().parent
 _spec = importlib.util.spec_from_file_location("email_fixture_generator", _SOURCE / "tools" / "make_fixtures.py")
 _generator = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_generator)
-_input = _generator.reliability_cases()
 for name, content in _generator.private_repository_fixture().items():
     target = _SANDBOX / name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
-(_SANDBOX / ".pii-guard").mkdir()
-from datetime import datetime, timezone
-(_SANDBOX / ".pii-guard" / "visibility.json").write_text(json.dumps({
-    **_input["visibility"], '_refreshed': datetime.now(timezone.utc).isoformat(),
-}), encoding="utf-8")
 for name in list(os.environ):
     if name.upper().startswith('GIT_') or name.upper().endswith('_PROXY'):
         os.environ.pop(name)
@@ -216,37 +209,16 @@ sys.addaudithook(_file_boundary)
 
 @pytest.fixture
 def private_companion(tmp_path, monkeypatch):
-    # Permit only generated local Git setup/proof commands in this disposable fixture.
-    # The suite's network and filesystem guards remain active.
-    import em_runtime
-    guarded_popen = subprocess.Popen
-    def native_git(command, *args, **kwargs):
-        argv = list(command) if isinstance(command, (list, tuple)) else []
-        cwd = Path(kwargs.get("cwd") or os.getcwd()).absolute()
-        env = kwargs.get("env") or {}
-        isolated = Path(env.get("GIT_CONFIG_GLOBAL", "/absent")).absolute().is_relative_to(tmp_path)
-        if (argv and Path(str(argv[0])).stem.lower() == "git" and cwd.is_relative_to(tmp_path)
-                and isolated and len(argv) > 1 and argv[1] in
-                {"init", "add", "commit", "remote", "config", "rev-parse", "check-ignore", "status"}):
-            return _real_popen(command, *args, **kwargs)
-        return guarded_popen(command, *args, **kwargs)
-    monkeypatch.setattr(subprocess, "Popen", native_git)
-    spec = importlib.util.spec_from_file_location("email_guard_fixtures", _SOURCE / "guards/tools/make_fixtures.py")
-    generator = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(generator)
-    fixture = generator.make_storage_contract_fixture(
-        tmp_path / "generated", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    """A generated Git companion in temporary storage, with no selection inherited from the run."""
     for key in list(os.environ):
-        if key.startswith(("GIT_", "EMAIL_MONITOR_")):
+        if key.startswith("EMAIL_MONITOR_"):
             monkeypatch.delenv(key)
-    for key, value in fixture["companion"].env.items():
-        if key.startswith("GIT_"):
-            monkeypatch.setenv(key, value)
-    api = em_runtime._contract_api()
-    actual = api.authorize_artifact_write
-    monkeypatch.setattr(api, "authorize_artifact_write",
-                        lambda *a, **kw: actual(*a, **kw, visibility_map=fixture["receipt"]))
-    return fixture["companion"].root
+    root = tmp_path / "companion"
+    for name, content in _generator.private_repository_fixture().items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return root
 
 
 def pytest_sessionfinish(session, exitstatus):

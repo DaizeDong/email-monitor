@@ -28,12 +28,12 @@ CONFIG and CONFIG_DIR are explicit selections and do not. The registry and its r
 paths then use that one selected root.
 
 New initialization defaults to the sibling repository or selected environment path. Clone or
-initialize a verified PRIVATE repository there first; the public source never receives runtime DATA.
+initialize a PRIVATE repository there first; the public source never receives runtime DATA.
 
 You may always override discovery with an explicit `--config <dir>/registry.json` on the runtime
 scripts (`em_tick.py`, `em_summary.py`); the explicit path wins over the env order. If nothing
 resolves, the heartbeat prints a structured configuration failure and exits nonzero without
-sending an alert. Create or clone a verified PRIVATE companion before running `init_config.py`.
+sending an alert. Create or clone a PRIVATE companion before running `init_config.py`.
 
 ## Schema, `registry.json` (E1)
 
@@ -227,30 +227,26 @@ and rules, and establish a PRIVATE Git companion before the doctor can report re
 ## Runtime and delivery state
 
 Schema version remains 1. `runtime.python` selects the actual interpreter; the doctor runs a
-bounded Python/llmcall import probe. Missing runtime settings use the invoking interpreter for
+Python/llmcall import probe (in process when the selection is the invoking interpreter, otherwise
+a bounded child process). Missing runtime settings use the invoking interpreter for
 compatibility. `register-task.ps1` consumes the same selection and requires a ready doctor result
 before registration. Absolute interpreter, credential-reference and helper resource paths are
-valid; output paths still require PRIVATE Git proof.
+valid; output paths still receive the DATA path checks below.
 
 `storage.state_dir`, `storage.log` and `storage.db` default to `data/state`,
 `data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. These are
 versioned runtime DATA. CLI `--state-dir` and `--db` overrides receive the same checks.
-The pinned Guards companion API establishes the nearest worktree, including linked worktrees,
-and checks every physical and effective fetch/push destination and configured remote selector.
-All destinations need a local PRIVATE visibility receipt refreshed within the last 30 days.
-Missing, malformed, stale, future or nonprivate receipts fail closed. The doctor reports the
-proven repository names and does not refresh receipts or create DATA. Refresh the visibility
-receipt separately when proof is unavailable.
 
-The companion must have a committed HEAD, and runtime outputs must remain eligible for its
-version history. Source-tree, nested-repository, ignored and unversioned outputs fail before
-mail access. Filesystem aliases and hardlinked output files are rejected before resolution.
-State, report and filter exports use exclusive temporary files and repeat the PRIVATE proof
-before writing and publishing. Git configuration changes during publication abort the write.
-Within one process a successful proof is reused for at most 60 s while a fingerprint of everything
-it reads (companion Git administration and configuration, HEAD, global, system and SSH
-configuration, the visibility receipt, the environment and the Guards implementation) is
-unchanged; any change, an expired entry or a refusal proves in full again.
+Each destination is checked once, where it is chosen (the registry's storage paths at startup,
+or an explicit CLI output path), with filesystem checks only and no Git command: it must lie
+inside a Git worktree (normal or linked) that is not this public source tree, and parent
+traversal, Git metadata components, alternate streams, symlinks, junctions and hardlinked files
+are refused. A destination outside any worktree fails before credentials or mail access. Keeping
+the companion's remote private is the operator's job; the runtime does not check repository
+visibility. The doctor lists the checked destinations and does not create DATA.
+
+State, report and filter exports write an exclusive temporary file in the destination directory,
+fsync it and atomically replace the destination; a failed write leaves the previous file intact.
 
 ### Companion layout and preservation
 

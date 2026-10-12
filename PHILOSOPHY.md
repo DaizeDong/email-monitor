@@ -19,7 +19,7 @@ The SMTP send path (`send-gmail.ps1`) remains isolated and is never imported int
 
 ## P3, Keep private storage separate and model routing explicit
 
-Real mail state belongs in a verified PRIVATE companion. A local orchestration process does
+Real mail state belongs in a PRIVATE companion. A local orchestration process does
 not establish that model calls stay on the machine: default agent classification includes body
 content in prompts routed by installed `llmcall`, which may use external providers.
 Enforced `runtime.local_only=true` requires heuristic classification and disabled topic models;

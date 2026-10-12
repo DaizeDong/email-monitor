@@ -53,7 +53,7 @@ configured notifications still use their services. A dry tick still fetches and 
 
 ## PRIVATE companion and runtime DATA
 
-Use a verified PRIVATE Git companion for registry, rules, templates and real runtime DATA.
+Use a PRIVATE Git companion for registry, rules, templates and real runtime DATA.
 The default storage paths `data/state`, `data/email-monitor.log` and `data/pool.db` resolve from
 the selected companion directory, never the working directory. Overrides receive the same
 PRIVATE check. Unversioned, public and unverified destinations fail without a source-tree fallback.

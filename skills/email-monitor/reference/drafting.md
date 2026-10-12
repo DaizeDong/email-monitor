@@ -27,7 +27,7 @@ That session's model transport determines where quoted mail content is processed
 `runtime.local_only` setting does not enforce locality on a separate drafting session. Check the
 selected session route before supplying mail content; any llmcall use follows its current routing
 policy and may use external providers. Save real scratch drafts and review records only as
-versioned DATA in a verified PRIVATE companion, never in this public tool.
+versioned DATA in a PRIVATE companion, never in this public tool.
 
 By default, use plain ASCII, no markdown (`# * \` [ ] > _`), no em-dash/en-dash, no curly quotes
 and no emoji. `draft.language` and `draft.style` can explicitly adjust language, markdown and

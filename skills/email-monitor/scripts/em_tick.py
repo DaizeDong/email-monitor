@@ -3,7 +3,7 @@
 
 The account ledger distinguishes observation cursors from alert, pool, archive and
 label completion. Dry execution prints a plan without persistent writes. Runtime
-DATA belongs to a verified PRIVATE Git companion. See reference/delivery-state.md
+DATA belongs to a PRIVATE Git companion. See reference/delivery-state.md
 for reconciliation limits and the separate optional daily-summary workflow.
 """
 import argparse
@@ -71,7 +71,7 @@ SAVE_EVERY = 5
 # deliveries, a catch-up send and the summary worker (180 s timeout). At about 70 s per message
 # that is under 10 minutes, so 40 leaves at least 10 minutes of the hour unused.
 TICK_BUDGET = datetime.timedelta(minutes=40)
-# Measured from here, not from the account loop: proofs and preflight count against the hour too.
+# Measured from here, not from the account loop: setup and preflight count against the hour too.
 _STARTED = time.monotonic()
 
 
@@ -116,8 +116,10 @@ def log(msg):
     ts = datetime.datetime.now().isoformat(timespec="seconds")
     line = "[%s] %s" % (ts, msg)
     if not _DRY.get():
-        destination = _LOG.get() or LOG
-        em_runtime.prove_private(destination)
+        destination = _LOG.get()
+        if destination is None:
+            # A configured log was checked once by storage_config; only the fallback is checked here.
+            destination = str(em_runtime.private_path(LOG))
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         with open(destination, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
@@ -558,9 +560,6 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
         if not em_runtime.valid_account_slug(slug):
             raise ValueError("invalid account slug")
         state_path = os.path.join(state_dir, "%s.state.json" % slug)
-        for path in (state_path, db, log_path or _LOG.get() or LOG):
-            if path:
-                em_runtime.prove_private(path)
         state = em_actions.load_state(em_watch.load_state(state_path), user)
         folders = acct.get("monitored_folders", ["INBOX"])
         if not isinstance(folders, list) or not folders or any(not isinstance(f, str) or not f.strip() for f in folders):
@@ -835,12 +834,12 @@ def main():
             raise ValueError("local_only cannot verify a custom summary worker's model transport")
         from em_lint_rules import draft_config
         draft_config(cfg.get("draft"))
-        storage, proofs = em_runtime.storage_config(cfg, companion, a.state_dir, a.db)
+        em_runtime.private_path(config_path)
+        storage = em_runtime.storage_config(cfg, companion, a.state_dir, a.db)
         if not a.dry:
             # One writer per state directory for the whole run, the summary worker included:
             # a refusal here (em_catchup or another tick holds it) changes nothing.
             writer.enter_context(em_runtime.writer_lock(storage["state_dir"], "tick"))
-        em_runtime.prove_private(config_path)
         ready, detail = em_runtime.probe_interpreter(runtime["python"])
         if not ready:
             raise ValueError(detail)
@@ -870,7 +869,6 @@ def main():
         if held:
             report["held_backlog"] = {"alerts": sum(r["held"] for r in held),
                                       "until": min(r["held_until"] for r in held)}
-        report["storage_checks"] = proofs
         if cfg.get("daily_summary", {}).get("enabled", False) and pool_enabled:
             if a.dry:
                 report["daily_summary"] = {"status": "planned", "delivery": "not_measured"}

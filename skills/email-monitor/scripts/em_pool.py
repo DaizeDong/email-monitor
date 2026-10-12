@@ -444,7 +444,7 @@ def due(reminder, db, now=None, lead=None, python=None):
 def _cli():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reminder", default=default_reminder_path())
-    ap.add_argument("--db", default=None, help="writes require an explicit database in a verified PRIVATE companion")
+    ap.add_argument("--db", default=None, help="writes require an explicit database in a PRIVATE companion")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     u = sub.add_parser("upsert")
@@ -482,11 +482,11 @@ def _cli():
     a = ap.parse_args()
     try:
         if a.cmd != "find-thread":
-            from em_runtime import prove_private
+            from em_runtime import private_path
             try:
                 if not a.db:
-                    raise ValueError("supply --db in a verified PRIVATE companion before writing")
-                prove_private(a.db)
+                    raise ValueError("supply --db in a PRIVATE companion before writing")
+                private_path(a.db)
             except ValueError as error:
                 raise PoolError('ERR_DATA_BOUNDARY', str(error)) from error
         if a.cmd == "upsert":

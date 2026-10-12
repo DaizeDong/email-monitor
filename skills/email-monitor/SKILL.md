@@ -32,7 +32,7 @@ the shared task pool. Replies require user review and manual sending. Design rat
    overrides are rejected (see `CONFIG.md`). `runtime.local_only=true` requires `classifier.mode="heuristic"` and topic models off;
    agent/topic modes fail because llmcall supplies no enforceable local-transport proof. This model
    constraint does not disable IMAP or configured notifications. Discord gets a redacted gist.
-   The public repo stores no runtime DATA; keep it versioned in a verified PRIVATE companion.
+   The public repo stores no runtime DATA; keep it versioned in a PRIVATE companion.
    App passwords live in DPAPI (a private secrets dir, e.g. `~/.local/secrets`), never on argv / in logs / in git.
 5. **Drafts are a compliance object.** Signature, language and style come from the private registry draft section.
    Use `em_draft_lint.py --config <registry.json>`; Chinese and Unicode are allowed by zh/any,
@@ -72,7 +72,7 @@ and daily summaries are skipped. Missing schedule-reminder does not fail preflig
 ## Config lives in a private companion repo
 
 Account topology, classification rules, the VIP/kill lists, draft templates, and the controlled
-project vocabulary are all externalized to a verified PRIVATE `email-monitor-config` Git repo, along
+project vocabulary are all externalized to a PRIVATE `email-monitor-config` Git repo, along
 with versioned runtime state, pending payloads, receipts and logs (Mode B keeps credentials separate
 in DPAPI). Relative storage paths resolve from that companion; there is no public-tool fallback. See
 [CONFIG.md](../../CONFIG.md) for discovery, initialization and the registry schema, and

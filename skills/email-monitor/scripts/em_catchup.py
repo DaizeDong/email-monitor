@@ -498,7 +498,7 @@ def _load_config(path):
     with open(path, encoding="utf-8-sig") as handle:
         cfg = json.load(handle)
     companion = os.path.dirname(os.path.abspath(path))
-    storage, _ = em_runtime.storage_config(cfg, companion)
+    storage = em_runtime.storage_config(cfg, companion)
     return cfg, storage
 
 

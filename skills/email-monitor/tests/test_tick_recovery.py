@@ -353,7 +353,7 @@ def _tick_main(harness, monkeypatch, capsys, account):
     monkeypatch.setattr(tick.em_runtime, 'runtime_config', lambda cfg, companion: {'python': sys.executable})
     monkeypatch.setattr(tick.em_runtime, 'check_local_route', lambda *a: None)
     monkeypatch.setattr(tick.em_runtime, 'storage_config', lambda *a: (
-        {'state_dir': state_dir, 'db': None, 'log': str(harness.companion / 'log.txt')}, {}))
+        {'state_dir': state_dir, 'db': None, 'log': str(harness.companion / 'log.txt')}))
     monkeypatch.setattr(tick.em_runtime, 'writer_lock', lambda *a: contextlib.nullcontext())
     monkeypatch.setattr(tick.em_runtime, 'probe_interpreter', lambda *a: (True, 'synthetic'))
     monkeypatch.setattr(tick, 'preflight', lambda *a: [])

@@ -1,7 +1,5 @@
 """Materialize generator-owned repositories for native offline storage tests."""
-from datetime import datetime, timezone
 import importlib.util
-import json
 from pathlib import Path
 import shutil
 
@@ -18,17 +16,6 @@ def make_repository(root):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     return root
-
-
-def write_visibility(home, *, stamp=None, visibility='PRIVATE'):
-    data = generator.reliability_cases()['private_proof']
-    cache = Path(home) / '.pii-guard/visibility.json'
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({
-        '_refreshed': stamp if stamp is not None else datetime.now(timezone.utc).isoformat(),
-        data['slug']: visibility, data['public_slug']: 'PUBLIC',
-    }), encoding='utf-8')
-    return cache
 
 
 def make_linked_worktree(root, common):

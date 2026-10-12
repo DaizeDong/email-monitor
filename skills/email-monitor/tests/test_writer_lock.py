@@ -23,7 +23,7 @@ import em_pool
 import em_runtime
 import em_tick
 import em_watch
-from private_storage_helpers import make_repository, write_visibility
+from private_storage_helpers import make_repository
 
 ACCOUNT = 'user1@example.com'
 FIX = json.loads((Path(__file__).parent / 'reliability.json').read_text(encoding='utf-8'))
@@ -93,7 +93,6 @@ def companion(tmp_path, monkeypatch):
             return 0
         monkeypatch.setattr(ctypes.windll.shell32, 'SHGetFolderPathW', profile_folder)
     root = make_repository(tmp_path / 'companion')
-    write_visibility(tmp_path)
     cfg = {'schema_version': 1, 'accounts': [{'slug': 'user1', 'user': ACCOUNT}],
            'storage': {'state_dir': 'data/state', 'db': 'data/pool.db', 'log': 'data/log.txt'}}
     registry = root / 'registry.json'
@@ -232,8 +231,8 @@ def tick_main(tmp_path, monkeypatch):
     registry = tmp_path / 'registry.json'
     registry.write_text(json.dumps(cfg), encoding='utf-8')
     storage = {'state_dir': str(state_dir), 'db': str(tmp_path / 'pool.db'), 'log': str(tmp_path / 'log.txt')}
-    monkeypatch.setattr(em_tick.em_runtime, 'storage_config', lambda *a, **k: (dict(storage), {}))
-    monkeypatch.setattr(em_tick.em_runtime, 'prove_private', lambda *a, **k: {})
+    monkeypatch.setattr(em_tick.em_runtime, 'storage_config', lambda *a, **k: dict(storage))
+    monkeypatch.setattr(em_tick.em_runtime, 'private_path', Path)
     monkeypatch.setattr(em_tick.em_runtime, 'probe_interpreter', lambda *a: (True, 'synthetic'))
     monkeypatch.setattr(em_tick, 'preflight', lambda *a: [])
     monkeypatch.setattr(em_tick.em_pool, 'available', lambda *a: False)

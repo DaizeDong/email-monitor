@@ -4,7 +4,7 @@ Current: **v0.2.0**
 
 ## Current implementation and verification
 
-The source includes explicit companion discovery, PRIVATE write admission, installed llmcall routing,
+The source includes explicit companion discovery, DATA path checks, installed llmcall routing,
 and evidence-gated topic labeling with per-verdict diagnostics. Configuration and storage checks
 are separate from mailbox authentication, external delivery and process cleanup evidence. Synthetic/offline checks do not establish configured live readiness or a published release. See [CONFIG.md](CONFIG.md) and [CHANGELOG.md](CHANGELOG.md).
 

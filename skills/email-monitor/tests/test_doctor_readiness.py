@@ -46,11 +46,10 @@ class DoctorReadinessTests(unittest.TestCase):
     def run_doctor(self):
         self.write_json("registry.json", self.registry)
         output = io.StringIO()
-        proof = CASES["private_proof"]
         with mock.patch.object(sys, "argv", ["verify_config.py", "--config-dir", str(self.cfg), "--json"]), \
              mock.patch.object(verify_config.em_runtime, "probe_interpreter", return_value=(True, "synthetic runtime")), \
-             mock.patch.object(verify_config.em_runtime, "prove_private", return_value=proof), \
-             mock.patch.object(verify_config.em_runtime, "storage_config", return_value=({}, {})), \
+             mock.patch.object(verify_config.em_runtime, "private_path", side_effect=Path), \
+             mock.patch.object(verify_config.em_runtime, "storage_config", return_value={}), \
              contextlib.redirect_stdout(output):
             code = verify_config.main()
         return code, json.loads(output.getvalue())

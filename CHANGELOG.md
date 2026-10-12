@@ -4,6 +4,11 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+### Runtime storage checks
+- Remove the runtime PRIVATE proof and its in-process memo. `em_runtime.prove_private`, the proof memo (fingerprints, TTL, ignore-state cache) and `authorize_config_write` are gone; no runtime path starts Git any more. `em_runtime.private_path` replaces them with filesystem checks only: the destination must be inside a Git worktree that is not the public source tree, with no traversal, alternate streams, links, junctions or hardlinked files. Repository visibility is no longer checked at runtime.
+- Each destination is checked once where it is chosen: `storage_config` at startup (now returning only the resolved paths) or the CLI entry point. The tick no longer re-checks every log line or every account's state, database and log paths, and `atomic_write` does mkstemp, fsync and replace with no re-checks. The tick report no longer carries `storage_checks`.
+- `probe_interpreter` imports llmcall in process when the configured interpreter is the running one, instead of starting a second Python on every tick.
+
 ### Tick progress
 - A tick classifies, plans and saves new mail in chunks of five messages, each saved with the cursor just past its last message and delivered before the next chunk starts. A tick stopped part way (the task's one hour limit) keeps every finished chunk; the next tick starts after them and sends no alert twice. A tick starts no new chunk and no new topic judgement after 40 minutes from process start, and the topic retry queue is judged once per tick. Each account gets an equal share of the time left when it starts, so one backlogged account can no longer use a whole tick and starve the accounts after it; topic records not reached stay queued in order. `max_batch` caps each monitored folder's fetch, so an account with two folders fetches up to twice it (CONFIG.md says so now).
 

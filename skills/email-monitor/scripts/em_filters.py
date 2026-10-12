@@ -8,7 +8,7 @@ generator is structurally incapable of emitting such a rule: it only ever writes
 `from:` criteria.
 
 Generated filters never archive. Hiding a message is a separate decision.
-The sender map and generated XML are DATA in verified PRIVATE Git companions;
+The sender map and generated XML are DATA in PRIVATE Git companions;
 both paths are checked before reading senders. Output publication is atomic.
 """
 import argparse
@@ -95,11 +95,11 @@ def uncompilable(sender_map):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--sender-map", required=True)
-    ap.add_argument("--out", required=True, help="XML path in a verified PRIVATE companion")
+    ap.add_argument("--out", required=True, help="XML path in a PRIVATE companion")
     a = ap.parse_args(argv)
     try:
-        output = Path(em_runtime.prove_private(a.out)['path'])
-        source = Path(em_runtime.prove_private(a.sender_map)['path'])
+        output = em_runtime.private_path(a.out)
+        source = em_runtime.private_path(a.sender_map)
         with source.open(encoding='utf-8-sig') as handle:
             sm = json.load(handle)
         xml = compile_filters(sm)
