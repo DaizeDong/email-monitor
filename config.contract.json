@@ -21,9 +21,7 @@
       "EMAIL_MONITOR_CONFIG",
       "EMAIL_MONITOR_CONFIG_DIR",
       "EMAIL_MONITOR_DATA_DIR (existing companion discovery)",
-      "sibling email-monitor-config",
-      "~/.email-monitor-config",
-      "~/.email-monitor-data"
+      "sibling email-monitor-config"
     ],
     "required_fields": [
       "accounts",

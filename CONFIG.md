@@ -20,10 +20,9 @@ when missing, then shared discovery selects the first eligible companion, then i
 3. `EMAIL_MONITOR_DATA_DIR`, through pinned Guards when neither CONFIG variable is set.
    An existing path ending in `data` selects its parent as the companion root.
 4. The sibling `email-monitor-config` repository, with companion identity proof.
-5. `~/.email-monitor-config`.
-6. `~/.email-monitor-data`.
 
-Steps 3 through 6 select the first existing eligible directory through the pinned Guards
+There is no home-directory location: a directory there is not a repository, so nothing would
+version or back up what the skill writes. Steps 3 and 4 select the first existing eligible directory through the pinned Guards
 `resolve_companion_root("email-monitor")` function. A missing DATA_DIR candidate can fall through;
 CONFIG and CONFIG_DIR are explicit selections and do not. The registry and its relative storage
 paths then use that one selected root.

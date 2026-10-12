@@ -74,6 +74,14 @@ def test_real_pinned_resolver_returns_sibling_root_before_legacy_or_data_overrid
     assert init_config.default_dir() == str(selected)
 
 
+def test_a_home_dotfile_alone_is_not_a_companion(tmp_path, monkeypatch):
+    """The pinned resolver no longer probes ~/.email-monitor-config: with no variable and no
+    sibling, a dotfile in the profile leaves the skill uninitialized instead of selected."""
+    source, selected = pinned_layout(tmp_path, monkeypatch, companion=False, legacy=True)
+    assert (source.parent / 'profile' / CASES['legacy']).is_dir()
+    assert em_runtime.companion_dir() is None
+
+
 def test_foreign_cached_datadir_cannot_choose_the_companion(tmp_path, monkeypatch):
     source, selected = pinned_layout(tmp_path, monkeypatch)
     monkeypatch.setitem(sys.modules, 'datadir', SimpleNamespace(

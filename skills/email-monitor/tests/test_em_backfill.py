@@ -173,20 +173,32 @@ def test_tool_failure_is_reported_not_raised():
     assert (matched, ok) == (0, False)
 
 
-def test_real_config_has_no_type_label_in_the_map():
-    """Guards the live config, not a fixture.
+def _synthetic_companion(tmp_path, by_address):
+    """A temp companion with the rules/ shape the live config has, holding synthetic data only."""
+    rules = tmp_path / "synthetic-companion" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "taxonomy.md").write_text("# synthetic taxonomy", encoding="utf-8")
+    (rules / "sender_map.json").write_text(json.dumps({"by_address": by_address}), encoding="utf-8")
+    (rules / "labels.json").write_text(json.dumps({
+        "user1": ALLOWED + TYPES, "_type_labels": TYPES}), encoding="utf-8")
+    return rules.parent
 
-    If someone later maps a sender to Life/Receipt this fails here, at commit time,
-    rather than in a bulk run against the real mailbox.
+
+def test_companion_config_with_a_type_label_in_the_map_is_refused(tmp_path):
+    """The config the backfill reads from a companion goes through the same type-label guard.
+
+    If someone maps a sender to Life/Receipt in the companion, the run fails before any
+    write instead of filing marketing mail as receipts in a bulk run.
     """
-    import json
-    root = os.path.expanduser("~/.email-monitor-config/rules")
-    if not os.path.isdir(root):
-        pytest.skip("private config not present on this machine")
-    with open(os.path.join(root, "sender_map.json"), encoding="utf-8") as fh:
-        sm = json.load(fh)
-    with open(os.path.join(root, "labels.json"), encoding="utf-8") as fh:
-        lb = json.load(fh)
-    types = set(lb.get("_type_labels", []))
-    offenders = {a: l for a, l in sm.get("by_address", {}).items() if l in types}
-    assert not offenders, "senders mapped to a type label: %r" % offenders
+    companion = _synthetic_companion(tmp_path, dict(MAP["by_address"], **{"shop@x.example": "Life/Receipt"}))
+    cfg = em_backfill.em_topic.load_config("user1", config_dir=str(companion))
+    assert cfg is not None and cfg["type_labels"] == TYPES
+    with pytest.raises(em_backfill.UnsafeBackfill, match="type label"):
+        em_backfill.plan(cfg["sender_map"], cfg["allowed_labels"], cfg["type_labels"])
+
+
+def test_companion_config_without_type_labels_in_the_map_plans(tmp_path):
+    companion = _synthetic_companion(tmp_path, MAP["by_address"])
+    cfg = em_backfill.em_topic.load_config("user1", config_dir=str(companion))
+    by_label, _ = em_backfill.plan(cfg["sender_map"], cfg["allowed_labels"], cfg["type_labels"])
+    assert by_label["Accounts/Bank"] == ["a@bank.example", "b@bank.example"]

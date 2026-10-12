@@ -111,8 +111,8 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 完整规范见 **[CONFIG.md](CONFIG.md)**。
 
 - **挂载(发现顺序):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
-  已存在的 `$EMAIL_MONITOR_DATA_DIR` → 同级 `email-monitor-config` →
-  `~/.email-monitor-config` → `~/.email-monitor-data`，命中后读 `<dir>/registry.json`。
+  已存在的 `$EMAIL_MONITOR_DATA_DIR` → 同级 `email-monitor-config`（主目录下没有默认位置），
+  命中后读 `<dir>/registry.json`。
   DATA_DIR 末尾为 `data` 时取父目录；该候选不存在时可继续查找。CONFIG 变量选定的目录不存在时不会换仓。
   显式 `--config <registry.json>` 优先。找不到配置时，程序输出结构化错误并以非零状态退出，不发提醒。
 - **首次配置:**先创建或克隆经过 PRIVATE 验证的 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，

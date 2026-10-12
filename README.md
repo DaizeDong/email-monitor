@@ -123,8 +123,8 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 
 - **Discovery:** explicit `--config <registry.json>` wins, followed by `EMAIL_MONITOR_CONFIG`,
   `EMAIL_MONITOR_CONFIG_DIR`, then the pinned Guards candidates: an existing
-  `EMAIL_MONITOR_DATA_DIR`, sibling `email-monitor-config`, `~/.email-monitor-config` and
-  `~/.email-monitor-data`. A final `data` component selects its parent as the companion root.
+  `EMAIL_MONITOR_DATA_DIR`, then the sibling `email-monitor-config` (no home-directory location).
+  A final `data` component selects its parent as the companion root.
   Missing CONFIG selections do not fall through; a missing DATA_DIR candidate can. The selected
   root supplies `registry.json`. Failure produces structured output and a nonzero exit without
   sending an alert. See [CONFIG.md](CONFIG.md) for eligibility requirements.
