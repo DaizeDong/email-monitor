@@ -623,45 +623,6 @@
       }
     },
     {
-      "artifact_id": "legacy_filter_backup_native_copy",
-      "path_pattern": "data/gmail-triage/filter-backup-*/native_*_*.xml",
-      "purpose": "Historical duplicate original filter export in a correction backup.",
-      "schema": "Gmail filter export XML; exact duplicate hash checked against a declared native baseline.",
-      "producer": "Historical filter correction backup.",
-      "consumer_or_final_deliverable": "Selected rollback and independent baseline reconciliation.",
-      "rebuild_or_restore": "Use the matching declared native baseline and exact private revision.",
-      "retention_rule": {
-        "class": "retired",
-        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
-      }
-    },
-    {
-      "artifact_id": "legacy_filter_backup_correction",
-      "path_pattern": "data/gmail-triage/filter-backup-*/corrected_*_selfaddr.xml",
-      "purpose": "Historical derived correction candidate distinct from the original mailbox export.",
-      "schema": "Private derived Gmail filter XML; not an independent mailbox observation.",
-      "producer": "Historical filter correction preparation.",
-      "consumer_or_final_deliverable": "Reconciliation of correction inputs and rollback evidence.",
-      "rebuild_or_restore": "Preserve exact private bytes until correction and rollback outcomes are reconciled; never replay as restore.",
-      "retention_rule": {
-        "class": "retired",
-        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
-      }
-    },
-    {
-      "artifact_id": "legacy_filter_backup_import",
-      "path_pattern": "data/gmail-triage/filter-backup-*/import_*.xml",
-      "purpose": "Historical derived import candidate distinct from independent baseline exports.",
-      "schema": "Private derived Gmail filter XML; import outcome is not established by the file.",
-      "producer": "Historical reviewed filter import preparation.",
-      "consumer_or_final_deliverable": "Selected import/correction and rollback reconciliation.",
-      "rebuild_or_restore": "Preserve exact private bytes until the import and rollback obligations are reconciled; never replay as restore.",
-      "retention_rule": {
-        "class": "retired",
-        "rule": "No new writes. Preserve unique useful code, required observations, selected results and unresolved correction or rollback inputs in their current owning families. Clear consumers and recovery dependencies and prove writer inactivity before separately approved retirement. Classification does not establish completion or authorize deletion or mailbox replay."
-      }
-    },
-    {
       "artifact_id": "legacy_baseline_social_label_candidates",
       "path_pattern": "filters-baseline/*/add_social_*.xml",
       "purpose": "Historical generated category filter candidates.",
