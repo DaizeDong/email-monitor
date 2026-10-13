@@ -55,7 +55,7 @@ sends a redacted Chinese gist, falling back to coarse subject words. Redaction r
 addresses, URLs and token patterns; names, dates, amounts and pure digit runs can remain. It does not
 send the full body. Review this egress choice before enabling notifications.
 
-NOISE is archived only when `archive.enabled` permits it. The label helper selects the RFC
+NOISE stays in the inbox unless the registry sets `archive.enabled` to exactly `true`; a missing key or any other value means no archive. The label helper selects the RFC
 Message-ID, adds the configured label and removes INBOX. A zero exit code alone proves nothing.
 The alert, archive and topic adapters require matching receipts; trustworthy `not_applied`
 evidence permits retry even if the helper exits nonzero. Malformed evidence, mismatched identity

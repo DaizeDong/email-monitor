@@ -538,7 +538,7 @@ def _dispatch(row, reminder, db, password, python):
 
 
 def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, agent_cfg=None,
-                    archive_enabled=True, pool_enabled=True, topic_enabled=False,
+                    archive_enabled=False, pool_enabled=True, topic_enabled=False,
                     topic_timeout=None, runtime=None, log_path=None, deadline=None):
     """Plan, checkpoint intent, then dispatch only work with known disposition.
 
@@ -862,7 +862,7 @@ def main():
         pool_enabled = em_pool.available(a.reminder)
         run_accounts(accounts, lambda acct, deadline: process_account(
             acct, rules, a.reminder, storage["db"], a.resolve_cred, storage["state_dir"],
-            a.dry, agent_cfg, archive_enabled=bool(cfg.get("archive", {}).get("enabled", True)),
+            a.dry, agent_cfg, archive_enabled=cfg.get("archive", {}).get("enabled") is True,
             pool_enabled=pool_enabled, topic_enabled=topic_enabled,
             runtime=runtime, log_path=storage["log"], deadline=deadline),
             _STARTED + TICK_BUDGET.total_seconds(), report["results"])

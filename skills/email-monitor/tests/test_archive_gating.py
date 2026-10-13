@@ -58,3 +58,17 @@ def test_matched_zero_is_a_failure_not_a_phantom_success(monkeypatch):
 
 
 # ---------- 2. the archive switch ----------
+
+
+def test_noise_is_never_planned_for_archive_unless_explicitly_enabled():
+    """Production planner: archiving is opt-in. The default and an absent switch both keep NOISE in the inbox."""
+    import inspect
+    import em_tick
+    acct = {"user": "user1@example.com", "slug": "user1"}
+    record = {"message_id": "<m1@example.com>", "subject": "s", "body": "b", "date": "", "from": "a@example.com"}
+    verdict = {"priority": "NOISE", "label": "promo"}
+    kinds = lambda enabled: [p["action"] for p in
+                             em_tick._plan_record(acct, "INBOX", 1, record, verdict, {}, False, enabled)]
+    assert "archive" not in kinds(False)
+    assert "archive" in kinds(True)  # negative control: the planner can archive when told to
+    assert inspect.signature(em_tick.process_account).parameters["archive_enabled"].default is False

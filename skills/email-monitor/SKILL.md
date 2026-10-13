@@ -51,7 +51,7 @@ aliases route later mail to the retained obligation; completed obligations remai
 | # | Step | Load | Code |
 |---|------|------|------|
 | 1 | Incremental watch + classify each new mail | `reference/monitor-and-classify.md` | `em_watch.py`, `em_agent_classify.py`, `em_classify.py` |
-| 2 | Alert important + archive noise | `reference/monitor-and-classify.md` | `em_alert.py`, `gmail-imap-label.py` |
+| 2 | Alert important (archiving noise is opt-in, off by default) | `reference/monitor-and-classify.md` | `em_alert.py`, `gmail-imap-label.py` |
 | 3 | Track the affair in the pool (+ a *dated* reminder if the mail names a date) | `reference/memory-pool.md` | `em_pool.py`, `em_dates.py`, `em_duenorm.py` |
 | 4 | Draft a reply (review-only) | `reference/drafting.md` | `em_draft_lint.py`, Gmail `create_draft` |
 | 5 | Topic-label each new mail (add-only, opt-in) | `reference/topic-labeling.md` | `em_topic.py`, `gmail-imap-label.py` |
