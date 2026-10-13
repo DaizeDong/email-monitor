@@ -315,7 +315,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user", required=True)
     ap.add_argument("--folder", default="INBOX")
-    ap.add_argument("--state", required=True, help="per-account state JSON path (gitignored)")
+    ap.add_argument("--state", required=True, help="per-account state JSON path (DATA in the companion)")
     ap.add_argument("--max-batch", type=int, default=400)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

@@ -495,6 +495,7 @@ def _cutoff(value):
 
 
 def _load_config(path):
+    path = os.path.expanduser(path)
     with open(path, encoding="utf-8-sig") as handle:
         cfg = json.load(handle)
     companion = os.path.dirname(os.path.abspath(path))
