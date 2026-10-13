@@ -4,6 +4,11 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+### Storage
+- `em_summary` checks its config and storage paths once in `main` and passes them to the writer lock and the run, instead of checking them twice per run.
+- `private_path` drops the companion-inside-source half of its separate-worktree test, which could never fire after the destination itself was refused inside the source tree.
+- The reliability fixture key `private_proof` is now the top-level `retained_text`.
+
 ### Test suite
 - Cut the offline suite from 823 tests in 50 files to 60 tests in 35 files, one test per invariant: the public tree carries no DATA and no in-repo fallback, every CLI refuses unversioned storage before reading or writing, nothing archives or removes mail, uncertain deliveries are never resent, drafts sign only with the configured identity, the model policy cannot be overridden, and the topic evidence gate rejects what it cannot verify. The full-history PII scan remains and takes most of the run time.
 - Removed the generated response-parser test and the topic regression fixture together with their generators in `tools/make_fixtures.py` and their `.dataclass.json` entries; the live topic regression check documented in CONTRIBUTING.md is gone with them.

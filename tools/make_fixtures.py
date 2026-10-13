@@ -284,7 +284,7 @@ def reliability_cases():
         "cursor": {"uidvalidity": 7, "last_uid": 11},
         "verdict": {"priority": "ACTION", "label": "personal", "tier": "L0"},
         "private_remote": "https://github.com/example-owner/email-monitor-config.git",
-        "private_proof": {"retained_text": "Synthetic original content.\n"},
+        "retained_text": "Synthetic original content.\n",
         "type_map": {
             "message": {"from": "Billing <billing@example.com>", "subject": "Big summer sale",
                         "list_id": "Notices <notices.example.com>"},

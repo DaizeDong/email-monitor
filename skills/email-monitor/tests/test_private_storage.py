@@ -11,7 +11,7 @@ import em_watch
 from private_storage_helpers import make_repository, generator
 
 FIX = generator.reliability_cases()
-DATA = FIX['private_proof']
+RETAINED = FIX['retained_text']
 
 
 @pytest.fixture
@@ -31,11 +31,11 @@ def test_source_destination_refused():
 
 def test_failed_atomic_write_keeps_the_old_file_and_no_temporary(companion, monkeypatch):
     target = companion / 'state.json'
-    target.write_text(DATA['retained_text'], encoding='utf-8')
+    target.write_text(RETAINED, encoding='utf-8')
     def fail(descriptor):
         raise OSError('synthetic fsync failure')
     monkeypatch.setattr(os, 'fsync', fail)
     with pytest.raises(OSError):
         em_watch.save_state(str(target), FIX['cursor'])
-    assert target.read_text(encoding='utf-8') == DATA['retained_text']
+    assert target.read_text(encoding='utf-8') == RETAINED
     assert not list(companion.glob('.state.json-*.tmp'))

@@ -152,10 +152,21 @@ def main():
     a = ap.parse_args()
 
     report = {"status": "failed", "delivery": "not_measured", "reconciliation": "manual"}
+    try:
+        # The config and storage paths are checked once here and passed down.
+        a.config = str(em_runtime.private_path(a.config))
+        with open(a.config, encoding="utf-8-sig") as handle:
+            cfg = json.load(handle)
+        companion = os.path.dirname(os.path.abspath(a.config))
+        storage = em_runtime.storage_config(cfg, companion, db=a.db)
+    except Exception as error:
+        report.update(error=str(error))
+        print(json.dumps(report, ensure_ascii=False))
+        return 1
     with contextlib.ExitStack() as writer:
         if not a.dry:
             try:
-                _hold_writer(writer, a.config, a.db)
+                _hold_writer(writer, storage["state_dir"])
             except em_runtime.WriterBusy as busy:
                 report.update(status="refused", error=str(busy))
                 print(json.dumps(report, ensure_ascii=False))
@@ -164,10 +175,10 @@ def main():
                 report.update(error=str(error))
                 print(json.dumps(report, ensure_ascii=False))
                 return 1
-        return _locked_main(a, report)
+        return _locked_main(a, report, cfg, companion, storage)
 
 
-def _hold_writer(stack, config, db):
+def _hold_writer(stack, state_dir):
     """Take the state directory's writer lock, unless the tick that started this worker holds it.
 
     The tick holds the lock for its whole run and starts this worker as its child, which then
@@ -175,30 +186,21 @@ def _hold_writer(stack, config, db):
     fails) and its recorded holder is a tick whose pid is this process's parent. A worker
     started by hand takes the lock itself and is refused while any other writer holds it.
     """
-    config = str(em_runtime.private_path(config))
-    with open(config, encoding="utf-8-sig") as handle:
-        cfg = json.load(handle)
-    storage = em_runtime.storage_config(cfg, os.path.dirname(os.path.abspath(config)), db=db)
     try:
-        stack.enter_context(em_runtime.writer_lock(storage["state_dir"], "summary"))
+        stack.enter_context(em_runtime.writer_lock(state_dir, "summary"))
     except em_runtime.WriterBusy:
-        holder = em_runtime.writer_holder(storage["state_dir"]) or {}
+        holder = em_runtime.writer_holder(state_dir) or {}
         if holder.get("role") == "tick" and holder.get("pid") == os.getppid():
             return
         raise
 
 
-def _locked_main(a, report):
+def _locked_main(a, report, cfg, companion, storage):
     possible_effect = False
     try:
-        a.config = str(em_runtime.private_path(a.config))
-        with open(a.config, encoding="utf-8-sig") as handle:
-            cfg = json.load(handle)
-        companion = os.path.dirname(os.path.abspath(a.config))
         runtime = em_runtime.runtime_config(cfg, companion)
         if a.python:
             runtime['python'] = em_runtime.resolve_path(a.python, companion)
-        storage = em_runtime.storage_config(cfg, companion, db=a.db)
         if a.dry:
             report.update(status="planned", planned_actions=["assemble", "alert", "mark_done", "arm_next"])
             print(json.dumps(report, ensure_ascii=False))

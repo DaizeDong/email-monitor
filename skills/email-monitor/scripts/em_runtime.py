@@ -84,7 +84,7 @@ def private_path(destination):
                  if os.path.lexists(directory / '.git')), None)
     if root is None:
         raise ValueError('DATA destination requires a PRIVATE Git companion')
-    if root.is_relative_to(SOURCE_ROOT) or SOURCE_ROOT.is_relative_to(root):
+    if SOURCE_ROOT.is_relative_to(root):
         raise ValueError('DATA requires a separate PRIVATE worktree')
     return path
 
@@ -243,7 +243,7 @@ def probe_interpreter(python, timeout=10):
             return False, 'selected interpreter or required llmcall dependency is unavailable'
         ok = callable(getattr(llmcall, 'call', None))
         return ok, 'interpreter and llmcall import verified' if ok else 'runtime probe failed'
-    code =('import json,imaplib,llmcall; '
+    code = ('import json,imaplib,llmcall; '
             'assert callable(llmcall.call); '
             'print(json.dumps({"email_monitor_runtime":1,"llmcall":True}))')
     env = {k: v for k, v in os.environ.items() if k != 'GMAIL_APP_PW'}
