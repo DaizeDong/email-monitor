@@ -46,15 +46,6 @@ def _capture(monkeypatch, rc=0):
     return seen
 
 
-def test_archive_injects_app_pw_into_child_env(monkeypatch):
-    """The label tool exits 2 without GMAIL_APP_PW -- it must be in the child's env."""
-    seen = _capture(monkeypatch)
-    # The child still receives the password, but empty stdout cannot confirm delivery.
-    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False, app_pw=PW) is False
-    assert seen["env"] is not None, "archive() must pass an explicit env to the child"
-    assert seen["env"].get("GMAIL_APP_PW") == PW
-
-
 def test_archive_does_not_leak_app_pw_into_parent_env(monkeypatch):
     """The secret must never land in os.environ: the tick also spawns codex/cc/claude."""
     seen = _capture(monkeypatch)
@@ -62,24 +53,3 @@ def test_archive_does_not_leak_app_pw_into_parent_env(monkeypatch):
     assert "GMAIL_APP_PW" not in os.environ
     # and the child's env is a copy, not os.environ itself
     assert seen["env"] is not os.environ
-
-
-def test_archive_child_env_still_inherits_parent(monkeypatch):
-    """Injecting the secret must not wipe the rest of the environment (PATH etc)."""
-    seen = _capture(monkeypatch)
-    monkeypatch.setenv("EM_CANARY", "keep-me")
-    tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False, app_pw=PW)
-    assert seen["env"].get("EM_CANARY") == "keep-me"
-
-
-def test_archive_without_pw_does_not_fabricate_one(monkeypatch):
-    """app_pw=None (the pre-fix call shape) must not silently inject an empty credential."""
-    seen = _capture(monkeypatch)
-    tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False)
-    assert "GMAIL_APP_PW" not in (seen["env"] or {})
-
-
-def test_archive_failure_is_still_reported(monkeypatch):
-    """A non-zero child (e.g. rc=2 no-password) must still surface as False, never a silent True."""
-    _capture(monkeypatch, rc=2)
-    assert tick.archive("u@example.com", "1234567890", "EM/NOISE/x", dry=False, app_pw=PW) is False

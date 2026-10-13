@@ -44,8 +44,9 @@ try:
 except ImportError:
     llmcall = None
 
-LOG = os.path.expanduser(os.environ.get(
-    "EMAIL_MONITOR_LOG", "~/.local/state/email-monitor/email-monitor.log"))
+# No default location: the log is DATA and lives in the private companion. main() sets it from
+# the resolved storage; EMAIL_MONITOR_LOG is only an explicit override.
+LOG = os.environ.get("EMAIL_MONITOR_LOG") or None
 LABEL_TOOL = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
 
@@ -119,6 +120,9 @@ def log(msg):
         destination = _LOG.get()
         if destination is None:
             # A configured log was checked once by storage_config; only the fallback is checked here.
+            if not LOG:
+                raise RuntimeError("email-monitor log destination is not resolved; run through main() "
+                                   "with an initialized private companion or set EMAIL_MONITOR_LOG")
             destination = str(em_runtime.private_path(LOG))
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         with open(destination, "a", encoding="utf-8") as handle:

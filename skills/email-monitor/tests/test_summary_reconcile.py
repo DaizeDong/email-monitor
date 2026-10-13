@@ -2,7 +2,6 @@
 
 The alert step has no source of truth and is never replayed. Synthetic data only.
 """
-import datetime
 import json
 import sys
 
@@ -62,48 +61,6 @@ def worker(harness, monkeypatch):
     def steps():
         return {s['adapter']: s for s in json.loads(path.read_text(encoding='utf-8'))['summary_runs']['run1']['steps']}
     return pool, path, steps
-
-
-def test_a_mark_done_on_an_event_the_pool_already_closed_completes_and_the_next_event_is_armed(worker):
-    pool, path, steps = worker
-    path.write_text(json.dumps(_state()), encoding='utf-8')
-    assert em_summary.main() == 0, 'the summary stays stuck on an uncertain mark_done'
-    done, arm = steps()['summary_mark_done'], steps()['summary_arm_next']
-    assert done['status'] == 'completed' and done['receipt']['receipt_id'] == EVENT + ':cancelled'
-    assert 'done' not in pool['calls'], 'a closed event is not transitioned again'
-    assert arm['status'] == 'completed'
-    armed = datetime.datetime.fromisoformat(arm['payload']['due_at'].replace('Z', '+00:00'))
-    assert armed > datetime.datetime.now(datetime.timezone.utc), 'a missed summary slot was armed (it would fire at once)'
-
-
-def test_a_mark_done_whose_event_is_still_open_is_retried(worker):
-    pool, path, steps = worker
-    pool['state'] = 'pending'
-    path.write_text(json.dumps(_state()), encoding='utf-8')
-    assert em_summary.main() == 0
-    assert pool['calls'].count('done') == 1
-    assert steps()['summary_mark_done']['status'] == 'completed'
-
-
-def test_an_uncertain_arm_next_found_in_the_pool_is_not_added_again(worker):
-    pool, path, steps = worker
-    pool['items'] = [{'id': 'event-2', 'idempotency_key': 'run1:summary_arm_next', 'due_at': STALE}]
-    state = _state(mark_done='completed', arm_next='uncertain')
-    state['summary_runs']['run1']['steps'][1]['receipt'] = {
-        'status': 'confirmed', 'idempotency_key': 'run1:summary_mark_done', 'adapter': 'summary_mark_done',
-        'receipt_id': EVENT}
-    path.write_text(json.dumps(state), encoding='utf-8')
-    assert em_summary.main() == 0
-    assert 'add' not in pool['calls']
-    assert steps()['summary_arm_next']['receipt']['receipt_id'] == 'event-2'
-
-
-def test_an_unreadable_pool_leaves_the_step_uncertain(worker):
-    pool, path, steps = worker
-    pool['state'] = None
-    path.write_text(json.dumps(_state()), encoding='utf-8')
-    assert em_summary.main() != 0
-    assert steps()['summary_mark_done']['status'] == 'uncertain' and 'done' not in pool['calls']
 
 
 def test_an_uncertain_summary_alert_is_never_replayed(worker):

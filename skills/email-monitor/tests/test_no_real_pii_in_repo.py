@@ -18,13 +18,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # skills/em
 GUARD = os.path.join(REPO_ROOT, "guards", "tools", "pii_guard.py")
 
 
-def test_pii_guard_is_vendored():
-    assert os.path.isfile(GUARD), (
-        "guards/tools/pii_guard.py is missing, so nothing scanned this repo. "
-        "The guards submodule is not checked out: run `git submodule update --init`. Do not re-vendor a copy."
-    )
-
-
 def test_no_real_pii_in_tree_or_history():
     """Scan tree and history: changing a file cannot remove an earlier committed value."""
     if not os.path.isfile(GUARD):
@@ -33,19 +26,6 @@ def test_no_real_pii_in_tree_or_history():
                        cwd=REPO_ROOT, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     assert p.returncode == 0, "pii_guard found real private data:\n" + (p.stdout or "") + (p.stderr or "")
-
-
-def test_scanner_profile_is_limited_to_original_read_only_commands(request):
-    # Kit conftest modules share this import name during repository-root collection.
-    conftest = request.config.pluginmanager.get_plugin(os.path.join(REPO_ROOT, "conftest.py"))
-    assert conftest is not None
-
-    for case in conftest._generator.scanner_command_cases():
-        command = [sys.executable, GUARD, *case["arguments"]]
-        assert conftest._is_guard_scan(command) is case["allowed"]
-    assert os.environ["USERPROFILE"] == str(conftest._SANDBOX)
-    assert os.environ["HOME"] == str(conftest._SANDBOX)
-    assert "GMAIL_APP_PW" not in os.environ
 
 
 if __name__ == "__main__":

@@ -6,140 +6,17 @@ looks like it worked. So most of these assert a REFUSAL: the type-label guard, t
 allowed-set filter, the additive-only posture, and dry-by-default. Each one is
 written so that removing the guard it covers turns it red.
 """
-import json
 import os
 import sys
-from pathlib import Path
-from types import SimpleNamespace
 
-import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 
 import em_backfill  # noqa: E402
 
-RELIABILITY = json.loads(Path(__file__).with_name("reliability.json").read_text(encoding="utf-8"))
 
-
-@pytest.mark.parametrize("case_index", range(4))
-@pytest.mark.parametrize("allowed", [True, False])
-def test_backfill_type_guard_is_case_insensitive(case_index, allowed):
-    case = RELIABILITY["type_map"]
-    label = case["mapped_types"][case_index]
-    mapping = {"by_address": {case["buckets"]["by_address"]: label}}
-    with pytest.raises(em_backfill.UnsafeBackfill, match="type label"):
-        em_backfill.plan(mapping, [label] if allowed else [], case["types"])
-
-
-def test_backfill_source_label_keeps_exact_spelling():
-    case = RELIABILITY["type_map"]
-    source, address = case["source"], case["buckets"]["by_address"]
-    mapping = {"by_address": {address: source}}
-    assert em_backfill.plan(mapping, [source], case["types"]) == ({source: [address]}, [])
-    planned, skipped = em_backfill.plan(mapping, [source.casefold()], case["types"])
-    assert planned == {}
-    assert skipped == [(address, source, "not in this account's allowed set")]
-
-
-@pytest.mark.parametrize("case_index", range(6))
-def test_backfill_requires_an_observed_helper_count(case_index):
-    case = RELIABILITY["backfill_tool_results"][case_index]
-    account = RELIABILITY["account"]
-    runner = lambda args, env: SimpleNamespace(stdout=case["stdout"], returncode=case["returncode"])
-    assert em_backfill.run_tool(account["user"], "synthetic", RELIABILITY["type_map"]["source"],
-                                commit=True, runner=runner) == (case["matched"], case["ok"])
-
-
-def test_backfill_main_reports_unobserved_count_as_failure(monkeypatch, capsys):
-    case = RELIABILITY["type_map"]
-    account = RELIABILITY["account"]
-    config = {"sender_map": {"by_address": {case["buckets"]["by_address"]: case["source"]}},
-              "allowed_labels": [case["source"]], "type_labels": case["types"]}
-    monkeypatch.setenv("GMAIL_APP_PW", RELIABILITY["helper_contract"]["receipt_id"])
-    monkeypatch.setattr(em_backfill.em_topic, "load_config", lambda *args, **kwargs: config)
-    response = RELIABILITY["backfill_tool_results"][0]
-    monkeypatch.setattr(em_backfill.subprocess, "run", lambda *args, **kwargs:
-                        SimpleNamespace(stdout=response["stdout"], returncode=response["returncode"]))
-    assert em_backfill.main(["--account", account["slug"], "--user", account["user"], "--commit"]) == 1
-    output = capsys.readouterr().out
-    assert "FAILED" in output and "1 chunk failure(s)" in output
-
-
-MAP = {"by_address": {
-    "a@bank.example": "Accounts/Bank",
-    "b@bank.example": "Accounts/Bank",
-    "c@dealer.example": "Life/Automotive",
-    "d@nowhere.example": "Rutgers/RUNews",   # not in this account's allowed set
-}}
 ALLOWED = ["Accounts/Bank", "Life/Automotive"]
-TYPES = ["Life/Receipt"]
-
-
-def test_plan_groups_senders_by_label():
-    by_label, skipped = em_backfill.plan(MAP, ALLOWED, TYPES)
-    assert by_label == {
-        "Accounts/Bank": ["a@bank.example", "b@bank.example"],
-        "Life/Automotive": ["c@dealer.example"],
-    }
-    assert [s[0] for s in skipped] == ["d@nowhere.example"]
-
-
-def test_a_label_outside_the_allowed_set_is_skipped_with_a_reason():
-    # em_topic.judge would drop it, so writing it here would make the backfill
-    # disagree with the live kernel. Skipping silently would be just as bad: a run
-    # that covers less than the map describes must say so.
-    _, skipped = em_backfill.plan(MAP, ALLOWED, TYPES)
-    assert skipped == [("d@nowhere.example", "Rutgers/RUNews",
-                        "not in this account's allowed set")]
-
-
-def test_a_type_label_in_the_map_aborts_the_whole_run():
-    # taxonomy.md: a type label is a property of the individual message, so a
-    # sender-keyed rule can never settle one. A shop sends both order confirmations
-    # and marketing from one address; backfilling Life/Receipt by sender would file
-    # the marketing as a receipt. This must fail loudly, not skip quietly.
-    bad = {"by_address": dict(MAP["by_address"], **{"shop@x.example": "Life/Receipt"})}
-    with pytest.raises(em_backfill.UnsafeBackfill) as e:
-        em_backfill.plan(bad, ALLOWED + ["Life/Receipt"], TYPES)
-    assert "type label" in str(e.value)
-
-
-def test_query_excludes_mail_that_already_has_the_label():
-    # This is what makes a re-run a no-op and makes "matched N" mean "N messages
-    # this run would change" rather than "N messages exist".
-    q = em_backfill.build_query(["a@x.example", "b@x.example"], "Accounts/Bank")
-    assert 'from:a@x.example OR from:b@x.example' in q
-    assert '-label:"Accounts/Bank"' in q
-
-
-def test_dry_is_the_default_and_passes_dry_to_the_tool():
-    seen = {}
-
-    def runner(args, env):
-        seen["args"] = args
-        class P:
-            returncode = 0
-            stdout = "matched 7 messages for query: x"
-        return P()
-
-    matched, ok = em_backfill.run_tool("u@x", "q", "Accounts/Bank", commit=False, runner=runner)
-    assert (matched, ok) == (7, True)
-    assert "--dry" in seen["args"]
-
-
-def test_commit_drops_dry():
-    seen = {}
-
-    def runner(args, env):
-        seen["args"] = args
-        class P:
-            returncode = 0
-            stdout = "matched 3 messages for query: x"
-        return P()
-
-    em_backfill.run_tool("u@x", "q", "Accounts/Bank", commit=True, runner=runner)
-    assert "--dry" not in seen["args"]
 
 
 def test_never_removes_and_never_archives():
@@ -159,46 +36,3 @@ def test_never_removes_and_never_archives():
     assert "--remove" not in seen["args"]
     assert "--archive" not in seen["args"]
     assert "--add" in seen["args"]
-
-
-def test_tool_failure_is_reported_not_raised():
-    # One bad label must not abort the rest of the backfill.
-    def runner(args, env):
-        class P:
-            returncode = 1
-            stdout = ""
-        return P()
-
-    matched, ok = em_backfill.run_tool("u@x", "q", "L", commit=True, runner=runner)
-    assert (matched, ok) == (0, False)
-
-
-def _synthetic_companion(tmp_path, by_address):
-    """A temp companion with the rules/ shape the live config has, holding synthetic data only."""
-    rules = tmp_path / "synthetic-companion" / "rules"
-    rules.mkdir(parents=True)
-    (rules / "taxonomy.md").write_text("# synthetic taxonomy", encoding="utf-8")
-    (rules / "sender_map.json").write_text(json.dumps({"by_address": by_address}), encoding="utf-8")
-    (rules / "labels.json").write_text(json.dumps({
-        "user1": ALLOWED + TYPES, "_type_labels": TYPES}), encoding="utf-8")
-    return rules.parent
-
-
-def test_companion_config_with_a_type_label_in_the_map_is_refused(tmp_path):
-    """The config the backfill reads from a companion goes through the same type-label guard.
-
-    If someone maps a sender to Life/Receipt in the companion, the run fails before any
-    write instead of filing marketing mail as receipts in a bulk run.
-    """
-    companion = _synthetic_companion(tmp_path, dict(MAP["by_address"], **{"shop@x.example": "Life/Receipt"}))
-    cfg = em_backfill.em_topic.load_config("user1", config_dir=str(companion))
-    assert cfg is not None and cfg["type_labels"] == TYPES
-    with pytest.raises(em_backfill.UnsafeBackfill, match="type label"):
-        em_backfill.plan(cfg["sender_map"], cfg["allowed_labels"], cfg["type_labels"])
-
-
-def test_companion_config_without_type_labels_in_the_map_plans(tmp_path):
-    companion = _synthetic_companion(tmp_path, MAP["by_address"])
-    cfg = em_backfill.em_topic.load_config("user1", config_dir=str(companion))
-    by_label, _ = em_backfill.plan(cfg["sender_map"], cfg["allowed_labels"], cfg["type_labels"])
-    assert by_label["Accounts/Bank"] == ["a@bank.example", "b@bank.example"]

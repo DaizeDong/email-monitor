@@ -4,6 +4,15 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+### Test suite
+- Cut the offline suite from 823 tests in 50 files to 60 tests in 35 files, one test per invariant: the public tree carries no DATA and no in-repo fallback, every CLI refuses unversioned storage before reading or writing, nothing archives or removes mail, uncertain deliveries are never resent, drafts sign only with the configured identity, the model policy cannot be overridden, and the topic evidence gate rejects what it cannot verify. The full-history PII scan remains and takes most of the run time.
+- Removed the generated response-parser test and the topic regression fixture together with their generators in `tools/make_fixtures.py` and their `.dataclass.json` entries; the live topic regression check documented in CONTRIBUTING.md is gone with them.
+- The acceptance pool fixture now initializes its temporary reminder database, which current schedule-reminder requires before the first write.
+- The init-config readiness test selects its generated companion explicitly, so it never probes a real sibling checkout.
+
+### Tick log
+- The tick log no longer defaults to a path under the home directory. `main()` sets it from the resolved private storage, `EMAIL_MONITOR_LOG` is only an explicit override, and logging with neither raises `RuntimeError`.
+
 ### Runtime storage checks
 - Remove the runtime PRIVATE proof and its in-process memo. `em_runtime.prove_private`, the proof memo (fingerprints, TTL, ignore-state cache) and `authorize_config_write` are gone; no runtime path starts Git any more. `em_runtime.private_path` replaces them with filesystem checks only: the destination must be inside a Git worktree that is not the public source tree, with no traversal, alternate streams, links, junctions or hardlinked files. Repository visibility is no longer checked at runtime.
 - Behaviour change: runtime storage checks are now path-only (the destination must be outside the public source tree, inside some Git worktree). A destination the companion gitignores, or a companion with no commits yet (unborn HEAD), is now accepted where the old proof refused it; the commit-time gates are what enforce the data boundary.

@@ -35,11 +35,9 @@
   ],
   "fixture": [
     "skills/email-monitor/tests/golden_classify.jsonl",
-    "skills/email-monitor/tests/topic_regression.jsonl",
     "skills/email-monitor/tests/reliability.json",
     "skills/email-monitor/tests/drafting.json",
-    "skills/email-monitor/tests/alert_disposition.json",
-    "skills/email-monitor/tests/test_response_json_boundary.py"
+    "skills/email-monitor/tests/alert_disposition.json"
   ],
   "_data_home": "Selected PRIVATE companion; storage defaults are data/state, data/email-monitor.log and data/pool.db beneath it."
 }

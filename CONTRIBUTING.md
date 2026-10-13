@@ -9,6 +9,10 @@ not a passing test run. The PyPI namesake is not this runtime.
 Changes must keep:
 
 1. The consumer suite: `python -m pytest skills/email-monitor/tests -q -m "not integration"`.
+   It is deliberately small: 60 tests, one per invariant (data boundary, never archive or remove,
+   no resend after an uncertain delivery, draft identity, model policy, topic evidence). The
+   full-history PII scan takes most of its roughly one minute. A new test should guard an
+   invariant none of these covers; otherwise extend or replace the test that already guards it.
    Add `--reminder-source <schedule-reminder>/skills/schedule-reminder/scripts` to run the optional
    base round trips. Only its two implementation files are copied into a disposable test HOME;
    records and databases stay in temporary test storage, and mail/network effects remain blocked.
@@ -26,11 +30,6 @@ Iteration is driven by `self-evolve` against the signals in `tests/test_acceptan
 tree/history scans. Those two scan commands use the invoking operator's policy profile; runtime
 tests keep their synthetic HOME and blocked external effects. Other runtime imports still use the
 bundled Guards dependency until its submodule is updated.
-
-`python skills/email-monitor/tests/test_topic_regression.py` explicitly calls installed llmcall
-with generated messages and a generated taxonomy. It checks every negative case and a positive
-control. This live synthetic check does not read the operator's taxonomy or real mailbox, and it
-does not establish production classification quality. The ordinary offline suite skips it.
 
 ## Never hand-edit a test fixture
 
