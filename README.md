@@ -129,7 +129,9 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
   root supplies `registry.json`. Failure produces structured output and a nonzero exit without
   sending an alert. See [CONFIG.md](CONFIG.md) for eligibility requirements.
 - **First time:** create or clone a PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`
-  at it before initializing. Runtime DATA remains versioned there; unverified storage is rejected.
+  at it before initializing. Runtime DATA remains versioned there. Writes resolve to that companion
+  and refuse paths inside the public source tree or Git metadata; repository visibility is not
+  checked at runtime, and commit-time gates enforce the data boundary.
   ```bash
   export EMAIL_MONITOR_CONFIG=<private-companion>
   python scripts/init_config.py    # stamp a conformant skeleton (deterministic)

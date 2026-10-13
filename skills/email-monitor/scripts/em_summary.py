@@ -175,7 +175,7 @@ def _hold_writer(stack, config, db):
     fails) and its recorded holder is a tick whose pid is this process's parent. A worker
     started by hand takes the lock itself and is refused while any other writer holds it.
     """
-    em_runtime.private_path(config)
+    config = str(em_runtime.private_path(config))
     with open(config, encoding="utf-8-sig") as handle:
         cfg = json.load(handle)
     storage = em_runtime.storage_config(cfg, os.path.dirname(os.path.abspath(config)), db=db)
@@ -191,7 +191,7 @@ def _hold_writer(stack, config, db):
 def _locked_main(a, report):
     possible_effect = False
     try:
-        em_runtime.private_path(a.config)
+        a.config = str(em_runtime.private_path(a.config))
         with open(a.config, encoding="utf-8-sig") as handle:
             cfg = json.load(handle)
         companion = os.path.dirname(os.path.abspath(a.config))

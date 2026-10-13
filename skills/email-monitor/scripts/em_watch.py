@@ -321,7 +321,7 @@ def main():
     a = ap.parse_args()
 
     from em_runtime import WriterBusy, private_path, writer_lock
-    private_path(a.state)
+    a.state = str(private_path(a.state))
     # The same writer lock as the tick and em_catchup: this CLI rewrites the state file, so a
     # run beside a tick would let one of them write back a stale copy.
     try:

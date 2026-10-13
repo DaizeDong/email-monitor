@@ -4,7 +4,9 @@ The schedule-reminder pool is optional. The heartbeat uses it only when `em_pool
 the reminder script; without it, pool tracking and daily summaries are skipped. All access goes
 through `reminder.py <verb>` and its JSON responses via `em_pool.py`, never SQL or base internals.
 The database and action ledger are versioned DATA in a PRIVATE Git companion. Relative
-`storage.db` paths resolve from that companion, and unverified destinations fail before mail access.
+`storage.db` paths resolve from that companion. A destination inside the public source tree or Git
+metadata, or outside any Git worktree, fails before mail access; repository visibility is not
+checked at runtime, and commit-time gates enforce the data boundary.
 
 ## Mail affair -> base item (RFC 5545 VTODO-isomorphic)
 

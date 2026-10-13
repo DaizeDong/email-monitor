@@ -243,7 +243,9 @@ inside a Git worktree (normal or linked) that is not this public source tree, an
 traversal, Git metadata components, alternate streams, symlinks, junctions and hardlinked files
 are refused. A destination outside any worktree fails before credentials or mail access. Keeping
 the companion's remote private is the operator's job; the runtime does not check repository
-visibility. The doctor lists the checked destinations and does not create DATA.
+visibility. These checks are path-only, so a gitignored destination inside the companion, or a
+companion with no commits yet, is accepted; the commit-time gates enforce the data boundary. The
+doctor lists the checked destinations and does not create DATA.
 
 State, report and filter exports write an exclusive temporary file in the destination directory,
 fsync it and atomically replace the destination; a failed write leaves the previous file intact.

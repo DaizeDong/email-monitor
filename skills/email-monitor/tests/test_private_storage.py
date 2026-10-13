@@ -50,6 +50,23 @@ def test_path_checks_and_atomic_writes_start_no_process(companion, monkeypatch):
     assert json.loads((companion / 'data/state/user1.state.json').read_text(encoding='utf-8')) == FIX['cursor']
 
 
+def test_watch_cli_writes_literal_tilde_state_to_expanded_home(tmp_path, monkeypatch):
+    home = tmp_path / 'home'
+    home.mkdir()
+    for name in ('HOME', 'USERPROFILE'):
+        monkeypatch.setenv(name, str(home))
+    make_repository(home / 'companion')
+    cwd = tmp_path / 'cwd'
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(em_watch, 'run_once', lambda *a, **k: ([], {'uidvalidity': 1, 'last_uid': 0}))
+    monkeypatch.setattr(sys, 'argv', ['em_watch.py', '--user', 'user1@example.com',
+                                      '--state', '~/companion/data/state/user1.state.json'])
+    assert em_watch.main() == 0
+    assert (home / 'companion/data/state/user1.state.json').is_file()
+    assert not (cwd / '~').exists()
+
+
 def test_hardlinked_final_and_temporary_outputs_preserve_external_bytes(companion):
     outside = companion.parent / 'outside.txt'
     outside.write_text(DATA['retained_text'], encoding='utf-8')

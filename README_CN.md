@@ -90,8 +90,8 @@ python -c "from llmcall import Result, active_chain, call; print('llmcall API im
 即使已经装好 wheel，requirements 命令仍会访问其中声明的 Git 来源。配置 doctor 会检查所选解释器。
 路由、凭据、超时和回退仍由已安装的主机包负责，安装 Email Monitor 不会替你配置这些内容。
 
-还需一个经过 PRIVATE 验证的 Git 伴生仓 `email-monitor-config`，存放账户、规则、模板、
-纳入版本管理的运行 DATA 和 DPAPI 指针，凭据单独保存。
+还需一个私有 Git 伴生仓 `email-monitor-config`，存放账户、规则、模板、
+纳入版本管理的运行 DATA 和 DPAPI 指针，凭据单独保存。运行时不检查仓库可见性，由提交期闸门守住数据边界。
 详见[摘要与部署说明](skills/email-monitor/reference/summary-and-deploy.md)。
 
 ## 快速开始
@@ -115,8 +115,9 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
   命中后读 `<dir>/registry.json`。
   DATA_DIR 末尾为 `data` 时取父目录；该候选不存在时可继续查找。CONFIG 变量选定的目录不存在时不会换仓。
   显式 `--config <registry.json>` 优先。找不到配置时，程序输出结构化错误并以非零状态退出，不发提醒。
-- **首次配置:**先创建或克隆经过 PRIVATE 验证的 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，
-  再运行初始化。运行 DATA 留在这个私有仓内，纳入版本管理；无法验证的存储位置会被拒绝。
+- **首次配置:**先创建或克隆私有 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，
+  再运行初始化。运行 DATA 留在这个私有仓内，纳入版本管理。写入路径解析到伴生仓，
+  落在公开源码树或 Git 元数据里的路径会被拒绝；运行时不检查仓库可见性，由提交期闸门守住数据边界。
   ```bash
   export EMAIL_MONITOR_CONFIG=<private-companion>    # 或给 init 传 --out <dir>
   python scripts/init_config.py    # 在选定的私有仓生成配置骨架

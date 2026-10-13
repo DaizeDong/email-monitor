@@ -55,8 +55,10 @@ configured notifications still use their services. A dry tick still fetches and 
 
 Use a PRIVATE Git companion for registry, rules, templates and real runtime DATA.
 The default storage paths `data/state`, `data/email-monitor.log` and `data/pool.db` resolve from
-the selected companion directory, never the working directory. Overrides receive the same
-PRIVATE check. Unversioned, public and unverified destinations fail without a source-tree fallback.
+the selected companion directory, never the working directory. Every write destination, overrides
+included, must resolve inside a Git worktree outside the public source tree; paths inside the source
+tree or Git metadata are refused with no source-tree fallback. Repository visibility is not checked
+at runtime; commit-time gates enforce the data boundary.
 Keep cursors, action and summary ledgers, unresolved payloads, receipts and logs under version
 control in that companion. Mode B credentials remain separate in DPAPI; the registry keeps their
 pointers. See the repository's `CONFIG.md` for initialization, discovery and runtime settings.

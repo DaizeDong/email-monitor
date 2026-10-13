@@ -486,7 +486,7 @@ def _cli():
             try:
                 if not a.db:
                     raise ValueError("supply --db in a PRIVATE companion before writing")
-                private_path(a.db)
+                a.db = str(private_path(a.db))
             except ValueError as error:
                 raise PoolError('ERR_DATA_BOUNDARY', str(error)) from error
         if a.cmd == "upsert":

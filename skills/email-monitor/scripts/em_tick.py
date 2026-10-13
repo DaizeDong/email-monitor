@@ -834,7 +834,7 @@ def main():
             raise ValueError("local_only cannot verify a custom summary worker's model transport")
         from em_lint_rules import draft_config
         draft_config(cfg.get("draft"))
-        em_runtime.private_path(config_path)
+        config_path = str(em_runtime.private_path(config_path))
         storage = em_runtime.storage_config(cfg, companion, a.state_dir, a.db)
         if not a.dry:
             # One writer per state directory for the whole run, the summary worker included:

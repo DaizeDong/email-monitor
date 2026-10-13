@@ -6,6 +6,8 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ### Runtime storage checks
 - Remove the runtime PRIVATE proof and its in-process memo. `em_runtime.prove_private`, the proof memo (fingerprints, TTL, ignore-state cache) and `authorize_config_write` are gone; no runtime path starts Git any more. `em_runtime.private_path` replaces them with filesystem checks only: the destination must be inside a Git worktree that is not the public source tree, with no traversal, alternate streams, links, junctions or hardlinked files. Repository visibility is no longer checked at runtime.
+- Behaviour change: runtime storage checks are now path-only (the destination must be outside the public source tree, inside some Git worktree). A destination the companion gitignores, or a companion with no commits yet (unborn HEAD), is now accepted where the old proof refused it; the commit-time gates are what enforce the data boundary.
+- `em_watch`, `em_pool`, `em_summary` and `em_tick` now use the path `private_path` returns, so a literal `~/...` argument is written under the expanded home directory instead of a `~` folder in the working directory.
 - Each destination is checked once where it is chosen: `storage_config` at startup (now returning only the resolved paths) or the CLI entry point. The tick no longer re-checks every log line or every account's state, database and log paths, and `atomic_write` does mkstemp, fsync and replace with no re-checks. The tick report no longer carries `storage_checks`.
 - `probe_interpreter` imports llmcall in process when the configured interpreter is the running one, instead of starting a second Python on every tick.
 
