@@ -6,7 +6,6 @@ logs/
 Thumbs.db
 desktop.ini
 *.state.json
-.pytest_cache/
 
 # self-evolve run artifacts (events/worktrees/state)
 .sie/

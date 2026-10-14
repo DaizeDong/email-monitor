@@ -153,9 +153,8 @@ instead, so a missed summary is not sent late. A worker
 failure, timeout or malformed completion report makes the heartbeat incomplete.
 
 This separate summary workflow is outside the four account-action ledger; its alert step
-has manual reconciliation only (em_catchup), its pool steps reconcile as above. The doctor reports its delivery as `not_measured`. Local
-synthetic tests cover control flow and interruption handling; they do not prove live
-Discord delivery, real reminder persistence or recovery on an installed scheduler.
+has manual reconciliation only (em_catchup), its pool steps reconcile as above. The doctor reports its delivery as `not_measured`. Verify live
+Discord delivery, real reminder persistence and recovery on an installed scheduler separately.
 
 ## Rollout evidence
 

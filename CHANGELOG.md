@@ -4,6 +4,8 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+- Deleted the test suite, its fixture generator and the skill-tests CI workflow; confirmed-working features keep no tests.
+
 ### Storage
 - `em_summary` checks its config and storage paths once in `main` and passes them to the writer lock and the run, instead of checking them twice per run.
 - `private_path` drops the companion-inside-source half of its separate-worktree test, which could never fire after the destination itself was refused inside the source tree.

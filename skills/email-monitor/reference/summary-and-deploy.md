@@ -65,9 +65,6 @@ pointers. See the repository's `CONFIG.md` for initialization, discovery and run
 
 ## Verification before unattended use
 
-Run the doctor and the synthetic business suite from the repository root. The suite checks routing,
-dry behavior, cursor and action persistence, receipts, retries and draft constraints. Existing live
-integration tests can report skipped when their required private configuration is absent; that is
-not a live pass. Separately verify controlled-account fetch, destination delivery receipts, fault
+Run the doctor from the repository root. Then verify controlled-account fetch, destination delivery receipts, fault
 recovery, registered task XML and sustained heartbeat execution before claiming unattended
-readiness. Offline tests do not establish classifier or draft quality on real mail.
+readiness.

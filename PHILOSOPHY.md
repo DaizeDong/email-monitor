@@ -29,9 +29,8 @@ outside git, argv and logs; Mode B keeps secret files gitignored.
 ## P4, Programs judge, models do not self-grade
 
 Deterministic checks assess draft compliance, AI-flavor, classification determinism, deadline
-timezone handling, base round-trips, deduplication and watermark math. `tests/test_acceptance.py`
-provides pass/fail signals for self-evolve regression checks. These checks establish their
-tested contracts; they do not measure live classification quality or delivery readiness.
+timezone handling, base round-trips, deduplication and watermark math. These checks do not
+measure live classification quality or delivery readiness.
 
 ## P5, Stability over latency (heartbeat, not a bare daemon)
 
