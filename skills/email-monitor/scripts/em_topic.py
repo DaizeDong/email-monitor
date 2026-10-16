@@ -245,39 +245,12 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
 import json
 import os
 
-SKILL = "email-monitor"
-
-
-def _resolve_config_dir():
-    """Locate the private companion root, which holds rules/.
-
-    An explicit EMAIL_MONITOR_CONFIG that names a missing directory makes the resolver raise,
-    so the answer is "no config", never a different companion.
-
-    realpath, not abspath: this skill is deployed through a symlink, and abspath would
-    compute a path that does not exist in the deployed copy.
-
-    The resolver is the installed fleet_guards package. A MISSING package raises rather than
-    returning None: None is "this machine has no companion configured", an ordinary state, while
-    a missing package means NOTHING was consulted.
-    """
-    here = os.path.dirname(os.path.realpath(__file__))
-    try:
-        from fleet_guards.runtime import companion_resolver
-    except ImportError as e:
-        raise ImportError(
-            'fleet_guards is not installed; run: pip install -e "$(git config --get fleet.guards)"') from e
-    resolver = companion_resolver(source_root=os.path.abspath(os.path.join(here, "..", "..", "..")))
-    try:
-        root = resolver.resolve_companion_root(SKILL)
-    except Exception:
-        return None
-    return str(root) if root is not None else None
+import em_runtime
 
 
 def load_config(account_slug, log=None, config_dir=None):
     """Return the topic config for one account, or None if this machine has not
-    been initialised for topic labeling. Never raises, never falls back.
+    been initialised for topic labeling. Resolver errors propagate.
 
     `type_labels` is OPTIONAL in `labels.json`, under the reserved top-level key
     `_type_labels` (never an account slug in practice). When absent, this falls
@@ -287,7 +260,7 @@ def load_config(account_slug, log=None, config_dir=None):
     it and the model is never asked the type question -- so this is logged
     rather than left to fail silently the way it did before R8.
     """
-    config_dir = config_dir or _resolve_config_dir()
+    config_dir = config_dir or em_runtime.companion_dir()
     if not config_dir:
         return None
     base = os.path.join(config_dir, "rules")
