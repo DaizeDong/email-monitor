@@ -57,10 +57,9 @@ def secret_ignore_ready(cfg):
 def discover(override):
     if override:
         return os.path.abspath(os.path.expanduser(override)), "explicit (--config-dir)"
-    for v in (ENV_VAR, ENV_VAR + "_DIR"):
-        val = os.environ.get(v)
-        if val:
-            return os.path.abspath(os.path.expanduser(val)), "env:%s" % v
+    val = os.environ.get(ENV_VAR)
+    if val:
+        return os.path.abspath(os.path.expanduser(val)), "env:%s" % ENV_VAR
     root = em_runtime.companion_dir()
     if root is not None:
         return str(root), 'shared companion resolver'
