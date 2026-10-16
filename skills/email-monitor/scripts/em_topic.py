@@ -271,7 +271,7 @@ def _resolve_config_dir():
         raise ImportError(
             'fleet_guards is not installed; run: pip install -e "$(git config --get fleet.guards)"') from e
     resolver = companion_resolver(source_root=os.path.abspath(os.path.join(here, "..", "..", "..")))
-    for var in ("EMAIL_MONITOR_CONFIG", "EMAIL_MONITOR_CONFIG_DIR"):
+    for var in ("EMAIL_MONITOR_CONFIG",):
         override = os.environ.get(var)
         if override:
             p = os.path.expanduser(override)

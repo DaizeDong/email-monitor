@@ -111,10 +111,10 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 (`email-monitor-config`)读取每用户/每机状态(账户拓扑、分类规则、草稿模板、DPAPI 口令指针)。
 完整规范见 **[CONFIG.md](CONFIG.md)**。
 
-- **挂载(发现顺序):** `$EMAIL_MONITOR_CONFIG` → `$EMAIL_MONITOR_CONFIG_DIR` →
-  已存在的 `$EMAIL_MONITOR_DATA_DIR` → 同级 `email-monitor-config`（主目录下没有默认位置），
+- **挂载(发现顺序):** 经 fleet-guards 解析器依次查已存在的 `$EMAIL_MONITOR_DATA_DIR` →
+  `$EMAIL_MONITOR_CONFIG` → 同级 `email-monitor-config`（主目录下没有默认位置），
   命中后读 `<dir>/registry.json`。
-  DATA_DIR 末尾为 `data` 时取父目录；该候选不存在时可继续查找。CONFIG 变量选定的目录不存在时不会换仓。
+  DATA_DIR 末尾为 `data` 时取父目录；不存在的候选会被跳过。
   显式 `--config <registry.json>` 优先。找不到配置时，程序输出结构化错误并以非零状态退出，不发提醒。
 - **首次配置:**先创建或克隆私有 Git 伴生仓，并让 `EMAIL_MONITOR_CONFIG` 指向它，
   再运行初始化。运行 DATA 留在这个私有仓内，纳入版本管理。写入路径解析到伴生仓，

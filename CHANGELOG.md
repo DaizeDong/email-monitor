@@ -4,6 +4,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+- `em_runtime.companion_dir()` no longer reads `EMAIL_MONITOR_CONFIG` / `EMAIL_MONITOR_CONFIG_DIR` itself: an explicit path is used as given, otherwise the fleet_guards resolver answers (`EMAIL_MONITOR_DATA_DIR`, `EMAIL_MONITOR_CONFIG`, sibling). The `EMAIL_MONITOR_CONFIG_DIR` alias is gone.
 - Removed the guards and style submodules, the gate workflows (pii-guard, dash-guard, doc-contract, load-budget) and fleet-sync. `.githooks` forwards to the local fleet-guards and fleet-style checkouts named by `git config fleet.guards` and `fleet.style` and blocks when either is unset or missing; commits also run the dash check on added lines. The runtime resolves the companion through the installed `fleet_guards.runtime.companion_resolver` (`pip install -e "$(git config --get fleet.guards)"`).
 - Deleted the test suite, its fixture generator and the skill-tests CI workflow; confirmed-working features keep no tests.
 

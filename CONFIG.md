@@ -15,16 +15,15 @@ The skill resolves its config **dir** in this order; explicit selections win eve
 when missing, then shared discovery selects the first eligible companion, then it reads
 `<dir>/registry.json`:
 
-1. `$EMAIL_MONITOR_CONFIG`, environment variable (recommended; location-independent).
-2. `$EMAIL_MONITOR_CONFIG_DIR`, accepted alias.
-3. `EMAIL_MONITOR_DATA_DIR`, through the installed fleet-guards resolver when neither CONFIG variable is set.
-   An existing path ending in `data` selects its parent as the companion root.
-4. The sibling `email-monitor-config` repository, with companion identity proof.
+All of these go through the installed fleet-guards resolver:
+
+1. An existing `EMAIL_MONITOR_DATA_DIR`; a path ending in `data` selects its parent as the companion root.
+2. `$EMAIL_MONITOR_CONFIG`, environment variable (recommended; location-independent).
+3. The sibling `email-monitor-config` repository, with companion identity proof.
 
 There is no home-directory location: a directory there is not a repository, so nothing would
-version or back up what the skill writes. Steps 3 and 4 select the first existing eligible directory through the installed fleet-guards
-`companion_resolver(source_root=...).resolve_companion_root("email-monitor")`. A missing DATA_DIR candidate can fall through;
-CONFIG and CONFIG_DIR are explicit selections and do not. The registry and its relative storage
+version or back up what the skill writes. The steps select the first existing eligible directory through the installed fleet-guards
+`companion_resolver(source_root=...).resolve_companion_root("email-monitor")`; a candidate that does not exist is skipped. The registry and its relative storage
 paths then use that one selected root.
 
 New initialization defaults to the sibling repository or selected environment path. Clone or

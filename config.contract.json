@@ -13,14 +13,12 @@
     "discovery_document": "CONFIG.md",
     "environment": "EMAIL_MONITOR_CONFIG",
     "aliases": [
-      "EMAIL_MONITOR_CONFIG_DIR",
       "EMAIL_MONITOR_DATA_DIR"
     ],
     "precedence": [
       "explicit runtime --config / doctor --config-dir / initializer --out",
-      "EMAIL_MONITOR_CONFIG",
-      "EMAIL_MONITOR_CONFIG_DIR",
       "EMAIL_MONITOR_DATA_DIR (existing companion discovery)",
+      "EMAIL_MONITOR_CONFIG",
       "sibling email-monitor-config"
     ],
     "required_fields": [

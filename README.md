@@ -122,11 +122,10 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 classification rules, draft templates, DPAPI credential pointers) from a **separate, private**
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
-- **Discovery:** explicit `--config <registry.json>` wins, followed by `EMAIL_MONITOR_CONFIG`,
-  `EMAIL_MONITOR_CONFIG_DIR`, then the fleet-guards resolver candidates: an existing
-  `EMAIL_MONITOR_DATA_DIR`, then the sibling `email-monitor-config` (no home-directory location).
-  A final `data` component selects its parent as the companion root.
-  Missing CONFIG selections do not fall through; a missing DATA_DIR candidate can. The selected
+- **Discovery:** explicit `--config <registry.json>` wins, followed by the fleet-guards resolver
+  candidates: an existing `EMAIL_MONITOR_DATA_DIR`, then `EMAIL_MONITOR_CONFIG`, then the sibling
+  `email-monitor-config` (no home-directory location). A final `data` component selects its
+  parent as the companion root. A candidate that does not exist is skipped. The selected
   root supplies `registry.json`. Failure produces structured output and a nonzero exit without
   sending an alert. See [CONFIG.md](CONFIG.md) for eligibility requirements.
 - **First time:** create or clone a PRIVATE Git companion and point `EMAIL_MONITOR_CONFIG`

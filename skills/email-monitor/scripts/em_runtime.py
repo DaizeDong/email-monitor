@@ -23,10 +23,9 @@ def _resolved_companion_root():
 
 
 def companion_dir(explicit=None):
-    """Honor explicit selections, including missing paths, before shared discovery."""
-    selected = explicit or os.environ.get('EMAIL_MONITOR_CONFIG') or os.environ.get('EMAIL_MONITOR_CONFIG_DIR')
-    if selected:
-        return Path(selected).expanduser().absolute()
+    """Honor an explicit selection, including a missing path, before shared discovery."""
+    if explicit:
+        return Path(explicit).expanduser().absolute()
     resolved = _resolved_companion_root()
     return Path(resolved).absolute() if resolved else None
 

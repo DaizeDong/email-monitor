@@ -4,9 +4,8 @@ documented discovery order, validates it against email-monitor's actual schema, 
 PASS/FAIL per check naming exactly what is missing. Exit 0 = ready, 1 = not ready, 2 = usage error.
 
 Discovery order (config-spec E2):
-  1. $EMAIL_MONITOR_CONFIG   2. $EMAIL_MONITOR_CONFIG_DIR
-  3. Existing EMAIL_MONITOR_DATA_DIR (data child selects parent), then sibling email-monitor-config,
-     through the installed fleet_guards resolver. There is no home-directory location.
+  1. Existing EMAIL_MONITOR_DATA_DIR (data child selects parent)   2. $EMAIL_MONITOR_CONFIG
+  3. Sibling email-monitor-config, all through the installed fleet_guards resolver. There is no home-directory location.
 
 Usage:
   python verify_config.py [--config-dir <dir>]
@@ -81,7 +80,7 @@ def main():
         results.append((name, bool(ok), detail))
     if not cfg:
         cfg = ""
-    check("config located", bool(cfg), "set EMAIL_MONITOR_CONFIG_DIR or pass --config-dir")
+    check("config located", bool(cfg), "set EMAIL_MONITOR_CONFIG or pass --config-dir")
 
     check("config dir exists", os.path.isdir(cfg))
 
