@@ -249,13 +249,10 @@ SKILL = "email-monitor"
 
 
 def _resolve_config_dir():
-    """Locate the private companion config.
+    """Locate the private companion root, which holds rules/.
 
-    An explicit override is AUTHORITATIVE, present or absent. datadir tries several
-    candidates in order, which is right for discovery and wrong for an override: if the
-    operator names a path and it is not there, the answer is "no config", not "I found a
-    different one". Silently resolving elsewhere is how a test asserting inertness passes
-    against a real config.
+    An explicit EMAIL_MONITOR_CONFIG that names a missing directory makes the resolver raise,
+    so the answer is "no config", never a different companion.
 
     realpath, not abspath: this skill is deployed through a symlink, and abspath would
     compute a path that does not exist in the deployed copy.
@@ -271,21 +268,11 @@ def _resolve_config_dir():
         raise ImportError(
             'fleet_guards is not installed; run: pip install -e "$(git config --get fleet.guards)"') from e
     resolver = companion_resolver(source_root=os.path.abspath(os.path.join(here, "..", "..", "..")))
-    for var in ("EMAIL_MONITOR_CONFIG",):
-        override = os.environ.get(var)
-        if override:
-            p = os.path.expanduser(override)
-            if not os.path.isdir(p):
-                return None
-            try:
-                resolver.assert_outside_own_repo(p, SKILL)
-            except Exception:
-                return None
-            return p
     try:
-        return resolver.resolve_data_dir(SKILL)
+        root = resolver.resolve_companion_root(SKILL)
     except Exception:
         return None
+    return str(root) if root is not None else None
 
 
 def load_config(account_slug, log=None, config_dir=None):
