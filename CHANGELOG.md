@@ -4,6 +4,7 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+- Removed the guards and style submodules, the gate workflows (pii-guard, dash-guard, doc-contract, load-budget) and fleet-sync. `.githooks` forwards to the local fleet-guards and fleet-style checkouts named by `git config fleet.guards` and `fleet.style` and blocks when either is unset or missing; commits also run the dash check on added lines. The runtime resolves the companion through the installed `fleet_guards.runtime.companion_resolver` (`pip install -e "$(git config --get fleet.guards)"`).
 - Deleted the test suite, its fixture generator and the skill-tests CI workflow; confirmed-working features keep no tests.
 
 ### Storage

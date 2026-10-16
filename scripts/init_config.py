@@ -11,7 +11,7 @@ Discovery convention the skill uses (also CONFIG.md, E2). The config dir resolve
   1. $EMAIL_MONITOR_CONFIG          (recommended; location-independent)
   2. $EMAIL_MONITOR_CONFIG_DIR      (accepted alias)
   3. Existing EMAIL_MONITOR_DATA_DIR (data child selects parent), then sibling email-monitor-config,
-     through pinned Guards. There is no home-directory location.
+     through the installed fleet_guards resolver. There is no home-directory location.
 The skill then reads <dir>/registry.json.
 
 Usage:

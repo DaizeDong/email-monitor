@@ -244,7 +244,6 @@ def judge(msg, taxonomy, sender_map, allowed_labels, call=None, log=None,
 
 import json
 import os
-import sys
 
 SKILL = "email-monitor"
 
@@ -261,24 +260,17 @@ def _resolve_config_dir():
     realpath, not abspath: this skill is deployed through a symlink, and abspath would
     compute a path that does not exist in the deployed copy.
 
-    The resolver lives in the guards submodule now, one copy for the fleet instead of one per
-    repo. A MISSING resolver raises rather than returning None: those two answers used to be the
-    same here and they mean opposite things. None is "this machine has no companion configured",
-    an ordinary state. A missing module means the submodule was never checked out and NOTHING was
-    consulted, and reporting that as "no config" is how an unchecked-out kit looks exactly like a
-    clean uninitialized install.
+    The resolver is the installed fleet_guards package. A MISSING package raises rather than
+    returning None: None is "this machine has no companion configured", an ordinary state, while
+    a missing package means NOTHING was consulted.
     """
     here = os.path.dirname(os.path.realpath(__file__))
-    tools = os.path.abspath(os.path.join(here, "..", "..", "..", "guards", "tools"))
-    if tools not in sys.path:
-        sys.path.insert(0, tools)
     try:
-        import datadir
+        from fleet_guards.runtime import companion_resolver
     except ImportError as e:
-        raise RuntimeError(
-            "cannot import datadir from %s, so the companion resolver never ran. The guards "
-            "submodule is not checked out: run `git submodule update --init`. This is not the "
-            "same as having no config, and must not be read as one." % tools) from e
+        raise ImportError(
+            'fleet_guards is not installed; run: pip install -e "$(git config --get fleet.guards)"') from e
+    resolver = companion_resolver(source_root=os.path.abspath(os.path.join(here, "..", "..", "..")))
     for var in ("EMAIL_MONITOR_CONFIG", "EMAIL_MONITOR_CONFIG_DIR"):
         override = os.environ.get(var)
         if override:
@@ -286,12 +278,12 @@ def _resolve_config_dir():
             if not os.path.isdir(p):
                 return None
             try:
-                datadir._reject_if_inside_own_repo(p, SKILL)
+                resolver.assert_outside_own_repo(p, SKILL)
             except Exception:
                 return None
             return p
     try:
-        return datadir.resolve_data_dir(SKILL)
+        return resolver.resolve_data_dir(SKILL)
     except Exception:
         return None
 

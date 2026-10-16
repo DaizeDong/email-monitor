@@ -1,7 +1,6 @@
 """Runtime configuration, DATA path checks, the state writer lock and atomic publication."""
 from contextlib import contextmanager
 import datetime
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,14 +14,12 @@ SOURCE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _resolved_companion_root():
-    """Use the pinned Guards discovery convention for the private repository root."""
-    source = SOURCE_ROOT / 'guards/tools/datadir.py'
-    if not source.is_file():
-        raise ValueError('Initialize the pinned Guards submodule before discovering configuration')
-    spec = importlib.util.spec_from_file_location('email_monitor_companion_resolver', source)
-    resolver = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(resolver)
-    return resolver.resolve_companion_root('email-monitor')
+    """Use the installed fleet-guards discovery convention for the private repository root."""
+    try:
+        from fleet_guards.runtime import companion_resolver
+    except ImportError as exc:
+        raise ImportError('fleet_guards is not installed; run: pip install -e "$(git config --get fleet.guards)"') from exc
+    return companion_resolver(source_root=SOURCE_ROOT).resolve_companion_root('email-monitor')
 
 
 def companion_dir(explicit=None):

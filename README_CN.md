@@ -65,12 +65,13 @@ URGENT/ACTION 发提醒，安装了 schedule-reminder 时为 URGENT/ACTION/FYI �
 或手动克隆:
 
 ```bash
-git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
+git clone https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
 使用 Python 3.11 或更新版本，在心跳任务所选的解释器中安装依赖：
 
 ```bash
+python -m pip install -e "$(git config --get fleet.guards)"
 python -m pip install -r requirements.txt
 ```
 
@@ -81,7 +82,7 @@ llmcall 的 Git 来源需要通过主机已有的凭据或 SSH 配置获得访�
 命令。请把示例路径换成主机实际提供的文件：
 
 ```bash
-python -m pip install ./guards
+python -m pip install -e "$(git config --get fleet.guards)"
 python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
 python -m pip install "tzdata; sys_platform == 'win32'"
 python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"

@@ -11,6 +11,6 @@ Changes must keep:
 2. The description budget: keep the skill description short (`budget_check.py`).
 3. The hard rules in `skills/email-monitor/SKILL.md`: never auto-send; pool only via the
    schedule-reminder CLI; no body/PII to Discord or git; UID+UIDVALIDITY incrementality.
-4. The data boundary: `python guards/tools/data_boundary.py` exits 0. Runs in pre-commit, pre-push and CI.
+4. The data boundary: `python "$(git config --get fleet.guards)/tools/data_boundary.py"` exits 0. Runs in pre-commit and pre-push.
 
 If a gate blocks you, the gate is right. Never `--no-verify`.

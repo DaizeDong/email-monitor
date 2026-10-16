@@ -71,12 +71,13 @@ use a separate workflow.
 Or clone manually:
 
 ```bash
-git clone --recurse-submodules https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
+git clone https://github.com/DaizeDong/email-monitor.git ~/.claude/plugins/email-monitor
 ```
 
 Use Python 3.11 or later. Install dependencies in the interpreter selected for the heartbeat:
 
 ```bash
+python -m pip install -e "$(git config --get fleet.guards)"
 python -m pip install -r requirements.txt
 ```
 
@@ -88,7 +89,7 @@ If your host supplies an approved llmcall wheel, use this alternate path instead
 command above. Replace the example wheel path with the actual file supplied by your host:
 
 ```bash
-python -m pip install ./guards
+python -m pip install -e "$(git config --get fleet.guards)"
 python -m pip install --no-index "/path/to/llmcall-0.2.0-py3-none-any.whl"
 python -m pip install "tzdata; sys_platform == 'win32'"
 python -c "from llmcall import Result, active_chain, call; print('llmcall API imports successfully')"
@@ -122,7 +123,7 @@ classification rules, draft templates, DPAPI credential pointers) from a **separ
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
 - **Discovery:** explicit `--config <registry.json>` wins, followed by `EMAIL_MONITOR_CONFIG`,
-  `EMAIL_MONITOR_CONFIG_DIR`, then the pinned Guards candidates: an existing
+  `EMAIL_MONITOR_CONFIG_DIR`, then the fleet-guards resolver candidates: an existing
   `EMAIL_MONITOR_DATA_DIR`, then the sibling `email-monitor-config` (no home-directory location).
   A final `data` component selects its parent as the companion root.
   Missing CONFIG selections do not fall through; a missing DATA_DIR candidate can. The selected
