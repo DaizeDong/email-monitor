@@ -16,7 +16,8 @@ The skill then reads <dir>/registry.json.
 
 Usage:
   python init_config.py [--out <dir>] [--force]
---out   target dir; default = the selected companion or a sibling email-monitor-config repository.
+--out   target dir; default = the companion the resolver selects (EMAIL_MONITOR_CONFIG or the sibling
+        email-monitor-config); with neither, --out is required.
 Stdlib only. Cross-platform.
 """
 import argparse
@@ -31,7 +32,6 @@ from em_lint_rules import draft_config
 import em_runtime
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
-DEFAULT_DIR = str(Path(__file__).resolve().parents[1].with_name('email-monitor-config'))
 
 # registry.json -- committed, ZERO secrets. Placeholders only; cred_path uses ~ so the dir is
 # self-contained / portable (E5: no machine-bound absolute path). "machine" is a literal
@@ -205,10 +205,6 @@ def env_var():
     return ENV_VAR
 
 
-def default_dir():
-    return str(em_runtime.companion_dir() or Path(DEFAULT_DIR))
-
-
 def write(path, content, force, *, root=None):
     if os.path.exists(path) and not force:
         print("  SKIP (exists): %s" % path)
@@ -231,12 +227,15 @@ def write(path, content, force, *, root=None):
 
 def main():
     ap = argparse.ArgumentParser(description="Stamp the email-monitor companion config (Mode B).")
-    ap.add_argument("--out", default=None, help="target dir; default selected or sibling PRIVATE companion")
+    ap.add_argument("--out", default=None, help="target dir; default = the companion EMAIL_MONITOR_CONFIG or the resolver selects")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
 
-    out = a.out or default_dir()
-    out = os.path.abspath(os.path.expanduser(out))
+    out = a.out or em_runtime.companion_dir()
+    if not out:
+        print("No PRIVATE companion found: pass --out <dir> or set %s." % env_var())
+        return 1
+    out = os.path.abspath(os.path.expanduser(str(out)))
     write_config = partial(write, root=out)
     registry_path = os.path.join(out, "registry.json")
     try:
@@ -256,7 +255,7 @@ def main():
         print("Cannot initialize PRIVATE configuration: " + str(error))
         return 1
     print("Init email-monitor companion config (Mode B) at %s" % out)
-    print("Discovery env var: %s  (fallback %s)" % (env_var(), default_dir()))
+    print("Discovery env var: %s" % env_var())
 
     try:
         write_config(registry_path, json.dumps(REGISTRY, indent=2, ensure_ascii=False) + "\n", a.force)
