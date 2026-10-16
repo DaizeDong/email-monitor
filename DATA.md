@@ -67,6 +67,6 @@ python skills/skill-smith/scripts/storage_contract.py check --repo <source-check
 
 Pass the exact companion Git root, including its configuration and recovery files;
 passing only its `data/` child omits part of the contract and is not a valid check.
-The shared checker proves PRIVATE admission and inspects metadata, ownership and
-sizes. Domain validators inspect record contents. An inventory gap or unobserved
+The checker validates metadata coverage, ownership and sizes; PRIVATE publication
+is enforced at commit time by the .githooks shims. Domain validators inspect record contents. An inventory gap or unobserved
 requirement is a failed check, even when schema validation passes.
