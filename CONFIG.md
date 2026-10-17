@@ -5,8 +5,9 @@ pointers from a separate PRIVATE companion repository. This file defines configu
 (config-spec E1); [DATA.md](DATA.md) defines storage, retention and recovery responsibilities.
 
 Operating mode: **Mode B**, the companion repo commits a zero-secret `registry.json`; real Gmail
-app passwords are stored machine-bound in DPAPI at `~/.local/secrets/gmail-<slug>.cred`, and the repo
-keeps only the `cred_path` pointer. Credentials under `secrets/*` are gitignored. Rules, templates
+app passwords live outside both repos (for example a DPAPI file such as `~/.local/secrets/gmail-<slug>.cred`
+or an encrypted vault), and the registry keeps only the `cred_path` reference that the companion's
+`scripts/resolve-cred.ps1` understands. Credentials under `secrets/*` are gitignored. Rules, templates
 and runtime DATA belong under version control in the PRIVATE companion, never in the public tool.
 
 ## Discovery convention (how the skill finds your config), E2
@@ -50,7 +51,7 @@ Committed, **zero secrets**. Fields:
       "user": "you@example.com",       // REQUIRED str — the mailbox address
       "role": "primary",               // REQUIRED enum — primary | secondary | academic
       "imap_host": "imap.gmail.com",   // OPTIONAL str — default imap.gmail.com
-      "cred_path": "~/.local/secrets/gmail-primary.cred", // OPTIONAL str — DPAPI pointer; MUST use ~ (portable, E5)
+      "cred_path": "~/.local/secrets/gmail-primary.cred", // OPTIONAL str — credential reference handed to the companion resolver (a file path MUST use ~, portable, E5)
       "monitored_folders": ["INBOX"],  // OPTIONAL str[] — folders to watch; a system mailbox by special-use token, e.g. "\\All"
       "label_scheme": "EM/{priority}/{semantic}", // OPTIONAL str — Gmail label template
       "max_batch": 200,                // OPTIONAL int — max UIDs fetched per tick per MONITORED FOLDER (an account with two folders fetches up to twice this); saved in chunks of 5. Size it so (sum over accounts of max_batch x folders) x ~70 s per message fits the 40 min tick budget
@@ -189,8 +190,9 @@ data/
 ## Secrets, Mode B (E6)
 
 The companion config repo is **separate and private**. `secrets/*` is **gitignored**, real values
-never enter git. Real Gmail app passwords live in DPAPI (`~/.local/secrets/gmail-<slug>.cred`), which is
-machine-bound and does not travel: re-capture per machine. This public skill repo additionally
+never enter git. Real Gmail app passwords live wherever the companion resolver reads them from, for
+example DPAPI (`~/.local/secrets/gmail-<slug>.cred`, machine-bound, re-captured per machine) or an
+encrypted vault that travels with its own key. The tool passes `cred_path` to the resolver unchanged. This public skill repo additionally
 ignores `registry.json`, `*.cred`, `rules/merged.json` etc. defensively so a local test config never
 leaks. Neither repo ever echoes a secret.
 

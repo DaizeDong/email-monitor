@@ -141,8 +141,9 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
 - **Switch configurations:** select another PRIVATE companion with `EMAIL_MONITOR_CONFIG`,
   for example `~/configs/work` or `~/configs/personal`, then run its configuration doctor.
   `cred_path` uses `~`; validate the selected interpreter, credentials and helper paths separately.
-- **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay in
-  DPAPI (`~/.local/secrets/gmail-<slug>.cred`), the repo keeps only pointers. Back up out-of-band.
+- **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay outside
+  both repos (DPAPI file or encrypted vault) and the registry keeps only the `cred_path` reference the
+  companion's resolver understands. Back up out-of-band.
 
 ## Topic labeling (opt-in, add-only)
 

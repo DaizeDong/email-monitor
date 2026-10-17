@@ -128,8 +128,8 @@ pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.js
 - **切换配置：**用 `EMAIL_MONITOR_CONFIG` 选择另一个 PRIVATE 伴生仓，例如
   `~/configs/work` 或 `~/configs/personal`，再运行对应的配置 doctor。
   `cred_path` 使用 `~`；仍需检查选定的解释器、凭据和辅助脚本路径。
-- **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令留在 DPAPI
-  (`~/.local/secrets/gmail-<slug>.cred`),仓内只存指针。请用库外备份。
+- **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令放在两个仓之外(DPAPI 文件或加密库),
+  registry 只存伴生仓解析脚本认得的 `cred_path` 引用。请用库外备份。
 
 ## 主题打标(默认关闭,只加标签)
 

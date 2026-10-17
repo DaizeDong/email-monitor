@@ -145,7 +145,7 @@ def preflight(reminder, resolve_cred):
 
 
 def resolve_app_pw(resolve_cred, cred_path):
-    """Decrypt a DPAPI .cred via the config repo's resolve-cred.ps1. Returns pw, never logs it."""
+    """Resolve an account's cred_path via the config repo's resolve-cred.ps1. Returns pw, never logs it."""
     if not resolve_cred:
         return os.environ.get("GMAIL_APP_PW")  # test path
     p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",

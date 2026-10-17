@@ -45,6 +45,7 @@ messages it matched.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -58,12 +59,26 @@ import em_runtime  # noqa: E402
 LABEL_TOOL = os.path.expanduser(os.environ.get(
     "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
 
-# Where the DPAPI-encrypted app password and its resolver live. Both are machine
-# layout, not this tool's business, so they are env-overridable and the defaults
-# are only a convention -- em_tick reads the same two locations.
-CRED_TEMPLATE = os.environ.get("EMAIL_MONITOR_CRED_TEMPLATE",
-                               os.path.join("~", ".secrets", "gmail-%s.cred"))
+# The app password is resolved exactly as em_tick resolves it: the account's
+# registry cred_path is handed to the companion's resolver, which knows what the
+# reference means. Where credentials live is machine layout, not this tool's business.
 RESOLVE_CRED = os.environ.get('EMAIL_MONITOR_RESOLVE_CRED') or ''
+
+
+def registry_cred_path(slug):
+    """The cred_path of account `slug` in the companion's registry.json, or ''."""
+    reg = em_runtime.companion_file('registry.json')
+    if not reg:
+        return ''
+    try:
+        with open(reg, encoding='utf-8-sig') as fh:
+            accounts = (json.load(fh) or {}).get('accounts') or []
+    except (OSError, ValueError):
+        return ''
+    for acct in accounts:
+        if isinstance(acct, dict) and acct.get('slug') == slug:
+            return str(acct.get('cred_path') or '')
+    return ''
 
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
@@ -153,11 +168,11 @@ def main(argv=None):
     ap.add_argument("--only-label", default=None,
                     help="restrict the run to one label, for a cautious first pass")
     ap.add_argument("--cred", default=None,
-                    help="DPAPI .cred to decrypt for GMAIL_APP_PW. Defaults to "
-                         "EMAIL_MONITOR_CRED_TEMPLATE %% <account>. Ignored when "
-                         "GMAIL_APP_PW is already set in the environment.")
+                    help="credential reference handed to the resolver for GMAIL_APP_PW. "
+                         "Defaults to the account's cred_path in registry.json. Ignored "
+                         "when GMAIL_APP_PW is already set in the environment.")
     ap.add_argument("--resolve-cred", default=RESOLVE_CRED,
-                    help="the resolver em_tick uses; same path, same DPAPI blob")
+                    help="the resolver em_tick uses; same resolver, same reference")
     a = ap.parse_args(argv)
 
     # Resolve the app password the same way em_tick does, so a backfill needs no
@@ -165,10 +180,10 @@ def main(argv=None):
     # It is passed to the child in its env only, never logged and never printed.
     app_pw = os.environ.get("GMAIL_APP_PW")
     if not app_pw:
-        cred = os.path.expanduser(a.cred or (CRED_TEMPLATE % a.account))
+        cred = os.path.expanduser(a.cred or registry_cred_path(a.account))
         resolver = os.path.expanduser(a.resolve_cred or
                                       em_runtime.companion_file('scripts/resolve-cred.ps1') or '')
-        if os.path.isfile(cred) and os.path.isfile(resolver):
+        if cred and os.path.isfile(resolver):
             p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                                 "-File", resolver, "-CredPath", cred],
                                capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)
@@ -178,7 +193,7 @@ def main(argv=None):
             # Say which half is missing. "no password" and "no resolver" need
             # different fixes, and a single message for both wastes a debugging pass.
             print("cannot resolve GMAIL_APP_PW: cred=%s resolver=%s"
-                  % ("present" if os.path.isfile(cred) else "MISSING",
+                  % ("present" if cred else "MISSING",
                      "present" if os.path.isfile(resolver) else "MISSING"))
             print("set GMAIL_APP_PW in the environment, or pass --cred/--resolve-cred")
             return 2

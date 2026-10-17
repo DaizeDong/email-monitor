@@ -311,9 +311,12 @@ def main(argv=None):
         a.resolve_cred = str(registry.parent / 'scripts/resolve-cred.ps1')
     app_pw = os.environ.get("GMAIL_APP_PW")
     if not app_pw:
-        cred = os.path.expanduser(a.cred or os.path.join("~", ".secrets", "gmail-%s.cred" % a.account))
+        # Same reference and resolver em_tick uses: the account's registry cred_path.
+        acct = next((x for x in settings.get('accounts') or []
+                     if isinstance(x, dict) and x.get('slug') == a.account), {})
+        cred = os.path.expanduser(a.cred or str(acct.get('cred_path') or ''))
         resolver = os.path.expanduser(a.resolve_cred)
-        if os.path.isfile(cred) and os.path.isfile(resolver):
+        if cred and os.path.isfile(resolver):
             p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                                 "-File", resolver, "-CredPath", cred],
                                capture_output=True, text=True, encoding="utf-8", **_NOWINDOW)

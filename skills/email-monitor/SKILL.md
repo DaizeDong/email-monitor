@@ -33,7 +33,7 @@ the shared task pool. Replies require user review and manual sending. Design rat
    agent/topic modes fail because llmcall supplies no enforceable local-transport proof. This model
    constraint does not disable IMAP or configured notifications. Discord gets a redacted gist.
    The public repo stores no runtime DATA; keep it versioned in a PRIVATE companion.
-   App passwords live in DPAPI (a private secrets dir, e.g. `~/.local/secrets`), never on argv / in logs / in git.
+   App passwords live outside the repos (DPAPI file or encrypted vault, resolved by the companion's resolve-cred.ps1), never on argv / in logs / in git.
 5. **Drafts are a compliance object.** Signature, language and style come from the private registry draft section.
    Use `em_draft_lint.py --config <registry.json>`; Chinese and Unicode are allowed by zh/any,
    en retains ASCII constraints, and no-auto-send checks always apply.
