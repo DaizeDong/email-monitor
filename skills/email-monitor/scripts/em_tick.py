@@ -497,6 +497,9 @@ def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=
     em_runtime.reject_model_overrides(timeout=timeout)
     call = _make_transport(log=log)
     kept = []
+    # Counted because classification_review.py reads this line: unsure is a taxonomy
+    # signal, failed is an outage, and neither writes anything else to the log.
+    counts = {"judged": 0, "decided": 0, "unsure": 0, "failed": 0, "labels": 0}
     for record in pending:
         if _past(deadline):
             kept.append(record)
@@ -509,20 +512,30 @@ def _plan_topics(state, acct, records, timeout, enabled, config_dir=None, retry=
             kept.append(record)
             continue
         message = {key: record.get(key, "") for key in ("from", "subject", "date", "list_id")}
+        counts["judged"] += 1
         try:
             verdict = em_topic.judge(message, cfg["taxonomy"], cfg["sender_map"],
                                     cfg["allowed_labels"], call=call, log=log,
                                     type_labels=cfg.get("type_labels", []))
             if verdict.get("state") not in ("decided", "unsure"):
+                counts["failed"] += 1
                 kept.append(record)
                 continue
+            counts[verdict["state"]] += 1
             for item in verdict.get("labels", []) if verdict["state"] == "decided" else []:
                 row = em_actions.new_action(acct["user"], mailbox, generation, record,
                                              "topic_label", {"label": item["label"]})
                 state["actions"].setdefault(row["idempotency_key"], row)
+                counts["labels"] += 1
         except Exception:
+            counts["failed"] += 1
             kept.append(record)
     state["topic_retry"] = held + kept
+    if counts["judged"]:
+        log("ACCOUNT %s: topic verdicts judged=%d decided=%d unsure=%d failed=%d "
+            "labels_planned=%d retry_queue=%d"
+            % (acct.get("slug", acct["user"].split("@")[0]), counts["judged"], counts["decided"],
+               counts["unsure"], counts["failed"], counts["labels"], len(state["topic_retry"])))
 
 
 def _dispatch(row, reminder, db, password, python):
@@ -769,6 +782,10 @@ def process_account(acct, rules, reminder, db, resolve_cred, state_dir, dry, age
                       for row in em_catchup.backlog_rows(state))
         result.update(status="incomplete" if pending else "held" if held else "completed",
                       pending=pending, held=len(held))
+        # classification_review.py reads this line for per-account mail volume.
+        log("ACCOUNT %s: new=%d alert=%d archived=%d kept_in_inbox=%d topic_labeled=%d status=%s"
+            % (slug, result["new"], result["alert"], result["archived"], result["kept"],
+               result["topic_labeled"], result["status"]))
         if held:
             result["held_until"] = held_until.astimezone(datetime.timezone.utc).isoformat()
             log("ACCOUNT %s: %d backlog alert(s) held until %s for one catch-up (not sent yet)"
@@ -851,6 +868,8 @@ def main():
         if missing:
             raise ValueError("preflight missing: " + ", ".join(missing))
         log_token = _LOG.set(storage["log"])
+        if not a.dry:
+            log("topic_labeling=%s" % ("enabled" if topic_enabled else "DISABLED"))
         rules = {}
         rules_path = a.rules or os.path.join(companion, "rules", "merged.json")
         if os.path.isfile(rules_path):
