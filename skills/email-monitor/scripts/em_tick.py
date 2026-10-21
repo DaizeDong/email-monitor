@@ -47,8 +47,8 @@ except ImportError:
 # No default location: the log is DATA and lives in the private companion. main() sets it from
 # the resolved storage; EMAIL_MONITOR_LOG is only an explicit override.
 LOG = os.environ.get("EMAIL_MONITOR_LOG") or None
-LABEL_TOOL = os.path.expanduser(os.environ.get(
-    "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
+# The label adapter ships with the skill, beside this script.
+LABEL_TOOL = os.path.join(HERE, "gmail-imap-label.py")
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
 # An alert for mail that was already this old when the tick first saw it (the account could not

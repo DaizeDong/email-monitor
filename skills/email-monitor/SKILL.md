@@ -14,7 +14,7 @@ the shared task pool. Replies require user review and manual sending. Design rat
 
 - **Use** for: monitoring Gmail inboxes, triaging new mail by importance, alerting on important ones,
   archiving noise, drafting concise replies for review, tracking the resulting tasks, daily digests.
-- **Stop / route elsewhere**: bulk relabeling or one-off inbox cleanup -> the raw `gmail-imap-label.py`
+- **Stop / route elsewhere**: bulk relabeling or one-off inbox cleanup -> the raw `scripts/gmail-imap-label.py`
   tool directly. Generic reminders unrelated to mail -> `schedule-reminder`. Sending mail -> the user,
   in Gmail, by hand (this skill only drafts).
 

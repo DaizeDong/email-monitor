@@ -230,9 +230,10 @@ and rules, and establish a PRIVATE Git companion before the doctor can report re
 Schema version remains 1. `runtime.python` selects the actual interpreter; the doctor runs a
 Python/llmcall import probe (in process when the selection is the invoking interpreter, otherwise
 a bounded child process). Missing runtime settings use the invoking interpreter for
-compatibility. `register-task.ps1` consumes the same selection and requires a ready doctor result
-before registration. Absolute interpreter, credential-reference and helper resource paths are
-valid; output paths still receive the DATA path checks below.
+compatibility. The heartbeat task declared in `automation/tasks.json` launches `em_tick.py` with
+`%ProgramData%\miniconda3\pythonw.exe`; the tick then uses `runtime.python` for its helpers.
+Absolute interpreter, credential-reference and helper resource paths are valid; output paths
+still receive the DATA path checks below.
 
 `storage.state_dir`, `storage.log` and `storage.db` default to `data/state`,
 `data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. These are

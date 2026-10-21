@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "skill": "email-monitor",
+  "tasks": [
+    {
+      "id": "email-monitor/emailmonitortick",
+      "name": "EmailMonitorTick",
+      "purpose": "Every 5 minutes: one heartbeat tick that watches every configured mailbox, classifies new mail, alerts the important ones and applies the configured labels.",
+      "enabled": true,
+      "trigger": {"type": "interval", "minutes": 5},
+      "argv": [
+        "%ProgramData%\\miniconda3\\pythonw.exe",
+        "${SKILL_ROOT}/skills/email-monitor/scripts/em_tick.py",
+        "--config", "${COMPANION_ROOT}/registry.json",
+        "--resolve-cred", "${COMPANION_ROOT}/scripts/resolve-cred.ps1"
+      ],
+      "cwd": "${SKILL_ROOT}/skills/email-monitor/scripts",
+      "timeout_seconds": 3600,
+      "checks": [
+        {
+          "id": "heartbeat",
+          "required": true,
+          "health": {
+            "label": "email-monitor spine (5 min) -- rc!=0 or state/ stale => not processing mail",
+            "max_age_hours": 1,
+            "artifact": "${COMPANION_ROOT}/data/state",
+            "artifact_max_age_hours": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "email-monitor-config/emailclassificationreview",
+      "name": "EmailClassificationReview",
+      "purpose": "Daily 21:30: run the companion's classification review over the tick log and notify only when the verdict needs action; the exit code is the verdict. Opt-in: it needs the companion's scripts/classification-review.ps1.",
+      "enabled": false,
+      "trigger": {"type": "daily", "at": "21:30"},
+      "argv": [
+        "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", "${COMPANION_ROOT}/scripts/classification-review.ps1"
+      ],
+      "cwd": "${COMPANION_ROOT}",
+      "timeout_seconds": 900,
+      "checks": [
+        {
+          "id": "review-report",
+          "required": true,
+          "health": {
+            "label": "email topic-kernel verdict review (daily 21:30)",
+            "max_age_hours": 30,
+            "artifact": "${COMPANION_ROOT}/data/reports/classification-review.txt",
+            "artifact_max_age_hours": 30,
+            "ok_codes": [2, 3, 4],
+            "reason": "The exit code is a verdict, not a failure: 2 = the model chain had failures, 3 = the gate refused more than it accepted (a taxonomy gap), 4 = mail arrived and nothing judged it. The wrapper notifies in those cases itself. The report is written on every run, which still catches an rc 0 run that produced nothing."
+          }
+        }
+      ]
+    }
+  ]
+}

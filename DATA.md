@@ -9,8 +9,8 @@ not initialize state, run mailbox operations or authorize removal.
 
 Keep the current registry, effective classification rules, required rule layers,
 topic taxonomy/maps/label sets and approved draft profiles. The configured credential
-capture/resolution helpers, classification-review helper and four operator runbooks
-are necessary while their consumers or recovery procedures reference them. Verify
+capture/resolution helpers, classification-review helper and its task launcher, the
+task override `automation/tasks.local.json` and four operator runbooks are necessary while their consumers or recovery procedures reference them. Verify
 outdated runbook paths before use. Initializer rule defaults can be regenerated;
 privately edited inputs must be reconciled before replacing them. Credential material
 follows the configured private backup and reauthorization procedure.

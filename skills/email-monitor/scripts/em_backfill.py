@@ -56,8 +56,7 @@ sys.path.insert(0, HERE)
 import em_topic  # noqa: E402
 import em_runtime  # noqa: E402
 
-LABEL_TOOL = os.path.expanduser(os.environ.get(
-    "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
+LABEL_TOOL = os.path.join(HERE, "gmail-imap-label.py")
 
 # The app password is resolved exactly as em_tick resolves it: the account's
 # registry cred_path is handed to the companion's resolver, which knows what the

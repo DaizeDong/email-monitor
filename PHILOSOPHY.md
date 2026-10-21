@@ -5,8 +5,8 @@ mail sending under user control, makes model routing explicit and preserves reco
 
 ## P1, Reuse, never rebuild (own the seam, delegate the engines)
 
-The Gmail IMAP toolchain (`gmail-imap-label.py` and related tools), optional schedule-reminder
-task pool and Discord relay own their respective storage and delivery functions. A second task
+The Gmail IMAP label adapter (`gmail-imap-label.py`, shipped beside the tick), optional
+schedule-reminder task pool and Discord relay own their respective storage and delivery functions. A second task
 store would create another source of truth that could diverge. email-monitor adds incremental
 watch, classification and draft orchestration, plus archive and summary hooks. Pool access uses
 `reminder.py <verb>` via subprocess with JSON responses; JSON output requires no `--json` flag.

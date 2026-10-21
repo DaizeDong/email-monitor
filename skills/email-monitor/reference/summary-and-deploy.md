@@ -27,20 +27,22 @@ The heartbeat's `--dry` does not start a summary worker at all. Neither result p
 
 ## Heartbeat task (`EmailMonitorTick`)
 
-`scripts/register-task.ps1` selects the interpreter from `-Pythonw`, then `runtime.python`, then
-the available Python command. It resolves the path and runs the configuration doctor with that
-same interpreter before registration. The task uses absolute interpreter, script and config paths,
-an explicit working directory and `--python` for helper consistency. Supply an interpreter that
-can return the doctor's JSON output. A missing interpreter or failed doctor stops registration.
+The task is declared in the repository's `automation/tasks.json` and installed by a registration
+tool that reads that manifest; this repository ships no installer. The declaration runs
+`em_tick.py --config ${COMPANION_ROOT}/registry.json --resolve-cred ${COMPANION_ROOT}/scripts/resolve-cred.ps1`
+under `pythonw.exe` from the skill's scripts directory, with `${COMPANION_ROOT}` written as
+`%EMAIL_MONITOR_CONFIG%`, so no machine path is registered. Run `scripts/verify_config.py` against
+the companion before installing; the tick's own preflight refuses an unready configuration.
 
-The task repeats every `IntervalMinutes` (default 5), with no repetition duration,
-`StartWhenAvailable`, `IgnoreNew` and battery operation enabled. The next ordinary tick resumes
+The task repeats every 5 minutes, with no repetition duration, `IgnoreNew` and battery operation
+enabled; the companion's `automation/tasks.local.json` may change the interval, the enabled state
+or the console category on one machine. The next ordinary tick resumes
 the stored cursor after downtime, subject to the first-run and UIDVALIDITY baseline rules. The task
 setting does not serialize manual invocations; the state directory's writer lock does (see
 `delivery-state.md`).
 
-Each tick checks config, draft settings, storage privacy, interpreter imports, the label helper,
-the configured standalone notifier file, and an explicit credential resolver if supplied. The
+Each tick checks config, draft settings, storage privacy, interpreter imports, the label helper
+(`scripts/gmail-imap-label.py`, shipped beside the tick), the configured standalone notifier file, and an explicit credential resolver if supplied. The
 current preflight requires that notifier file even when a unified relay is available. Failure
 prints a JSON error and exits nonzero without a Discord alert or persistent log write. The code
 does not implement a watchdog or an automatic stalled-heartbeat alarm.

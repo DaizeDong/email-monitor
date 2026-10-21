@@ -39,7 +39,7 @@ hide a message. Local heuristics avoid external model processing and give up mod
 The inbox loop reads new mail with a UID cursor, classifies importance through the selected agent
 or heuristic route, alerts important mail and archives noise according to configuration. The
 calling session can draft replies using the configured signature and language. Use
-`gmail-imap-label.py` directly for bulk inbox cleanup.
+`skills/email-monitor/scripts/gmail-imap-label.py` directly for bulk inbox cleanup.
 
 ## Mail processing flow
 
@@ -112,9 +112,14 @@ your configured routing policy. Test with a controlled mailbox before registerin
 ```bash
 # one dry tick (no alert / no archive), shows what it would do
 python skills/email-monitor/scripts/em_tick.py --config <path>/registry.json --dry
-# install the heartbeat (absolute pythonw pinned)
-pwsh skills/email-monitor/scripts/register-task.ps1 -Config <path>/registry.json
 ```
+
+The scheduled tasks ship with the skill: [automation/tasks.json](automation/tasks.json) declares the
+5-minute `EmailMonitorTick` heartbeat and the opt-in `EmailClassificationReview`. A task registration
+tool that reads this manifest installs them (on the author's machines, background-task-core's
+`install-skill`); per-machine choices such as enabled state, another time or a console category go
+in the companion's `automation/tasks.local.json`. Paths in the manifest are `${SKILL_ROOT}` and
+`${COMPANION_ROOT}` (`%EMAIL_MONITOR_CONFIG%`), so set that variable before installing.
 
 ## Config
 

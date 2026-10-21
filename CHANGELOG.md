@@ -4,6 +4,8 @@ All notable changes to this project are documented here (Keep a Changelog style)
 
 ## [Unreleased]
 
+- The scheduled tasks ship with the skill: `automation/tasks.json` declares `EmailMonitorTick` (every 5 minutes) and the opt-in `EmailClassificationReview` (daily 21:30, launched by the companion's `scripts/classification-review.ps1`) with `${SKILL_ROOT}` / `${COMPANION_ROOT}` paths only; machine choices go in the companion's `automation/tasks.local.json`. `scripts/register-task.ps1`, which called `Register-ScheduledTask` directly, is removed.
+- The Gmail label adapter `gmail-imap-label.py` now ships in `skills/email-monitor/scripts/`. `em_tick`, `em_backfill` and `em_quality_review` call that copy; `EMAIL_MONITOR_LABEL_TOOL` and the `~/.local/bin` forwarder are gone.
 - The tick logs `topic_labeling=enabled|DISABLED` once per run, an `ACCOUNT <slug>: new=.. alert=.. archived=.. kept_in_inbox=.. topic_labeled=.. status=..` line per account, and `ACCOUNT <slug>: topic verdicts judged=.. decided=.. unsure=.. failed=.. labels_planned=.. retry_queue=..` whenever it judged topics. The 2026-10-01 durable-action rewrite had dropped all three, so the companion's classification review found no ticks and exited 5 every day from 2026-10-05. `labels_planned` replaces `labels_added` because labels are now dispatched as separate actions.
 - DATA.md no longer says the storage checker proves PRIVATE admission; PRIVATE publication is enforced at commit time.
 - `em_runtime.companion_dir()` no longer reads `EMAIL_MONITOR_CONFIG` / `EMAIL_MONITOR_CONFIG_DIR` itself: an explicit path is used as given, otherwise the fleet_guards resolver answers (`EMAIL_MONITOR_DATA_DIR`, `EMAIL_MONITOR_CONFIG`, sibling). The `EMAIL_MONITOR_CONFIG_DIR` alias is gone.

@@ -35,7 +35,7 @@ agent 分类与主题模型。邮箱访问和你配置的通知仍会连接各�
 
 收件箱循环按 UID 水位线只读收取新邮件，使用选定的 agent 或启发式规则分类，
 为重要邮件发送提醒，并按配置归档噪音邮件。调用会话可以按配置中的签名和语言起草回复。
-批量收件箱清理直接使用 `gmail-imap-label.py`。
+批量收件箱清理直接使用 `skills/email-monitor/scripts/gmail-imap-label.py`。
 
 ## 邮件处理流程
 
@@ -102,8 +102,13 @@ python -c "from llmcall import Result, active_chain, call; print('llmcall API im
 
 ```bash
 python skills/email-monitor/scripts/em_tick.py --config <路径>/registry.json --dry
-pwsh skills/email-monitor/scripts/register-task.ps1 -Config <路径>/registry.json
 ```
+
+计划任务随 skill 一起提供：[automation/tasks.json](automation/tasks.json) 声明每 5 分钟的 `EmailMonitorTick`
+心跳和默认关闭的 `EmailClassificationReview`。读这份清单的任务注册工具负责安装（作者机器上是
+background-task-core 的 `install-skill`）；本机的开关、换时间、控制台分类写在伴生仓的
+`automation/tasks.local.json`。清单里的路径只用 `${SKILL_ROOT}` 和 `${COMPANION_ROOT}`
+（即 `%EMAIL_MONITOR_CONFIG%`），安装前先设好这个变量。
 
 ## 配置
 

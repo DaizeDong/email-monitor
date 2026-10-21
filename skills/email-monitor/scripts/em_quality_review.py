@@ -39,8 +39,7 @@ try:
 except Exception:  # pragma: no cover - llmcall is the fleet primitive, absent in bare checkouts
     llmcall = None
 
-LABEL_TOOL = os.path.expanduser(os.environ.get(
-    "EMAIL_MONITOR_LABEL_TOOL", "~/.local/bin/gmail-imap-label.py"))
+LABEL_TOOL = os.path.join(HERE, "gmail-imap-label.py")
 _NOWINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
 DEFAULT_SAMPLE = 40

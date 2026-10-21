@@ -371,6 +371,32 @@
       }
     },
     {
+      "artifact_id": "classification_review_wrapper",
+      "path_pattern": "scripts/classification-review.ps1",
+      "purpose": "Launcher of the opt-in EmailClassificationReview task: runs the review helper, writes the report and notifies on a non-zero verdict.",
+      "schema": "automation/tasks.json task email-monitor-config/emailclassificationreview; the helper's exit-code contract.",
+      "producer": "Reviewed private integration setup.",
+      "consumer_or_final_deliverable": "The EmailClassificationReview scheduled task.",
+      "rebuild_or_restore": "Restore with the helper it runs; it names no machine path.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while the companion enables EmailClassificationReview; retire together with that task."
+      }
+    },
+    {
+      "artifact_id": "task_overrides",
+      "path_pattern": "automation/tasks.local.json",
+      "purpose": "Machine choices for the tasks declared in automation/tasks.json: enabled state, trigger, console category.",
+      "schema": "background-task-core docs/skill-tasks.md companion override, schemaVersion 1.",
+      "producer": "Companion maintainer.",
+      "consumer_or_final_deliverable": "background-task-core install-skill.",
+      "rebuild_or_restore": "Restore the selected private revision before install-skill runs.",
+      "retention_rule": {
+        "class": "core",
+        "rule": "Keep while any declared task is installed on a machine of this companion."
+      }
+    },
+    {
       "artifact_id": "recovery_add-account",
       "path_pattern": "runbooks/add-account.md",
       "purpose": "Private operator instructions for the named recovery operation.",
