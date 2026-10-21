@@ -100,7 +100,7 @@ The configuration doctor checks the selected interpreter. Routing, credentials, 
 fallback remain owned by the installed host package; installing Email Monitor does not configure them.
 
 You also need a private companion config repo (`email-monitor-config`) holding account topology, rules,
-templates, versioned runtime DATA and DPAPI pointers (credentials kept separate). See
+templates, versioned runtime DATA and vault references (credentials kept separate). See
 [summary and deployment](skills/email-monitor/reference/summary-and-deploy.md).
 
 ## Quick start
@@ -124,7 +124,7 @@ in the companion's `automation/tasks.local.json`. Paths in the manifest are `${S
 ## Config
 
 `email-monitor` is **config-bearing**, it reads per-user/per-machine state (account topology,
-classification rules, draft templates, DPAPI credential pointers) from a **separate, private**
+classification rules, draft templates, vault credential references) from a **separate, private**
 companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CONFIG.md)**.
 
 - **Discovery:** explicit `--config <registry.json>` wins, followed by the fleet-guards resolver
@@ -140,15 +140,15 @@ companion config repo (`email-monitor-config`). Full contract: **[CONFIG.md](CON
   ```bash
   export EMAIL_MONITOR_CONFIG=<private-companion>
   python scripts/init_config.py    # stamp a conformant skeleton (deterministic)
-  # edit registry.json, capture app passwords into DPAPI (Mode B), fill _personal_layer.json
+  # edit registry.json (cred_path = cv://<record>/app_password), fill _personal_layer.json
   python scripts/verify_config.py   # doctor: PASS/FAIL, names what is missing
   ```
 - **Switch configurations:** select another PRIVATE companion with `EMAIL_MONITOR_CONFIG`,
   for example `~/configs/work` or `~/configs/personal`, then run its configuration doctor.
-  `cred_path` uses `~`; validate the selected interpreter, credentials and helper paths separately.
+  `cred_path` is a vault reference; validate the selected interpreter, credentials and helper paths separately.
 - **Secrets:** Mode B, `secrets/*` is gitignored and never enters git; real app passwords stay outside
-  both repos (DPAPI file or encrypted vault) and the registry keeps only the `cred_path` reference the
-  companion's resolver understands. Back up out-of-band.
+  both repos in a credential vault and the registry keeps only the `cred_path` reference
+  (`cv://<record>/app_password`) the companion's resolver opens.
 
 ## Topic labeling (opt-in, add-only)
 

@@ -2,7 +2,7 @@
 """Stamp a spec-conformant companion config repo for email-monitor (config-spec E3/E4).
 
 email-monitor is config-bearing (Mode B): the real account topology, rules, draft templates and
-DPAPI credential pointers live in a SEPARATE, private companion repo -- never in this public skill
+vault credential references live in a SEPARATE, private companion repo -- never in this public skill
 repo. This script stamps an empty, conformant skeleton of that companion repo. It is
 template-driven and deterministic: re-running with the same --out produces byte-identical files
 (E4). It NEVER writes a real secret and NEVER echoes one.
@@ -33,12 +33,12 @@ import em_runtime
 
 ENV_VAR = "EMAIL_MONITOR_CONFIG"
 
-# registry.json -- committed, ZERO secrets. Placeholders only; cred_path uses ~ so the dir is
-# self-contained / portable (E5: no machine-bound absolute path). "machine" is a literal
+# registry.json -- committed, ZERO secrets. Placeholders only; cred_path is a vault reference so the
+# dir is self-contained / portable (E5: no machine-bound absolute path). "machine" is a literal
 # placeholder to keep init deterministic across machines (E4).
 REGISTRY = {
     "schema_version": 1,
-    "spec": "email-monitor companion config (Mode B; secrets gitignored, real creds in DPAPI)",
+    "spec": "email-monitor companion config (Mode B; secrets gitignored, real creds in a vault)",
     "mode": "B",
     "machine": "<hostname>",
     "runtime": {"python": "<absolute-path-to-python>", "local_only": True},
@@ -52,7 +52,7 @@ REGISTRY = {
             "user": "you@example.com",
             "role": "primary",
             "imap_host": "imap.gmail.com",
-            "cred_path": "~/.local/secrets/gmail-primary.cred",
+            "cred_path": "cv://<record>/app_password",
             "monitored_folders": ["INBOX"],
             "label_scheme": "EM/{priority}/{semantic}",
             "max_batch": 200,
@@ -74,8 +74,8 @@ REGISTRY = {
 
 GITIGNORE = """\
 # email-monitor companion config -- secrets gate (config-spec E6 / Mode B).
-# Credentials never enter git. Back them up out-of-band; real app passwords live in DPAPI
-# (~/.local/secrets/gmail-<slug>.cred), this repo keeps only pointers.
+# Credentials never enter git. Real app passwords live in a credential vault; this repo keeps only
+# cv://<record>/<credential> references.
 secrets/*
 !secrets/README.md
 !secrets/.gitkeep
@@ -95,20 +95,20 @@ SECRETS_README = """\
 # secrets/ -- Mode B (gitignored)
 
 Real secret values live here and are **gitignored** (see ../.gitignore); they never enter git.
-email-monitor uses **Mode B**: the real Gmail app passwords are stored machine-bound in DPAPI at
-`~/.local/secrets/gmail-<slug>.cred`, and this repo keeps only the `cred_path` pointer in registry.json.
+email-monitor uses **Mode B**: the real Gmail app passwords are stored in a credential vault, and this
+repo keeps only the `cred_path` reference (`cv://<record>/app_password`) in registry.json.
 
 - Copy `_accounts.env.template` -> `_accounts.env` (gitignored) only if you keep env-style creds.
-- Per the config repo's own `scripts/capture-app-pw.ps1` / `resolve-cred.ps1`, capture each app
-  password into DPAPI on THIS machine (DPAPI ciphertext does not travel; re-capture per machine).
-- Back up out-of-band (encrypted drive / cloud sync). Files MUST be UTF-8 without BOM.
+- Store each app password in the vault with the config repo's own `scripts/capture-app-pw.ps1`;
+  `scripts/resolve-cred.ps1` opens the reference at run time. Restoring the vault restores them.
+- Files MUST be UTF-8 without BOM.
 """
 
 ACCOUNTS_ENV_TEMPLATE = """\
 # _accounts.env.template -- copy to _accounts.env (gitignored) ONLY if you keep env-style creds.
-# Preferred path is DPAPI (Mode B): leave this empty and use cred_path in registry.json.
+# Preferred path is the vault (Mode B): leave this empty and use cred_path in registry.json.
 # One line per account slug; UPPER_SNAKE placeholders, UTF-8 without BOM.
-EM_PRIMARY_APP_PW=<gmail-app-password-or-leave-blank-and-use-DPAPI>
+EM_PRIMARY_APP_PW=<gmail-app-password-or-leave-blank-and-use-the-vault>
 """
 
 CLASSIFICATION_YAML = """\
@@ -283,7 +283,7 @@ def main():
     print("\nNext:")
     print("  1) Edit registry.json: set account slug/user/role, cred_path and draft.signature.")
     print("     Your Name is a placeholder. Update template signatures to match after editing it.")
-    print("  2) Capture each app password into DPAPI (config repo's capture-app-pw.ps1), Mode B.")
+    print("  2) Store each app password in the vault (config repo's capture-app-pw.ps1), Mode B.")
     print("  3) Copy rules/_personal_layer.json.template -> _personal_layer.json, fill VIPs.")
     print("     Version rules, templates and runtime DATA only in the PRIVATE companion.")
     print("  4) export %s=%s   (or use the default path)" % (env_var(), out))

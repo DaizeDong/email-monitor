@@ -50,4 +50,4 @@ backlog ordering, not version commitments.
 - v0.3: draft template A/B (real dealer/support reply-rate); concept-drift detection on sender
   importance (e.g. a staffing portal becomes temporarily important during onboarding).
 - v0.4: status-change monitoring (read/label/delete) via windowed UID re-fetch; encrypted state export
-  for dual-machine sync (beyond the single-machine DPAPI constraint).
+  for dual-machine sync.

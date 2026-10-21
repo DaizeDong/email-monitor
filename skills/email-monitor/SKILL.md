@@ -33,7 +33,7 @@ the shared task pool. Replies require user review and manual sending. Design rat
    agent/topic modes fail because llmcall supplies no enforceable local-transport proof. This model
    constraint does not disable IMAP or configured notifications. Discord gets a redacted gist.
    The public repo stores no runtime DATA; keep it versioned in a PRIVATE companion.
-   App passwords live outside the repos (DPAPI file or encrypted vault, resolved by the companion's resolve-cred.ps1), never on argv / in logs / in git.
+   App passwords live in a credential vault outside the repos (`cv://` reference in cred_path, resolved by the companion's resolve-cred.ps1), never on argv / in logs / in git.
 5. **Drafts are a compliance object.** Signature, language and style come from the private registry draft section.
    Use `em_draft_lint.py --config <registry.json>`; Chinese and Unicode are allowed by zh/any,
    en retains ASCII constraints, and no-auto-send checks always apply.
@@ -74,7 +74,7 @@ and daily summaries are skipped. Missing schedule-reminder does not fail preflig
 Account topology, classification rules, the VIP/kill lists, draft templates, and the controlled
 project vocabulary are all externalized to a PRIVATE `email-monitor-config` Git repo, along
 with versioned runtime state, pending payloads, receipts and logs (Mode B keeps credentials separate
-in DPAPI). Relative storage paths resolve from that companion; there is no public-tool fallback. See
+in a vault). Relative storage paths resolve from that companion; there is no public-tool fallback. See
 [CONFIG.md](../../CONFIG.md) for discovery, initialization and the registry schema, and
 [DATA.md](../../DATA.md) for preservation and retention.
 

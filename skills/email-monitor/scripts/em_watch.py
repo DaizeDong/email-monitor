@@ -259,7 +259,7 @@ def run_once(user, folder, cursor, max_batch=400, app_pw=None, info=None):
     """
     pw = app_pw if app_pw is not None else os.environ.get("GMAIL_APP_PW")
     if not pw:
-        raise RuntimeError("GMAIL_APP_PW not set (DPAPI-resolved at runtime; never on argv)")
+        raise RuntimeError("GMAIL_APP_PW not set (vault-resolved at runtime; never on argv)")
     M = imaplib.IMAP4_SSL("imap.gmail.com")
     try:
         M.login(user, pw)

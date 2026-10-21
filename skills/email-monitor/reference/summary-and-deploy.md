@@ -62,8 +62,8 @@ included, must resolve inside a Git worktree outside the public source tree; pat
 tree or Git metadata are refused with no source-tree fallback. Repository visibility is not checked
 at runtime; commit-time gates enforce the data boundary.
 Keep cursors, action and summary ledgers, unresolved payloads, receipts and logs under version
-control in that companion. Mode B credentials remain separate in DPAPI; the registry keeps their
-pointers. See the repository's `CONFIG.md` for initialization, discovery and runtime settings.
+control in that companion. Mode B credentials remain separate in a vault; the registry keeps their
+`cv://` references. See the repository's `CONFIG.md` for initialization, discovery and runtime settings.
 
 ## Verification before unattended use
 

@@ -92,7 +92,7 @@ python -c "from llmcall import Result, active_chain, call; print('llmcall API im
 路由、凭据、超时和回退仍由已安装的主机包负责，安装 Email Monitor 不会替你配置这些内容。
 
 还需一个私有 Git 伴生仓 `email-monitor-config`，存放账户、规则、模板、
-纳入版本管理的运行 DATA 和 DPAPI 指针，凭据单独保存。运行时不检查仓库可见性，由提交期闸门守住数据边界。
+纳入版本管理的运行 DATA 和凭据库引用，凭据单独保存。运行时不检查仓库可见性，由提交期闸门守住数据边界。
 详见[摘要与部署说明](skills/email-monitor/reference/summary-and-deploy.md)。
 
 ## 快速开始
@@ -113,7 +113,7 @@ background-task-core 的 `install-skill`）；本机的开关、换时间、控�
 ## 配置
 
 `email-monitor` 是**带 config 的 skill**, 它从一个**独立、私有**的伴随 config 仓
-(`email-monitor-config`)读取每用户/每机状态(账户拓扑、分类规则、草稿模板、DPAPI 口令指针)。
+(`email-monitor-config`)读取每用户/每机状态(账户拓扑、分类规则、草稿模板、口令的凭据库引用)。
 完整规范见 **[CONFIG.md](CONFIG.md)**。
 
 - **挂载(发现顺序):** 经 fleet-guards 解析器依次查已存在的 `$EMAIL_MONITOR_DATA_DIR` →
@@ -127,14 +127,14 @@ background-task-core 的 `install-skill`）；本机的开关、换时间、控�
   ```bash
   export EMAIL_MONITOR_CONFIG=<private-companion>    # 或给 init 传 --out <dir>
   python scripts/init_config.py    # 在选定的私有仓生成配置骨架
-  # 编辑 registry.json、把 app 口令录入 DPAPI(Mode B)、填 _personal_layer.json
+  # 编辑 registry.json(cred_path 写 cv://<record>/app_password)、填 _personal_layer.json
   python scripts/verify_config.py   # doctor:逐项 PASS/FAIL,明确报缺什么
   ```
 - **切换配置：**用 `EMAIL_MONITOR_CONFIG` 选择另一个 PRIVATE 伴生仓，例如
   `~/configs/work` 或 `~/configs/personal`，再运行对应的配置 doctor。
-  `cred_path` 使用 `~`；仍需检查选定的解释器、凭据和辅助脚本路径。
-- **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令放在两个仓之外(DPAPI 文件或加密库),
-  registry 只存伴生仓解析脚本认得的 `cred_path` 引用。请用库外备份。
+  `cred_path` 是凭据库引用；仍需检查选定的解释器、凭据和辅助脚本路径。
+- **密钥:** Mode B, `secrets/*` 已 gitignore,永不入库;真实 app 口令放在两个仓之外的凭据库里,
+  registry 只存伴生仓解析脚本能打开的 `cred_path` 引用(`cv://<record>/app_password`)。
 
 ## 主题打标(默认关闭,只加标签)
 
