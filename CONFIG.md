@@ -183,7 +183,7 @@ secrets/
   *.env / *.cred              # GITIGNORED — real values never enter git
 data/
   state/                     # PRIVATE, versioned: cursors, scoped observations, action and summary ledgers
-  email-monitor.log          # PRIVATE, versioned: runtime diagnostics
+  email-monitor.log          # PRIVATE, machine-local (ignored by Git): runtime diagnostics
   pool.db                    # PRIVATE, versioned: optional reminder pool
 ```
 
