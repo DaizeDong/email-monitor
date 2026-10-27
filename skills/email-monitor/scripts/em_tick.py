@@ -830,6 +830,8 @@ def main():
     ap.add_argument("--summary", default=os.path.join(HERE, "em_summary.py"))
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
+    import machine_role
+    machine_role.refuse_on_secondary()  # mail cursors and alerts advance only on the primary
     report = {"results": [], "status": "failed"}
     dry_token = _DRY.set(a.dry)
     log_token = None

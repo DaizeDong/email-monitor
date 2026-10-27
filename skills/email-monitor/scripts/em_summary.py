@@ -150,6 +150,8 @@ def main():
     ap.add_argument("--now", default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
+    import machine_role
+    machine_role.refuse_on_secondary()  # the daily summary is sent and recorded only on the primary
 
     report = {"status": "failed", "delivery": "not_measured", "reconciliation": "manual"}
     try:

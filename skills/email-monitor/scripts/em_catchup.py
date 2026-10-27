@@ -518,6 +518,8 @@ def main(argv=None):
     p_requeue.add_argument("--action", required=True)
     p_requeue.add_argument("--evidence", required=True)
     a = ap.parse_args(argv)
+    import machine_role
+    machine_role.refuse_on_secondary()  # catch-up alerts and requeues happen only on the primary
     cfg, storage = _load_config(a.config)
     with contextlib.ExitStack() as writer:
         if not (a.cmd == "alerts" and a.dry):
