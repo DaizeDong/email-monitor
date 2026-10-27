@@ -236,8 +236,9 @@ Absolute interpreter, credential-reference and helper resource paths are valid; 
 still receive the DATA path checks below.
 
 `storage.state_dir`, `storage.log` and `storage.db` default to `data/state`,
-`data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. These are
-versioned runtime DATA. CLI `--state-dir` and `--db` overrides receive the same checks.
+`data/email-monitor.log` and `data/pool.db` within the selected PRIVATE companion. The state
+directory and the pool are versioned runtime DATA; the log is machine-local and ignored by Git
+(see the layout above). CLI `--state-dir` and `--db` overrides receive the same checks.
 
 Each destination is checked once, where it is chosen (the registry's storage paths at startup,
 or an explicit CLI output path), with filesystem checks only and no Git command: it must lie
