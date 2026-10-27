@@ -183,6 +183,8 @@
         "class": "rebuildable",
         "rule": "Rotate or remove portions after the relevant diagnosis ends and no unresolved action or selected evidence depends on them; coordinate with the active writer."
       },
+      "persistence": "transient",
+      "transient_reason": "Machine-local diagnostics ignored by Git; each machine's writer appends its own log.",
       "max_bytes": 16777216
     },
     {
